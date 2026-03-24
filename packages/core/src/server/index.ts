@@ -195,7 +195,10 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[]): v
   let clientCount = 0;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
   const clientTtys = new WeakMap<object, string>();
+  const clientSessionNames = new WeakMap<object, string>();
   const sessionProviders = new Map<string, MuxProvider>();
+  // Map session name → client TTY (from hook context, for multi-client setups)
+  const clientTtyBySession = new Map<string, string>();
 
   function getCurrentSession(): string | null {
     const result = mux.getCurrentSession();
@@ -345,9 +348,21 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[]): v
     return null;
   }
 
-  /** Parse "session_name:window_id" context from POST body */
-  function parseContext(body: string): { session: string; windowId: string } | null {
-    const trimmed = body.trim().replace(/^"+|"+$/g, "");
+  /** Parse "clientTty|session|windowId" or legacy "session:windowId" context from POST body */
+  function parseContext(body: string): { clientTty?: string; session: string; windowId: string } | null {
+    const trimmed = body.trim().replace(/^"+|"+$/g, "").replace(/^'+|'+$/g, "");
+
+    // New format: pipe-separated "clientTty|session|windowId"
+    const pipeParts = trimmed.split("|");
+    if (pipeParts.length === 3 && pipeParts[1] && pipeParts[2]) {
+      const ctx = { clientTty: pipeParts[0] || undefined, session: pipeParts[1], windowId: pipeParts[2] };
+      if (ctx.clientTty && ctx.session) {
+        clientTtyBySession.set(ctx.session, ctx.clientTty);
+      }
+      return ctx;
+    }
+
+    // Legacy format: "session:windowId"
     const colonIdx = trimmed.indexOf(":");
     if (colonIdx < 1) return null;
     const session = trimmed.slice(0, colonIdx);
@@ -381,6 +396,10 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[]): v
       for (const w of activeWindows) {
         ensureSidebarInWindow(p, { session: w.sessionName, windowId: w.id });
       }
+      // Enforce correct width on all restored/spawned panes
+      resizeSidebars();
+      // Tell all TUIs to re-identify (panes may have moved between sessions)
+      server.publish("sidebar", JSON.stringify({ type: "re-identify" }));
     }
     log("toggle", "done", { sidebarVisible });
   }
@@ -425,6 +444,8 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[]): v
       } finally {
         spawningInProgress = false;
       }
+      // Enforce width on ALL sidebar panes after spawn (layout may have adjusted sizes)
+      resizeSidebars();
     }
   }
 
@@ -468,7 +489,11 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[]): v
         clientTtys.set(ws, cmd.clientTty);
         break;
       case "switch-session": {
-        const tty = cmd.clientTty ?? clientTtys.get(ws);
+        // Resolve TTY: hook-derived (authoritative) > client-provided > stored
+        const clientSess = clientSessionNames.get(ws);
+        const tty = (clientSess ? clientTtyBySession.get(clientSess) : undefined)
+          ?? cmd.clientTty ?? clientTtys.get(ws);
+        log("switch-session", "switching", { target: cmd.name, tty, clientSess });
         const p = sessionProviders.get(cmd.name) ?? mux;
         p.switchSession(cmd.name, tty);
         break;
@@ -521,7 +546,13 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[]): v
         quitAll();
         break;
       case "identify-pane":
-        // Store pane info for this client (for future use)
+        // Store this client's session, reply with session + authoritative client TTY
+        clientSessionNames.set(ws, cmd.sessionName);
+        ws.send(JSON.stringify({
+          type: "your-session",
+          name: cmd.sessionName,
+          clientTty: clientTtyBySession.get(cmd.sessionName) ?? null,
+        }));
         break;
     }
   }

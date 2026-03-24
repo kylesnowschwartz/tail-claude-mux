@@ -27,6 +27,6 @@ if ! server_alive; then
     done
 fi
 
-# --- Toggle sidebar (pass session:window context) ---
-CTX=$(tmux display-message -p '#{session_name}:#{window_id}' 2>/dev/null)
+# --- Toggle sidebar (pass clientTty|session|window context) ---
+CTX=$(tmux display-message -p '#{client_tty}|#{session_name}|#{window_id}' 2>/dev/null)
 curl -s -o /dev/null -X POST "http://${HOST}:${PORT}/toggle" -d "$CTX"

@@ -47,7 +47,17 @@ export interface QuitNotify {
   type: "quit";
 }
 
-export type ServerMessage = ServerState | FocusUpdate | ResizeNotify | QuitNotify;
+export interface YourSession {
+  type: "your-session";
+  name: string;
+  clientTty: string | null;
+}
+
+export interface ReIdentify {
+  type: "re-identify";
+}
+
+export type ServerMessage = ServerState | FocusUpdate | ResizeNotify | QuitNotify | YourSession | ReIdentify;
 
 export type ClientCommand =
   | { type: "switch-session"; name: string; clientTty?: string }

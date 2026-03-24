@@ -26,6 +26,16 @@ const THEME_NAMES = Object.keys(BUILTIN_THEMES);
 const sdk = new TmuxClient();
 
 function getClientTty(): string {
+  // Initial best-effort — will be replaced by server-provided TTY from hooks
+  const paneId = process.env.TMUX_PANE;
+  if (paneId) {
+    const sessName = sdk.display("#{session_name}", { target: paneId });
+    if (sessName) {
+      const clients = sdk.listClients();
+      const client = clients.find((c) => c.sessionName === sessName);
+      if (client) return client.tty;
+    }
+  }
   return sdk.getClientTty();
 }
 
@@ -39,7 +49,7 @@ function App() {
 
   const [sessions, setSessions] = createStore<SessionData[]>([]);
   const [focusedSession, setFocusedSession] = createSignal<string | null>(null);
-  const [currentSession, setCurrentSession] = createSignal<string | null>(null);
+  const [mySession, setMySession] = createSignal<string | null>(null);
   const [connected, setConnected] = createSignal(false);
   const [spinIdx, setSpinIdx] = createSignal(0);
 
@@ -47,7 +57,7 @@ function App() {
   const [modal, setModal] = createSignal<"none" | "theme-picker" | "confirm-kill">("none");
   const [killTarget, setKillTarget] = createSignal<string | null>(null);
 
-  const clientTty = getClientTty();
+  const [clientTty, setClientTty] = createSignal(getClientTty());
   let ws: WebSocket | null = null;
 
   function send(cmd: ClientCommand) {
@@ -56,7 +66,16 @@ function App() {
 
   function switchToSession(name: string) {
     send({ type: "mark-seen", name });
-    sdk.switchClient(name, clientTty ? { clientTty } : undefined);
+    // Route through server — it has authoritative client TTY from hooks
+    send({ type: "switch-session", name });
+  }
+
+  function reIdentify() {
+    const paneId = process.env.TMUX_PANE;
+    if (!paneId) return;
+    // Re-query session (pane may have moved), server replies with your-session + clientTty
+    const sessName = sdk.display("#{session_name}", { target: paneId });
+    if (sessName) send({ type: "identify-pane", paneId, sessionName: sessName });
   }
 
   function moveLocalFocus(delta: -1 | 1) {
@@ -99,7 +118,8 @@ function App() {
 
     socket.onopen = () => {
       setConnected(true);
-      if (clientTty) send({ type: "identify", clientTty });
+      const tty = clientTty();
+      if (tty) send({ type: "identify", clientTty: tty });
       const paneId = process.env.TMUX_PANE;
       if (paneId) {
         const sessName = sdk.display("#{session_name}", { target: paneId });
@@ -114,11 +134,14 @@ function App() {
           if (msg.type === "state") {
             setSessions(reconcile(msg.sessions, { key: "name" }));
             setFocusedSession(msg.focusedSession);
-            setCurrentSession(msg.currentSession);
             setTheme(resolveTheme(msg.theme));
           } else if (msg.type === "focus") {
             setFocusedSession(msg.focusedSession);
-            setCurrentSession(msg.currentSession);
+          } else if (msg.type === "your-session") {
+            setMySession(msg.name);
+            if (msg.clientTty) setClientTty(msg.clientTty);
+          } else if (msg.type === "re-identify") {
+            reIdentify();
           }
         });
       } catch {}
@@ -288,7 +311,7 @@ function App() {
               session={session}
               index={i() + 1}
               isFocused={isFocused(session.name)}
-              isCurrent={session.name === currentSession()}
+              isCurrent={session.name === mySession()}
               spinIdx={spinIdx}
               theme={theme}
               statusColors={S}

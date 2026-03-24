@@ -64,11 +64,12 @@ export class TmuxProvider implements MuxProvider {
 
   setupHooks(serverHost: string, serverPort: number): void {
     const base = `http://${serverHost}:${serverPort}`;
-    const ctx = `$(tmux display-message -p '#{session_name}:#{window_id}')`;
-    const focusCmd = `run-shell -b "curl -s -o /dev/null -X POST ${base}/focus -d ${ctx}"`;
+    // tmux expands #{} formats at hook-fire time — no need for $(tmux display-message)
+    // Use | as field separator (safe for session names, window IDs, TTYs)
+    const focusCmd = `run-shell -b "curl -s -o /dev/null -X POST ${base}/focus -d '#{client_tty}|#{session_name}|#{window_id}'"`;
     const refreshCmd = `run-shell -b "curl -s -o /dev/null -X POST ${base}/refresh"`;
     const resizeCmd = `run-shell -b "curl -s -o /dev/null -X POST ${base}/resize-sidebars"`;
-    const ensureCmd = `run-shell -b "curl -s -o /dev/null -X POST ${base}/ensure-sidebar -d ${ctx}"`;
+    const ensureCmd = `run-shell -b "curl -s -o /dev/null -X POST ${base}/ensure-sidebar -d '#{client_tty}|#{session_name}|#{window_id}'"`;
 
     // client-session-changed: update focus AND ensure sidebar in the new session's window
     tmux.setGlobalHook("client-session-changed", `${focusCmd} ; ${ensureCmd}`);
@@ -106,7 +107,7 @@ export class TmuxProvider implements MuxProvider {
   private ensureStash(): void {
     const r = Bun.spawnSync(["tmux", "has-session", "-t", STASH_SESSION], { stdout: "pipe", stderr: "pipe" });
     if (r.exitCode !== 0) {
-      rawTmux(["new-session", "-d", "-s", STASH_SESSION, "-x", "1", "-y", "1"]);
+      rawTmux(["new-session", "-d", "-s", STASH_SESSION, "-x", "80", "-y", "24"]);
     }
   }
 
