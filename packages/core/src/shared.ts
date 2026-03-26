@@ -6,7 +6,6 @@ export const SERVER_HOST = "127.0.0.1";
 export const PID_FILE = "/tmp/opensessions.pid";
 export const SERVER_IDLE_TIMEOUT_MS = 30_000;
 export const STUCK_RUNNING_TIMEOUT_MS = 3 * 60 * 1000;
-export const EVENTS_FILE = "/tmp/opensessions-events.jsonl";
 
 export interface SessionData {
   name: string;

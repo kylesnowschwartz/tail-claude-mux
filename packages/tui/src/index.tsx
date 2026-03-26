@@ -580,7 +580,16 @@ function DetailPanel(props: DetailPanelProps) {
 
   const truncThread = (name?: string) => {
     if (!name) return "";
-    return name.length > 20 ? name.slice(0, 19) + "…" : name;
+    return name.length > 24 ? name.slice(0, 23) + "…" : name;
+  };
+
+  const statusLabel = (status: string): string => {
+    if (status === "running") return "running";
+    if (status === "done") return "done";
+    if (status === "error") return "error";
+    if (status === "interrupted") return "stopped";
+    if (status === "waiting") return "waiting";
+    return "";
   };
 
   return (
@@ -592,8 +601,9 @@ function DetailPanel(props: DetailPanelProps) {
         <span style={{ fg: P().overlay0, attributes: DIM }}>{"  "}{truncDir()}</span>
       </text>
 
-      {/* Agent instances — one per line, compact */}
+      {/* Agent instances — two lines per agent for clarity */}
       <Show when={hasAgents()}>
+        <box height={1} />
         <For each={agents()}>
           {(agent) => {
             const icon = () => {
@@ -606,13 +616,20 @@ function DetailPanel(props: DetailPanelProps) {
             };
             const color = () => SC()[agent.status];
             return (
-              <text truncate>
-                <span style={{ fg: P().overlay0 }}>{"  "}{agent.agent}</span>
-                <span style={{ fg: color() }}>{" "}{icon()}</span>
+              <box flexDirection="column" flexShrink={0}>
+                {/* Line 1: icon + agent name + status label */}
+                <text truncate>
+                  <span style={{ fg: color() }}>{"  "}{icon()}</span>
+                  <span style={{ fg: P().subtext1 }}>{" "}{agent.agent}</span>
+                  <span style={{ fg: color(), attributes: DIM }}>{" "}{statusLabel(agent.status)}</span>
+                </text>
+                {/* Line 2: thread name, indented */}
                 {agent.threadName
-                  ? <span style={{ fg: P().subtext0, attributes: DIM }}>{" "}{truncThread(agent.threadName)}</span>
+                  ? <text truncate>
+                      <span style={{ fg: P().overlay0, attributes: DIM }}>{"   "}{truncThread(agent.threadName)}</span>
+                    </text>
                   : ""}
-              </text>
+              </box>
             );
           }}
         </For>
@@ -620,6 +637,7 @@ function DetailPanel(props: DetailPanelProps) {
 
       {/* Sparkline — activity over last 30m */}
       <Show when={hasActivity()}>
+        <box height={1} />
         <text truncate>
           <span style={{ fg: P().lavender, attributes: DIM }}>{"  "}{sparkline()}</span>
         </text>

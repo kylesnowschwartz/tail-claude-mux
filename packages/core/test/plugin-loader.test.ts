@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { PluginLoader, type PluginAPI } from "../src/plugins/loader";
 import type { MuxProvider } from "../src/contracts/mux";
+import type { AgentWatcher } from "../src/contracts/agent-watcher";
 import { join } from "path";
 import { mkdirSync, writeFileSync, rmSync } from "fs";
 
@@ -71,6 +72,22 @@ describe("PluginLoader", () => {
     expect(info.registeredMuxProviders).toContain("tmux");
     expect(typeof info.configPath).toBe("string");
     expect(info.serverPort).toBe(7391);
+  });
+
+  test("registerWatcher stores and retrieves watchers", () => {
+    const loader = new PluginLoader();
+    const fakeWatcher: AgentWatcher = { name: "amp", start: () => {}, stop: () => {} };
+    loader.registerWatcher(fakeWatcher);
+    expect(loader.getWatchers()).toHaveLength(1);
+    expect(loader.getWatchers()[0]!.name).toBe("amp");
+  });
+
+  test("registerWatcher supports multiple watchers", () => {
+    const loader = new PluginLoader();
+    loader.registerWatcher({ name: "amp", start: () => {}, stop: () => {} });
+    loader.registerWatcher({ name: "claude-code", start: () => {}, stop: () => {} });
+    expect(loader.getWatchers()).toHaveLength(2);
+    expect(loader.getWatchers().map((w) => w.name)).toEqual(["amp", "claude-code"]);
   });
 });
 
@@ -174,6 +191,7 @@ describe("PluginLoader — factory loading from directory", () => {
       `export default function(api) {
         // Just verify the api has the right methods
         if (typeof api.registerMux !== "function") throw new Error("missing registerMux");
+        if (typeof api.registerWatcher !== "function") throw new Error("missing registerWatcher");
         if (typeof api.serverPort !== "number") throw new Error("missing serverPort");
         if (typeof api.serverHost !== "string") throw new Error("missing serverHost");
       }`,

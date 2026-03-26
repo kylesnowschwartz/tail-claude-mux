@@ -19,7 +19,11 @@ export {
 } from "./contracts/mux";
 export type { AgentStatus, AgentEvent } from "./contracts/agent";
 export { TERMINAL_STATUSES } from "./contracts/agent";
+export type { AgentWatcher, AgentWatcherContext } from "./contracts/agent-watcher";
 export { AgentTracker } from "./agents/tracker";
+export { AmpAgentWatcher } from "./agents/watchers/amp";
+export { ClaudeCodeAgentWatcher } from "./agents/watchers/claude-code";
+export { OpenCodeAgentWatcher } from "./agents/watchers/opencode";
 export { MuxRegistry } from "./mux/registry";
 export { detectMux } from "./mux/detect";
 export { PluginLoader } from "./plugins/loader";
@@ -36,7 +40,6 @@ export {
   PID_FILE,
   SERVER_IDLE_TIMEOUT_MS,
   STUCK_RUNNING_TIMEOUT_MS,
-  EVENTS_FILE,
   C,
   STATUS_COLORS,
   STATUS_ICONS,

@@ -1,6 +1,9 @@
 import { startServer } from "./index";
 import { PluginLoader } from "../plugins/loader";
 import { loadConfig } from "../config";
+import { AmpAgentWatcher } from "../agents/watchers/amp";
+import { ClaudeCodeAgentWatcher } from "../agents/watchers/claude-code";
+import { OpenCodeAgentWatcher } from "../agents/watchers/opencode";
 import { join } from "path";
 
 const config = loadConfig();
@@ -55,5 +58,15 @@ if (extraProviders.length > 0) {
   console.log(`Extra mux providers: ${extraProviders.map((p) => p.name).join(", ")}`);
 }
 
+// 6. Register built-in agent watchers
+loader.registerWatcher(new AmpAgentWatcher());
+loader.registerWatcher(new ClaudeCodeAgentWatcher());
+loader.registerWatcher(new OpenCodeAgentWatcher());
+
+const watchers = loader.getWatchers();
+if (watchers.length > 0) {
+  console.log(`Agent watchers: ${watchers.map((w) => w.name).join(", ")}`);
+}
+
 console.log(`Primary mux provider: ${mux.name}`);
-startServer(mux, extraProviders);
+startServer(mux, extraProviders, watchers);

@@ -3,6 +3,7 @@ import { join } from "path";
 import type { MuxProvider } from "../contracts/mux";
 import { isFullSidebarCapable, isBatchCapable } from "../contracts/mux";
 import type { AgentEvent } from "../contracts/agent";
+import type { AgentWatcher, AgentWatcherContext } from "../contracts/agent-watcher";
 import { AgentTracker } from "../agents/tracker";
 import { SessionOrder } from "./session-order";
 import { loadConfig, saveConfig } from "../config";
@@ -16,7 +17,6 @@ import {
   PID_FILE,
   SERVER_IDLE_TIMEOUT_MS,
   STUCK_RUNNING_TIMEOUT_MS,
-  EVENTS_FILE,
 } from "../shared";
 
 // --- Debug logger ---
@@ -131,31 +131,11 @@ function syncGitWatchers(sessions: SessionData[], broadcastFn: () => void) {
   }
 }
 
-// --- Events file fallback ---
-
-let eventsFileSize = 0;
-
-function readEventsFileFallback(tracker: AgentTracker): void {
-  try {
-    if (!existsSync(EVENTS_FILE)) return;
-    const content = readFileSync(EVENTS_FILE, "utf-8");
-    if (content.length <= eventsFileSize) return;
-    const newContent = content.slice(eventsFileSize);
-    eventsFileSize = content.length;
-    for (const line of newContent.split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        const event = JSON.parse(line) as AgentEvent;
-        if (event.session && event.status) tracker.applyEvent(event);
-      } catch {}
-    }
-  } catch {}
-}
-
 // --- Server startup ---
 
-export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[]): void {
+export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], watchers?: AgentWatcher[]): void {
   const allProviders = [mux, ...(extraProviders ?? [])];
+  const allWatchers = watchers ?? [];
   const tracker = new AgentTracker();
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
   const sessionOrderPath = join(home, ".config", "opensessions", "session-order.json");
@@ -190,6 +170,25 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[]): v
   if (currentSession) {
     tracker.setActiveSessions([currentSession]);
   }
+
+  // --- Start agent watchers ---
+
+  const watcherCtx: AgentWatcherContext = {
+    resolveSession(projectDir: string): string | null {
+      for (const p of allProviders) {
+        for (const s of p.listSessions()) {
+          if (!s.dir) continue;
+          if (s.dir === projectDir) return s.name;
+          if (projectDir.startsWith(s.dir + "/") || s.dir.startsWith(projectDir + "/")) return s.name;
+        }
+      }
+      return null;
+    },
+    emit(event: AgentEvent) {
+      tracker.applyEvent(event);
+      broadcastState();
+    },
+  };
 
   let focusedSession: string | null = null;
   let lastState: ServerState | null = null;
@@ -287,7 +286,6 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[]): v
   }
 
   function broadcastState() {
-    readEventsFileFallback(tracker);
     tracker.pruneStuck(STUCK_RUNNING_TIMEOUT_MS);
     tracker.pruneTerminal();
     lastState = computeState();
@@ -601,6 +599,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[]): v
   }
 
   function cleanup() {
+    for (const w of allWatchers) w.stop();
     if (debounceTimer) clearTimeout(debounceTimer);
     for (const watcher of gitHeadWatchers.values()) watcher.close();
     gitHeadWatchers.clear();
@@ -618,17 +617,6 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[]): v
     hostname: SERVER_HOST,
     async fetch(req, server) {
       const url = new URL(req.url);
-
-      if (req.method === "POST" && url.pathname === "/event") {
-        try {
-          const body = await req.json() as any;
-          if (body.session && body.status) {
-            tracker.applyEvent(body as AgentEvent);
-            broadcastState();
-          }
-        } catch {}
-        return new Response("ok", { status: 200 });
-      }
 
       if (req.method === "POST" && url.pathname === "/refresh") {
         broadcastState();
@@ -721,6 +709,12 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[]): v
 
   for (const p of allProviders) p.setupHooks(SERVER_HOST, SERVER_PORT);
   broadcastState();
+
+  // Start agent watchers after server is ready
+  for (const w of allWatchers) {
+    w.start(watcherCtx);
+    log("server", `agent watcher started: ${w.name}`);
+  }
 
   process.on("SIGINT", () => { cleanup(); process.exit(0); });
   process.on("SIGTERM", () => { cleanup(); process.exit(0); });

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync } from "fs";
 import { join, extname } from "path";
 import type { MuxProvider } from "../contracts/mux";
+import type { AgentWatcher } from "../contracts/agent-watcher";
 import { MuxRegistry } from "../mux/registry";
 import { SERVER_PORT, SERVER_HOST } from "../shared";
 
@@ -11,6 +12,7 @@ import { SERVER_PORT, SERVER_HOST } from "../shared";
  */
 export interface PluginAPI {
   registerMux(provider: MuxProvider): void;
+  registerWatcher(watcher: AgentWatcher): void;
   readonly serverPort: number;
   readonly serverHost: string;
 }
@@ -20,9 +22,18 @@ export type PluginFactory = (api: PluginAPI) => void | Promise<void>;
 
 export class PluginLoader {
   readonly registry = new MuxRegistry();
+  private watchers: AgentWatcher[] = [];
 
   registerMux(provider: MuxProvider): void {
     this.registry.register(provider);
+  }
+
+  registerWatcher(watcher: AgentWatcher): void {
+    this.watchers.push(watcher);
+  }
+
+  getWatchers(): AgentWatcher[] {
+    return [...this.watchers];
   }
 
   resolve(preference?: string): MuxProvider | null {
@@ -35,6 +46,7 @@ export class PluginLoader {
   private createAPI(): PluginAPI {
     return {
       registerMux: (provider: MuxProvider) => this.registry.register(provider),
+      registerWatcher: (watcher: AgentWatcher) => this.registerWatcher(watcher),
       serverPort: SERVER_PORT,
       serverHost: SERVER_HOST,
     };
