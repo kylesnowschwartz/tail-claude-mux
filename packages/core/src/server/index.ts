@@ -8,6 +8,12 @@ import { AgentTracker } from "../agents/tracker";
 import { SessionOrder } from "./session-order";
 import { loadConfig, saveConfig } from "../config";
 import {
+  resolveSidebarWidthFromResizeContext,
+  snapshotSidebarWindows,
+  type SidebarResizeContext,
+  type SidebarResizeSuppression,
+} from "./sidebar-width-sync";
+import {
   type ServerState,
   type SessionData,
   type ClientCommand,
@@ -331,8 +337,13 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
       return a.name.localeCompare(b.name);
     });
 
+    const currentSession = getCurrentSession();
+
     // Sync custom ordering with current session list
     sessionOrder.sync(allMuxSessions.map((s) => s.name));
+    if (currentSession) {
+      sessionOrder.show(currentSession);
+    }
 
     // Apply custom ordering
     const orderedNames = sessionOrder.apply(allMuxSessions.map((s) => s.name));
@@ -381,8 +392,6 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
         eventTimestamps: tracker.getEventTimestamps(name),
       };
     });
-
-    const currentSession = getCurrentSession();
 
     if (sessions.length === 0) {
       focusedSession = null;
@@ -441,6 +450,31 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     }
   }
 
+  function switchToVisibleIndex(index: number, clientTty?: string): void {
+    if (!lastState) {
+      broadcastState();
+    }
+
+    if (!lastState) return;
+
+    const idx = index - 1;
+    if (idx < 0 || idx >= lastState.sessions.length) return;
+
+    const name = lastState.sessions[idx]!.name;
+    const p = sessionProviders.get(name) ?? mux;
+    p.switchSession(name, clientTty);
+
+    if (sidebarVisible && isFullSidebarCapable(p) && p.name === "zellij") {
+      const activeWindows = p.listActiveWindows();
+      const targetWindow = activeWindows.find((w) => w.sessionName === name);
+      if (targetWindow) {
+        setTimeout(() => {
+          ensureSidebarInWindow(p, { session: name, windowId: targetWindow.id });
+        }, 500);
+      }
+    }
+  }
+
   // --- Sidebar management ---
 
   function getProvidersWithSidebar() {
@@ -470,16 +504,48 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     return { session, windowId };
   }
 
-  const pendingSidebarSpawns = new Set<string>();
-  let pendingSidebarResize: ReturnType<typeof setTimeout> | null = null;
+  function parseResizeContext(body: string): SidebarResizeContext | null {
+    const trimmed = body.trim().replace(/^"+|"+$/g, "").replace(/^'+|'+$/g, "");
+    if (!trimmed) return null;
 
-  function scheduleSidebarResize(): void {
-    resizeSidebars();
+    const [paneId, sessionName, windowId, widthRaw, windowWidthRaw] = trimmed.split("|");
+    if (!paneId) return null;
+
+    const width = Number.parseInt(widthRaw ?? "", 10);
+    const windowWidth = Number.parseInt(windowWidthRaw ?? "", 10);
+
+    return {
+      paneId,
+      sessionName: sessionName || undefined,
+      windowId: windowId || undefined,
+      width: Number.isNaN(width) ? undefined : width,
+      windowWidth: Number.isNaN(windowWidth) ? undefined : windowWidth,
+    };
+  }
+
+  function listSidebarPanesByProvider() {
+    return getProvidersWithSidebar().map((provider) => ({
+      provider,
+      panes: provider.listSidebarPanes(),
+    }));
+  }
+
+  const pendingSidebarSpawns = new Set<string>();
+  const suppressedSidebarResizeAcks = new Map<string, SidebarResizeSuppression>();
+  let sidebarSnapshots = new Map<string, { width?: number; windowWidth?: number }>();
+  let pendingSidebarResize: ReturnType<typeof setTimeout> | null = null;
+  let pendingSidebarResizeCtx: SidebarResizeContext | undefined;
+
+  function scheduleSidebarResize(ctx?: SidebarResizeContext): void {
+    if (ctx) pendingSidebarResizeCtx = ctx;
+    resizeSidebars(ctx);
     if (pendingSidebarResize) clearTimeout(pendingSidebarResize);
     // tmux/zellij can finish layout changes slightly after the pane appears.
     pendingSidebarResize = setTimeout(() => {
+      const nextCtx = pendingSidebarResizeCtx;
+      pendingSidebarResizeCtx = undefined;
       pendingSidebarResize = null;
-      resizeSidebars();
+      resizeSidebars(nextCtx);
     }, 120);
   }
 
@@ -563,8 +629,9 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
       } finally {
         pendingSidebarSpawns.delete(spawnKey);
       }
-      scheduleSidebarResize();
     }
+
+    scheduleSidebarResize();
   }
 
   function quitAll(): void {
@@ -588,14 +655,50 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
 
   // --- Sidebar resize enforcement ---
 
-  function resizeSidebars() {
-    for (const p of getProvidersWithSidebar()) {
-      const panes = p.listSidebarPanes();
-      log("resize", "enforcing width on all panes", { provider: p.name, sidebarWidth, count: panes.length });
+  function resizeSidebars(ctx?: SidebarResizeContext) {
+    const panesByProvider = listSidebarPanesByProvider();
+    const allPanes = panesByProvider.flatMap(({ panes }) => panes);
+
+    if (allPanes.length === 0) {
+      sidebarSnapshots = new Map();
+      return;
+    }
+
+    const nextSidebarWidth = resolveSidebarWidthFromResizeContext({
+      ctx,
+      panes: allPanes,
+      previousByWindow: sidebarSnapshots,
+      suppressedByPane: suppressedSidebarResizeAcks,
+    });
+
+    if (nextSidebarWidth != null && nextSidebarWidth !== sidebarWidth) {
+      sidebarWidth = nextSidebarWidth;
+      saveConfig({ sidebarWidth });
+      log("resize", "adopted sidebar width from pane resize", {
+        paneId: ctx?.paneId ?? null,
+        sessionName: ctx?.sessionName ?? null,
+        windowId: ctx?.windowId ?? null,
+        sidebarWidth,
+      });
+      broadcastState();
+    }
+
+    const now = Date.now();
+    for (const { provider, panes } of panesByProvider) {
+      log("resize", "enforcing width on all panes", {
+        provider: provider.name,
+        sidebarWidth,
+        count: panes.length,
+        triggerPaneId: ctx?.paneId ?? null,
+      });
       for (const pane of panes) {
-        p.resizeSidebarPane(pane.paneId, sidebarWidth);
+        if (pane.width === sidebarWidth) continue;
+        suppressedSidebarResizeAcks.set(pane.paneId, { width: sidebarWidth, expiresAt: now + 1_000 });
+        provider.resizeSidebarPane(pane.paneId, sidebarWidth);
       }
     }
+
+    sidebarSnapshots = snapshotSidebarWindows(listSidebarPanesByProvider().flatMap(({ panes }) => panes));
   }
 
   function handleCommand(cmd: ClientCommand, ws: any) {
@@ -651,27 +754,22 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
         break;
       }
       case "switch-index": {
-        if (!lastState) break;
-        const idx = cmd.index - 1;
-        if (idx >= 0 && idx < lastState.sessions.length) {
-          const name = lastState.sessions[idx]!.name;
-          const p = sessionProviders.get(name) ?? mux;
-          p.switchSession(name);
-
-          if (sidebarVisible && isFullSidebarCapable(p) && p.name === "zellij") {
-            const activeWindows = p.listActiveWindows();
-            const targetWindow = activeWindows.find((w) => w.sessionName === name);
-            if (targetWindow) {
-              setTimeout(() => {
-                ensureSidebarInWindow(p, { session: name, windowId: targetWindow.id });
-              }, 500);
-            }
-          }
-        }
+        const clientSess = clientSessionNames.get(ws);
+        const tty = (clientSess ? clientTtyBySession.get(clientSess) : undefined)
+          ?? clientTtys.get(ws);
+        switchToVisibleIndex(cmd.index, tty);
         break;
       }
       case "new-session":
         mux.createSession();
+        broadcastState();
+        break;
+      case "hide-session":
+        sessionOrder.hide(cmd.name);
+        broadcastState();
+        break;
+      case "show-all-sessions":
+        sessionOrder.showAll();
         broadcastState();
         break;
       case "kill-session": {
@@ -776,8 +874,10 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
       }
 
       if (req.method === "POST" && url.pathname === "/resize-sidebars") {
-        log("http", "POST /resize-sidebars", { sidebarWidth });
-        scheduleSidebarResize();
+        const body = await req.text();
+        const ctx = parseResizeContext(body) ?? undefined;
+        log("http", "POST /resize-sidebars", { sidebarWidth, ctx });
+        scheduleSidebarResize(ctx);
         return new Response("ok", { status: 200 });
       }
 
@@ -810,6 +910,20 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
       if (req.method === "POST" && url.pathname === "/quit") {
         log("http", "POST /quit");
         quitAll();
+        return new Response("ok", { status: 200 });
+      }
+
+      if (req.method === "POST" && url.pathname === "/switch-index") {
+        try {
+          const index = Number.parseInt(url.searchParams.get("index") ?? "", 10);
+          if (Number.isNaN(index)) {
+            return new Response("missing index", { status: 400 });
+          }
+          const body = await req.text();
+          const ctx = parseContext(body) ?? undefined;
+          log("http", "POST /switch-index", { index, ctx });
+          switchToVisibleIndex(index, ctx?.clientTty);
+        } catch {}
         return new Response("ok", { status: 200 });
       }
 

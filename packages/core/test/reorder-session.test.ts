@@ -13,4 +13,9 @@ describe("reorder-session command", () => {
     const cmd: ClientCommand = { type: "reorder-session", name: "other", delta: 1 };
     expect(cmd.delta).toBe(1);
   });
+
+  test("ClientCommand union accepts show-all-sessions type", () => {
+    const cmd: ClientCommand = { type: "show-all-sessions" };
+    expect(cmd.type).toBe("show-all-sessions");
+  });
 });

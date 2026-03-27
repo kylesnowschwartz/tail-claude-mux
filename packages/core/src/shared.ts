@@ -65,6 +65,8 @@ export type ClientCommand =
   | { type: "switch-session"; name: string; clientTty?: string }
   | { type: "switch-index"; index: number }
   | { type: "new-session" }
+  | { type: "hide-session"; name: string }
+  | { type: "show-all-sessions" }
   | { type: "kill-session"; name: string }
   | { type: "reorder-session"; name: string; delta: -1 | 1 }
   | { type: "refresh" }

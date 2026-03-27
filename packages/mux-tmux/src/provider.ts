@@ -94,6 +94,10 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     const focusCmd = hookPost("/focus", "#{client_tty}|#{session_name}|#{window_id}");
     const refreshCmd = hookPost("/refresh");
     const resizeCmd = hookPost("/resize-sidebars");
+    const resizePaneCmd = hookPost(
+      "/resize-sidebars",
+      "#{pane_id}|#{session_name}|#{window_id}|#{pane_width}|#{window_width}",
+    );
     const ensureCmd = hookPost("/ensure-sidebar", "#{client_tty}|#{session_name}|#{window_id}");
 
     // client-session-changed: update focus AND ensure sidebar in the new session's window
@@ -103,6 +107,7 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     tmux.setGlobalHook("client-resized", resizeCmd);
     tmux.setGlobalHook("after-select-window", ensureCmd);
     tmux.setGlobalHook("after-new-window", ensureCmd);
+    tmux.setGlobalHook("after-resize-pane", resizePaneCmd);
   }
 
   cleanupHooks(): void {
@@ -112,6 +117,7 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     tmux.unsetGlobalHook("client-resized");
     tmux.unsetGlobalHook("after-select-window");
     tmux.unsetGlobalHook("after-new-window");
+    tmux.unsetGlobalHook("after-resize-pane");
   }
 
   getAllPaneCounts(): Map<string, number> {
@@ -139,10 +145,20 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     const panes = sessionName
       ? tmux.listPanes({ scope: "session", target: sessionName })
       : tmux.listPanes();
+    const windowWidths = new Map<string, number>();
+    for (const pane of panes) {
+      windowWidths.set(pane.windowId, Math.max(windowWidths.get(pane.windowId) ?? 0, pane.right + 1));
+    }
 
     return panes
       .filter((p) => p.title === "opensessions" && p.sessionName !== STASH_SESSION)
-      .map((p) => ({ paneId: p.id, sessionName: p.sessionName, windowId: p.windowId }));
+      .map((p) => ({
+        paneId: p.id,
+        sessionName: p.sessionName,
+        windowId: p.windowId,
+        width: p.width,
+        windowWidth: windowWidths.get(p.windowId),
+      }));
   }
 
   /** Ensure the invisible stash session exists for hiding sidebar panes */

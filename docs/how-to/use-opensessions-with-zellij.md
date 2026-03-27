@@ -1,63 +1,23 @@
-# How To Use opensessions With zellij
+# Zellij Support Status
 
-This guide shows how to wire the existing opensessions scripts into zellij so you can toggle the sidebar from a keybinding.
+`tmux` is the only supported mux for opensessions today.
 
-It assumes you already cloned the repository and ran `bun install`.
+The repository still contains older zellij integration code and helper scripts, but that path is not stable enough for us to recommend or document as a supported setup.
 
-## 1. Pick the repository path
+## Current Status
 
-Note the absolute path to your local clone, for example:
+- We are not documenting zellij setup steps right now.
+- We are not treating zellij behavior as part of the supported feature surface.
+- We are looking for maintainers who want to help bring zellij support back to a stable, documented state.
 
-```text
-/Users/alice/src/opensessions
-```
+## What To Use Instead
 
-You will use that path in the zellij config snippet below.
+For a supported setup today, use the tmux flow:
 
-## 2. Add a zellij keybinding
+- [Get started in tmux](../tutorials/get-started-in-tmux.md)
+- [Features and keybindings reference](../reference/features-and-keybindings.md)
+- [Configuration reference](../reference/configuration.md)
 
-Open `~/.config/zellij/config.kdl` and add a binding that runs the shipped toggle script:
+## Interested In Maintaining zellij Support?
 
-```kdl
-bind "s" {
-  Run "bash" "/absolute/path/to/opensessions/tmux-plugin/scripts/zellij-toggle.sh" {
-    close_on_exit true
-  };
-  SwitchToMode "Normal";
-}
-```
-
-If you prefer a different key, change `"s"` to whatever fits your setup.
-
-## 3. Reload zellij or start a new session
-
-Restart zellij or reload your config so the new binding takes effect.
-
-## 4. Toggle the sidebar
-
-Inside zellij, press the key you bound in the previous step.
-
-The toggle script will:
-
-1. Ensure the opensessions server is running.
-2. Discover the current zellij session and active tab.
-3. Send a toggle request to the local server.
-
-## 5. Verify the sidebar behavior
-
-When the sidebar opens, test these flows:
-
-1. Move through the list with `j` and `k`.
-2. Press `Enter` to switch zellij sessions.
-3. Press `t` to change themes.
-4. Start Amp, Claude Code, or OpenCode in a matching project and watch status update.
-
-## Notes
-
-- zellij does not expose tmux-style hooks, so opensessions uses explicit toggle calls, provider queries, and periodic polling instead.
-- The zellij provider can still participate in the shared server state alongside the tmux provider.
-- Cross-mux switching is supported when both providers are registered.
-
-## Expected Result
-
-You can now open opensessions from zellij and use the same sidebar UI, agent tracking, and session-switching flows that tmux users get.
+If you want to help revive zellij support, the in-repo implementation can still serve as a starting point. The goal would be to get it back to a state where the setup guide, sidebar behavior, and switching flows are stable enough to support again.

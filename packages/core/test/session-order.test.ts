@@ -61,6 +61,30 @@ describe("SessionOrder", () => {
     order.reorder("d", -1); // [a, d, b, c]
     expect(order.apply(["a", "b", "c", "d"])).toEqual(["a", "d", "b", "c"]);
   });
+
+  test("hide removes a session from the visible panel order", () => {
+    const order = new SessionOrder();
+    order.sync(["a", "b", "c"]);
+    order.hide("b");
+    expect(order.apply(["a", "b", "c"])).toEqual(["a", "c"]);
+  });
+
+  test("show restores a hidden session", () => {
+    const order = new SessionOrder();
+    order.sync(["a", "b", "c"]);
+    order.hide("b");
+    order.show("b");
+    expect(order.apply(["a", "b", "c"])).toEqual(["a", "b", "c"]);
+  });
+
+  test("showAll restores every hidden session", () => {
+    const order = new SessionOrder();
+    order.sync(["a", "b", "c"]);
+    order.hide("a");
+    order.hide("c");
+    order.showAll();
+    expect(order.apply(["a", "b", "c"])).toEqual(["a", "b", "c"]);
+  });
 });
 
 describe("SessionOrder persistence", () => {
@@ -91,6 +115,40 @@ describe("SessionOrder persistence", () => {
     const order2 = new SessionOrder(persistPath);
     order2.sync(["a", "b", "c"]);
     expect(order2.apply(["a", "b", "c"])).toEqual(["a", "c", "b"]);
+  });
+
+  test("hidden sessions persist to disk", () => {
+    mkdirSync(testDir, { recursive: true });
+    const order = new SessionOrder(persistPath);
+    order.sync(["a", "b", "c"]);
+    order.hide("b");
+
+    expect(existsSync(persistPath)).toBe(true);
+    const saved = JSON.parse(readFileSync(persistPath, "utf-8"));
+    expect(saved).toEqual({ order: ["a", "b", "c"], hidden: ["b"] });
+  });
+
+  test("new instance loads persisted hidden sessions", () => {
+    mkdirSync(testDir, { recursive: true });
+    Bun.write(
+      persistPath,
+      JSON.stringify({ order: ["a", "b", "c"], hidden: ["b"] }),
+    );
+
+    const order = new SessionOrder(persistPath);
+    order.sync(["a", "b", "c"]);
+    expect(order.apply(["a", "b", "c"])).toEqual(["a", "c"]);
+  });
+
+  test("showAll clears persisted hidden sessions", () => {
+    mkdirSync(testDir, { recursive: true });
+    const order = new SessionOrder(persistPath);
+    order.sync(["a", "b", "c"]);
+    order.hide("b");
+    order.showAll();
+
+    const saved = JSON.parse(readFileSync(persistPath, "utf-8"));
+    expect(saved).toEqual(["a", "b", "c"]);
   });
 
   test("no persist path means no file written", () => {

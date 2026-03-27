@@ -1,8 +1,10 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 # Ensure the current window has a sidebar pane.
-# Delegates to the server which tracks sidebar visibility state.
 
-PORT="${OPENSESSIONS_PORT:-7391}"
-HOST="${OPENSESSIONS_HOST:-127.0.0.1}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/server-common.sh"
 
-curl -s -o /dev/null -X POST "http://${HOST}:${PORT}/ensure-sidebar"
+ensure_server || exit 0
+
+CTX=$(tmux display-message -p '#{client_tty}|#{session_name}|#{window_id}' 2>/dev/null)
+curl -s -o /dev/null -X POST "http://${HOST}:${PORT}/ensure-sidebar" -d "$CTX"

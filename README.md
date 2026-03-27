@@ -1,25 +1,26 @@
 # opensessions
 
-opensessions is a terminal sidebar for tmux and zellij that keeps session switching, agent activity, and repo context in one place.
+opensessions is a terminal sidebar for tmux that keeps session switching, agent activity, and repo context in one place.
 
 It runs inside your existing multiplexer instead of replacing it. The current build focuses on a Bun-powered local server, an OpenTUI sidebar, built-in agent watchers, and a capability-based mux abstraction that can be extended with plugins.
+
+tmux is the only supported mux today. There is older zellij integration code in the repo, but it is not stable enough to document as supported; we are looking for maintainers who want to help bring it back to that bar.
 
 ## What You Get
 
 - Live agent state across sessions for Amp, Claude Code, Codex, and OpenCode.
 - Per-thread unseen markers for terminal agent states such as `done`, `error`, and `interrupted`.
 - Session metadata at a glance: branch name, dirty state, worktree detection, pane count, window count, uptime, and detected localhost ports.
-- Fast navigation with arrow keys, `j`/`k`, number keys, `Tab`, session reordering, session creation, and session killing.
+- Fast navigation with arrow keys, `j`/`k`, number keys, `Tab`, session reordering, session creation, session killing, a default tmux command table on `prefix o`, and optional no-prefix tmux shortcuts when you want them.
 - Theme switching from inside the sidebar, with built-in theme presets persisted to config.
 - A plugin model for additional mux providers and agent watchers.
-- Support for both tmux and zellij providers, including cross-mux session switching when both are registered.
+- A capability-based mux layer that can support additional providers over time.
 
 ## Supported Today
 
 ### Multiplexers
 
 - `tmux` via `@opensessions/mux-tmux`
-- `zellij` via `@opensessions/mux-zellij`
 
 ### Built-in Agent Watchers
 
@@ -35,7 +36,7 @@ It runs inside your existing multiplexer instead of replacing it. The current bu
 
 ## Quick Start
 
-For a fast smoke test inside an existing tmux or zellij session:
+For a fast smoke test inside an existing tmux session:
 
 ```bash
 git clone https://github.com/Ataraxy-Labs/opensessions.git
@@ -50,7 +51,6 @@ That starts the sidebar client and auto-launches the local server if needed. For
 ## Documentation Map
 
 - [Get started in tmux](./docs/tutorials/get-started-in-tmux.md)
-- [How to use opensessions with zellij](./docs/how-to/use-opensessions-with-zellij.md)
 - [Configuration reference](./docs/reference/configuration.md)
 - [Features and keybindings reference](./docs/reference/features-and-keybindings.md)
 - [Architecture explanation](./docs/explanation/architecture.md)
@@ -95,10 +95,8 @@ That starts the sidebar client and auto-launches the local server if needed. For
 | `packages/tui` | OpenTUI sidebar client built with Solid |
 | `packages/mux` | Capability-based mux type definitions and type guards |
 | `packages/mux-tmux` | tmux provider and tmux client wrapper |
-| `packages/mux-zellij` | zellij provider |
 | `packages/tmux-sdk` | Lower-level typed tmux command bindings |
 | `tmux-plugin` | tmux-facing scripts and plugin package entrypoint |
-| `integrations/zellij` | zellij integration package entrypoint |
 
 ## Architecture In One Screen
 
@@ -115,7 +113,7 @@ AgentTracker + mux providers + git/port/session state
 Bun WebSocket server on 127.0.0.1:7391
         |
         v
-OpenTUI sidebar clients running inside tmux or zellij panes
+OpenTUI sidebar clients running inside tmux panes
 ```
 
 More detail: [docs/explanation/architecture.md](./docs/explanation/architecture.md)
@@ -125,7 +123,7 @@ More detail: [docs/explanation/architecture.md](./docs/explanation/architecture.
 - The running app is effectively pinned to `127.0.0.1:7391` today. Helper scripts read `OPENSESSIONS_HOST` and `OPENSESSIONS_PORT`, but the server and TUI still use the fixed constants in `packages/core/src/shared.ts`.
 - `~/.config/opensessions/config.json` fields `mux`, `plugins`, `theme`, `sidebarWidth`, and `sidebarPosition` are used by the runtime. The parsed `port` and `keybinding` fields are not currently wired through the running app.
 - The core theme utilities support inline partial theme objects, but the server currently persists and broadcasts theme names rather than inline theme objects.
-- zellij integration works, but it does not have tmux-style hooks. Some sidebar behavior is maintained through polling and explicit server calls instead.
+- Experimental mux providers may still exist in the repo, but they are outside the current support promise unless documented otherwise.
 
 ## License
 

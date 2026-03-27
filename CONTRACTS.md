@@ -248,7 +248,7 @@ The current runtime passes `127.0.0.1:7391` here.
 - The server merges sessions from all registered providers into one state payload.
 - Session ordering is persisted separately from mux ordering.
 - tmux sidebars can be hidden into a stash session instead of being killed.
-- zellij does not currently install hooks, so some sidebar management is driven by polling and explicit commands.
+- tmux is the only supported built-in mux today. Other providers can still target these contracts, but they are currently outside the support bar unless documented otherwise.
 - The TUI expects a WebSocket server on `127.0.0.1:7391`.
 
 ## Where To Start

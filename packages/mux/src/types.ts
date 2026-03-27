@@ -22,6 +22,8 @@ export interface SidebarPane {
   readonly paneId: string;
   readonly sessionName: string;
   readonly windowId: string;
+  readonly width?: number;
+  readonly windowWidth?: number;
 }
 
 /** Position for sidebar placement */

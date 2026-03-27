@@ -50,14 +50,9 @@ Clicking a detected port opens `http://localhost:<port>`.
 - Sidebar stash session named `_os_stash` so hidden sidebars can be restored
 - Session creation popup using the bundled `sessionizer.sh` script
 
-### zellij-specific
-
-- Sidebar panes spawned as zellij panes
-- Session switching through zellij actions
-- Sidebar resize through pane-targeted zellij commands
-- No mux-native hook support; sidebar refresh relies on explicit calls and polling
-
 ## Keyboard Shortcuts
+
+### Inside the sidebar
 
 | Key | Action |
 | --- | --- |
@@ -76,9 +71,21 @@ Clicking a detected port opens `http://localhost:<port>`.
 | `q` | Quit the server and all sidebar panes |
 | `Esc` | Close only the current sidebar client |
 
+### tmux plugin shortcuts
+
+| Key | Action |
+| --- | --- |
+| `prefix s` | Toggle the sidebar |
+| `prefix S` | Reveal and focus the sidebar pane |
+| `prefix o s` by default | Reveal and focus the sidebar pane through the opensessions command table |
+| `prefix o t` by default | Toggle the sidebar through the opensessions command table |
+| `prefix o 1` through `prefix o 9` by default | Switch directly to the visible session indices |
+| Configurable `@opensessions-focus-global-key` such as `Alt-s` | Reveal and focus the sidebar pane from any tmux pane |
+| Configurable `@opensessions-index-keys` such as `Alt-1` through `Alt-9` | Switch directly to the visible session indices from any tmux pane |
+
 ## Session Creation Behavior
 
-- The server exposes `new-session` for all providers.
+- The server exposes `new-session` through the mux provider interface.
 - The TUI uses a tmux popup sessionizer when it is running inside tmux.
 - The bundled sessionizer searches `SESSIONIZER_DIR` or `$HOME/Documents`.
 - If `fzf` is unavailable, the tmux sessionizer exits with a prompt explaining that dependency.
@@ -86,8 +93,7 @@ Clicking a detected port opens `http://localhost:<port>`.
 ## Session Switching Behavior
 
 - Switching routes through the server so the server can use authoritative client TTY information.
-- When both tmux and zellij providers are present, the server can perform cross-mux switching.
-- zellij sidebar re-attachment after a switch may be delayed briefly so the client has time to attach.
+- tmux is the only supported mux today.
 
 ## Refresh And Discovery Behavior
 

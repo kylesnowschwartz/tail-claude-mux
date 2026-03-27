@@ -256,13 +256,17 @@ export class ZellijProvider implements MuxProviderV1, WindowCapable, SidebarCapa
     const session = sessionName ?? this.getCurrentSession();
     if (!session) return [];
     const panes = runInSessionJSON<ZellijPaneInfo[]>(session, ["list-panes", "--json"]);
+    const tabs = runInSessionJSON<ZellijTabInfo[]>(session, ["list-tabs", "--json"]);
     if (!panes) return [];
+    const tabWidths = new Map((tabs ?? []).map((tab) => [String(tab.tab_id), tab.viewport_columns]));
     return panes
       .filter((p) => !p.is_plugin && p.title === "opensessions")
       .map((p) => ({
         paneId: `terminal_${p.id}`,
         sessionName: session,
         windowId: String(p.tab_id),
+        width: p.pane_columns,
+        windowWidth: tabWidths.get(String(p.tab_id)),
       }));
   }
 

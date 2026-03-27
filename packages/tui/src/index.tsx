@@ -151,6 +151,7 @@ function App() {
   const [detailPanelHeight, setDetailPanelHeight] = createSignal(DEFAULT_DETAIL_PANEL_HEIGHT);
   const [isDetailResizeHover, setIsDetailResizeHover] = createSignal(false);
   const [isDetailResizing, setIsDetailResizing] = createSignal(false);
+  const detailPanelSessionName = createMemo(() => focusedSession() ?? mySession());
 
   // --- Modal state ---
   const [modal, setModal] = createSignal<"none" | "theme-picker" | "confirm-kill">("none");
@@ -209,7 +210,7 @@ function App() {
 
     setDetailPanelHeight(nextHeight);
 
-    const sessionName = mySession();
+    const sessionName = detailPanelSessionName();
     if (sessionName) {
       persistDetailPanelHeight(sessionName, nextHeight);
     }
@@ -221,7 +222,7 @@ function App() {
       x: event.x,
       y: event.y,
       currentHeight: detailPanelHeight(),
-      session: mySession(),
+      session: detailPanelSessionName(),
       target: event.target?.id ?? null,
     });
     if (event.button !== 0) return;
@@ -240,7 +241,7 @@ function App() {
       startY: detailResizeStartY,
       startHeight: detailResizeStartHeight,
       currentHeight: detailPanelHeight(),
-      session: mySession(),
+      session: detailPanelSessionName(),
     });
     if (!isDetailResizing()) return;
     const delta = detailResizeStartY - event.y;
@@ -249,7 +250,7 @@ function App() {
     logResizeDebug("handleDetailResizeDrag:applied", {
       delta,
       nextHeight,
-      session: mySession(),
+      session: detailPanelSessionName(),
     });
     event.stopPropagation();
   }
@@ -260,7 +261,7 @@ function App() {
       y: event?.y,
       isResizing: isDetailResizing(),
       currentHeight: detailPanelHeight(),
-      session: mySession(),
+      session: detailPanelSessionName(),
       target: event?.target?.id ?? null,
     });
     if (!isDetailResizing()) return;
@@ -268,7 +269,7 @@ function App() {
     setIsDetailResizing(false);
     setIsDetailResizeHover(false);
 
-    const sessionName = mySession();
+    const sessionName = detailPanelSessionName();
     if (sessionName) {
       persistDetailPanelHeight(sessionName, detailPanelHeight());
       logResizeDebug("endDetailResize:persisted", {
@@ -409,7 +410,7 @@ function App() {
   });
 
   createEffect(() => {
-    const sessionName = mySession();
+    const sessionName = detailPanelSessionName();
     if (!sessionName) return;
     const storedHeight = getStoredDetailPanelHeight(sessionName);
     logResizeDebug("loadStoredDetailPanelHeight", {
@@ -422,7 +423,7 @@ function App() {
   createEffect(() => {
     logResizeDebug("detailPanelHeight:changed", {
       height: detailPanelHeight(),
-      session: mySession(),
+      session: detailPanelSessionName(),
       isResizing: isDetailResizing(),
     });
   });
@@ -508,7 +509,14 @@ function App() {
       case "t":
         setModal("theme-picker");
         break;
-      case "d":
+      case "u":
+        send({ type: "show-all-sessions" });
+        break;
+      case "d": {
+        const focused = focusedSession();
+        if (focused) send({ type: "hide-session", name: focused });
+        break;
+      }
       case "x": {
         const focused = focusedSession();
         if (focused) {
@@ -622,6 +630,12 @@ function App() {
           <span style={{ fg: P().overlay1 }}>{" cycle  "}</span>
           <span style={{ fg: P().overlay0 }}>{"⏎"}</span>
           <span style={{ fg: P().overlay1 }}>{" go  "}</span>
+          <span style={{ fg: P().overlay0 }}>{"d"}</span>
+          <span style={{ fg: P().overlay1 }}>{" remove  "}</span>
+          <span style={{ fg: P().overlay0 }}>{"u"}</span>
+          <span style={{ fg: P().overlay1 }}>{" restore  "}</span>
+          <span style={{ fg: P().overlay0 }}>{"x"}</span>
+          <span style={{ fg: P().overlay1 }}>{" kill  "}</span>
           <span style={{ fg: P().overlay0 }}>{"t"}</span>
           <span style={{ fg: P().overlay1 }}>{" theme"}</span>
         </text>
@@ -772,6 +786,16 @@ function DetailPanel(props: DetailPanelProps) {
 
   const agents = () => props.session.agents ?? [];
   const hasAgents = () => agents().length > 0;
+  const portRows = () => {
+    const ports = props.session.ports ?? [];
+    const rows: number[][] = [];
+
+    for (let i = 0; i < ports.length; i += 3) {
+      rows.push(ports.slice(i, i + 3));
+    }
+
+    return rows;
+  };
 
   const truncDir = () => {
     const d = props.session.dir;
@@ -779,15 +803,6 @@ function DetailPanel(props: DetailPanelProps) {
     const home = process.env.HOME ?? "";
     const short = home && d.startsWith(home) ? "~" + d.slice(home.length) : d;
     return short.length > 24 ? "…" + short.slice(short.length - 23) : short;
-  };
-
-  const statusText = (status: string): string => {
-    if (status === "running") return "running";
-    if (status === "done") return "done";
-    if (status === "error") return "error";
-    if (status === "interrupted") return "stopped";
-    if (status === "waiting") return "waiting";
-    return "";
   };
 
   return (
@@ -837,15 +852,31 @@ function DetailPanel(props: DetailPanelProps) {
       {/* Listening ports */}
       <Show when={props.session.ports?.length}>
         <box height={1} />
-        <For each={props.session.ports}>
-          {(port) => (
-            <text truncate onMouseDown={() => {
-              Bun.spawn(["open", `http://localhost:${port}`], { stdout: "ignore", stderr: "ignore" });
-            }}>
-              <span style={{ fg: P().sky }}>{"⌁ "}</span>
-              <span style={{ fg: P().subtext0 }}>{"localhost:"}</span>
-              <span style={{ fg: P().text }}>{String(port)}</span>
-            </text>
+        <For each={portRows()}>
+          {(ports, rowIndex) => (
+            <box flexDirection="row" paddingRight={1}>
+              <text flexShrink={0}>
+                <span style={{ fg: rowIndex() === 0 ? P().overlay0 : P().surface2, attributes: DIM }}>
+                  {rowIndex() === 0 ? "local " : "      "}
+                </span>
+              </text>
+              <For each={ports}>
+                {(port, portIndex) => (
+                  <box flexDirection="row" flexShrink={0}>
+                    <text onMouseDown={() => {
+                      Bun.spawn(["open", `http://localhost:${port}`], { stdout: "ignore", stderr: "ignore" });
+                    }}>
+                      <span style={{ fg: P().sky, attributes: BOLD }}>{String(port)}</span>
+                    </text>
+                    <Show when={portIndex() < ports.length - 1}>
+                      <text>
+                        <span style={{ fg: P().surface2 }}>{" · "}</span>
+                      </text>
+                    </Show>
+                  </box>
+                )}
+              </For>
+            </box>
           )}
         </For>
       </Show>
@@ -1021,6 +1052,13 @@ function SessionCard(props: SessionCardProps) {
     return b.length > 15 ? b.slice(0, 14) + "…" : b;
   };
 
+  const portHint = () => {
+    const ports = props.session.ports ?? [];
+    if (ports.length === 0) return "";
+    if (ports.length === 1) return `⌁${ports[0]}`;
+    return `⌁${ports[0]}+${ports.length - 1}`;
+  };
+
   const bgColor = () => {
     if (props.isFocused) return P().surface0;
     return "transparent";
@@ -1058,13 +1096,25 @@ function SessionCard(props: SessionCardProps) {
             </Show>
           </box>
 
-          {/* Row 2: branch (only if exists) */}
-          <Show when={props.session.branch}>
-            <text truncate>
-              <span style={{ fg: props.isFocused ? P().pink : P().overlay0 }}>
-                {truncBranch()}
-              </span>
-            </text>
+          {/* Row 2: branch plus a compact local-port hint when available */}
+          <Show when={props.session.branch || portHint()}>
+            <box flexDirection="row">
+              <Show when={props.session.branch}>
+                <text truncate flexGrow={1}>
+                  <span style={{ fg: props.isFocused ? P().pink : P().overlay0 }}>
+                    {truncBranch()}
+                  </span>
+                </text>
+              </Show>
+              <Show when={portHint()}>
+                <text flexShrink={0}>
+                  <span style={{ fg: props.isFocused ? P().sky : P().overlay0 }}>
+                    {props.session.branch ? " " : ""}
+                    {portHint()}
+                  </span>
+                </text>
+              </Show>
+            </box>
           </Show>
         </box>
       </box>
