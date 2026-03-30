@@ -1153,24 +1153,42 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
           for (const line of lines) {
             try {
               const entry = JSON.parse(line);
+
+              // custom-title from /rename always wins
+              if (entry.type === "custom-title" && typeof entry.customTitle === "string") {
+                threadName = entry.customTitle;
+                continue;
+              }
+
               const msg = entry.message;
               if (!msg?.role) continue;
 
-              // Extract thread name from first user message
+              // Extract thread name from first user message (fallback)
               if (!threadName && msg.role === "user") {
                 const content = msg.content;
                 let t: string | undefined;
                 if (typeof content === "string") t = content;
                 else if (Array.isArray(content)) t = content.find((c: any) => c.type === "text" && c.text)?.text;
-                if (t && !t.startsWith("<") && !t.startsWith("{")) threadName = t.slice(0, 80);
+                if (t && !t.startsWith("<") && !t.startsWith("{") && !t.startsWith("[Request")) threadName = t.slice(0, 80);
               }
 
-              // Determine status from last entry (same logic as ClaudeCodeAgentWatcher)
+              // Determine status (same logic as watcher's determineStatus)
               if (msg.role === "assistant") {
                 const items = Array.isArray(msg.content) ? msg.content : [];
-                lastStatus = items.some((c: any) => c.type === "tool_use") ? "running" : "done";
+                if (items.some((c: any) => c.type === "tool_use")) { lastStatus = "running"; }
+                else if (items.some((c: any) => c.type === "thinking")) { lastStatus = "running"; }
+                else if (!msg.stop_reason) { lastStatus = "running"; }
+                else if (msg.stop_reason === "end_turn") { lastStatus = "done"; }
+                else if (msg.stop_reason === "tool_use") { lastStatus = "running"; }
+                else { lastStatus = "done"; }
               } else if (msg.role === "user") {
-                lastStatus = "running";
+                const content = msg.content;
+                const text = typeof content === "string" ? content
+                  : Array.isArray(content) ? content.find((c: any) => c.type === "text" && c.text)?.text : undefined;
+                if (text?.startsWith("[Request interrupted")) { lastStatus = "interrupted"; }
+                else if (text?.includes("<command-name>/exit</command-name>")) { lastStatus = "done"; }
+                else if (text?.includes("<command-name>/") || text?.startsWith("<local-command-caveat>")) { /* skip slash commands */ }
+                else { lastStatus = "running"; }
               }
             } catch { continue; }
           }
@@ -1311,8 +1329,9 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
       for (const [session, agents] of nextBySession) {
         const prev = paneAgentsBySession.get(session);
         if (!prev || prev.size !== agents.size) { changed = true; break; }
-        for (const key of agents.keys()) {
-          if (!prev.has(key)) { changed = true; break; }
+        for (const [key, agent] of agents) {
+          const prevAgent = prev.get(key);
+          if (!prevAgent || prevAgent.threadName !== agent.threadName || prevAgent.status !== agent.status) { changed = true; break; }
         }
         if (changed) break;
       }
