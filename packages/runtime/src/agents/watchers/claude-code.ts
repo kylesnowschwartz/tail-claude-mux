@@ -38,10 +38,14 @@ interface SessionState {
   fileSize: number;
   threadName?: string;
   projectDir?: string;
+  /** Timestamp when status first became "running" from a tool_use entry */
+  toolUseSeenAt?: number;
 }
 
 const POLL_MS = 2000;
 const STALE_MS = 5 * 60 * 1000;
+/** How long to wait before promoting tool_use "running" → "waiting" (permission prompt heuristic) */
+const TOOL_USE_WAIT_MS = 3000;
 
 // --- Status detection ---
 
@@ -64,6 +68,15 @@ export function determineStatus(entry: JournalEntry): AgentStatus {
   if (msg.role === "user") return "running";
 
   return "idle";
+}
+
+/** Returns true if the entry is an assistant message containing a tool_use block */
+export function isToolUseEntry(entry: JournalEntry): boolean {
+  const msg = entry.message;
+  if (msg?.role !== "assistant") return false;
+  const content = msg.content;
+  if (!Array.isArray(content)) return false;
+  return content.some((c) => c.type === "tool_use");
 }
 
 function extractThreadName(entry: JournalEntry): string | undefined {
@@ -130,7 +143,27 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
     const threadId = basename(filePath, ".jsonl");
     const prev = this.sessions.get(threadId);
 
-    if (prev && size === prev.fileSize) return;
+    if (prev && size === prev.fileSize) {
+      // File unchanged — check if we should promote tool_use "running" → "waiting"
+      if (prev.status === "running" && prev.toolUseSeenAt && Date.now() - prev.toolUseSeenAt >= TOOL_USE_WAIT_MS) {
+        prev.status = "waiting";
+        prev.toolUseSeenAt = undefined;
+        if (this.seeded && prev.projectDir) {
+          const session = this.ctx.resolveSession(prev.projectDir);
+          if (session) {
+            this.ctx.emit({
+              agent: "claude-code",
+              session,
+              status: "waiting",
+              ts: Date.now(),
+              threadId,
+              threadName: prev.threadName,
+            });
+          }
+        }
+      }
+      return;
+    }
 
     // Seed mode: read last entry to capture real status for post-seed emit
     if (!this.seeded) {
@@ -142,6 +175,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       const lines = text.split("\n").filter(Boolean);
       let latestStatus: AgentStatus = "idle";
       let threadName: string | undefined;
+      let lastEntryIsToolUse = false;
 
       for (const line of lines) {
         let entry: JournalEntry;
@@ -151,9 +185,13 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
           if (name) threadName = name;
         }
         latestStatus = determineStatus(entry);
+        lastEntryIsToolUse = isToolUseEntry(entry);
       }
 
-      this.sessions.set(threadId, { status: latestStatus, fileSize: size, threadName, projectDir });
+      this.sessions.set(threadId, {
+        status: latestStatus, fileSize: size, threadName, projectDir,
+        toolUseSeenAt: lastEntryIsToolUse && latestStatus === "running" ? Date.now() : undefined,
+      });
       return;
     }
 
@@ -171,6 +209,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
     const lines = text.split("\n").filter(Boolean);
     let latestStatus: AgentStatus = prev?.status ?? "idle";
     let threadName = prev?.threadName;
+    let lastEntryIsToolUse = false;
 
     for (const line of lines) {
       let entry: JournalEntry;
@@ -182,10 +221,12 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       }
 
       latestStatus = determineStatus(entry);
+      lastEntryIsToolUse = isToolUseEntry(entry);
     }
 
     const prevStatus = prev?.status;
-    this.sessions.set(threadId, { status: latestStatus, fileSize: size, threadName, projectDir });
+    const toolUseSeenAt = lastEntryIsToolUse && latestStatus === "running" ? Date.now() : undefined;
+    this.sessions.set(threadId, { status: latestStatus, fileSize: size, threadName, projectDir, toolUseSeenAt });
 
     if (latestStatus !== prevStatus) {
       const session = this.ctx.resolveSession(projectDir);

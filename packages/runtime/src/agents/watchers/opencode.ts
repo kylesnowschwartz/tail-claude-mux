@@ -37,6 +37,8 @@ interface PartData {
 
 const POLL_MS = 3000;
 const STALE_MS = 5 * 60 * 1000;
+/** How long to wait before promoting tool-call "running" → "waiting" (permission prompt heuristic) */
+const TOOL_USE_WAIT_MS = 3000;
 
 // --- Status detection ---
 
@@ -54,6 +56,12 @@ export function determineStatus(msg: MessageData | null, parts: PartData[]): Age
   return "idle";
 }
 
+/** Returns true if the status is "running" due to a tool call (not a user message) */
+export function isToolCallRunning(msg: MessageData | null, parts: PartData[]): boolean {
+  if (!msg || msg.role !== "assistant") return false;
+  return msg.finish === "tool-calls" || parts.some((p) => p.type === "tool");
+}
+
 // --- Watcher implementation ---
 
 export class OpenCodeAgentWatcher implements AgentWatcher {
@@ -61,6 +69,8 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
 
   private sessionTimestamps = new Map<string, number>();
   private sessionStatuses = new Map<string, AgentStatus>();
+  /** Tracks when a session first entered "running" from a tool call */
+  private toolUseSeenAt = new Map<string, number>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private ctx: AgentWatcherContext | null = null;
   private db: any = null;
@@ -153,6 +163,9 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
           const status = determineStatus(lastMsgData, lastParts);
           if (status === "idle") continue;
           this.sessionStatuses.set(row.id, status);
+          if (isToolCallRunning(lastMsgData, lastParts)) {
+            this.toolUseSeenAt.set(row.id, Date.now());
+          }
 
           const session = this.ctx.resolveSession(row.directory);
           if (!session) continue;
@@ -207,6 +220,12 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
         if (prevStatus === status) continue;
         this.sessionStatuses.set(row.id, status);
 
+        if (isToolCallRunning(lastMsgData, lastParts)) {
+          this.toolUseSeenAt.set(row.id, Date.now());
+        } else {
+          this.toolUseSeenAt.delete(row.id);
+        }
+
         const session = this.ctx.resolveSession(row.directory);
         if (!session) continue;
 
@@ -216,6 +235,32 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
           status,
           ts: Date.now(),
           threadId: row.id,
+          ...(row.title && { threadName: row.title }),
+        });
+      }
+
+      // Promote stale tool-call "running" → "waiting"
+      const now = Date.now();
+      const sessionDirMap = new Map(sessions.map((s) => [s.id, s]));
+      for (const [id, seenAt] of this.toolUseSeenAt) {
+        if (now - seenAt < TOOL_USE_WAIT_MS) continue;
+        const prevStatus = this.sessionStatuses.get(id);
+        if (prevStatus !== "running") { this.toolUseSeenAt.delete(id); continue; }
+
+        this.sessionStatuses.set(id, "waiting");
+        this.toolUseSeenAt.delete(id);
+
+        const row = sessionDirMap.get(id);
+        if (!row) continue;
+        const session = this.ctx.resolveSession(row.directory);
+        if (!session) continue;
+
+        this.ctx.emit({
+          agent: "opencode",
+          session,
+          status: "waiting",
+          ts: now,
+          threadId: id,
           ...(row.title && { threadName: row.title }),
         });
       }

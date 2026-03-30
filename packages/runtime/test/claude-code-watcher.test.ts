@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, writeFileSync, rmSync, appendFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { ClaudeCodeAgentWatcher, determineStatus } from "../src/agents/watchers/claude-code";
+import { ClaudeCodeAgentWatcher, determineStatus, isToolUseEntry } from "../src/agents/watchers/claude-code";
 import type { AgentEvent } from "../src/contracts/agent";
 import type { AgentWatcherContext } from "../src/contracts/agent-watcher";
 
@@ -35,6 +35,32 @@ describe("Claude Code determineStatus", () => {
     expect(determineStatus({
       message: { role: "assistant", content: "thinking..." },
     })).toBe("done");
+  });
+});
+
+// --- isToolUseEntry ---
+
+describe("Claude Code isToolUseEntry", () => {
+  test("returns true for assistant with tool_use content", () => {
+    expect(isToolUseEntry({
+      message: { role: "assistant", content: [{ type: "tool_use" }] },
+    })).toBe(true);
+  });
+
+  test("returns false for assistant with text only", () => {
+    expect(isToolUseEntry({
+      message: { role: "assistant", content: [{ type: "text", text: "hello" }] },
+    })).toBe(false);
+  });
+
+  test("returns false for user message", () => {
+    expect(isToolUseEntry({
+      message: { role: "user", content: "hello" },
+    })).toBe(false);
+  });
+
+  test("returns false for entry with no message", () => {
+    expect(isToolUseEntry({})).toBe(false);
   });
 });
 
@@ -125,4 +151,34 @@ describe("ClaudeCodeAgentWatcher", () => {
     const lastEvent = postSeed[postSeed.length - 1]!;
     expect(lastEvent.status).toBe("done");
   });
+
+  test("promotes tool_use running to waiting after timeout", async () => {
+    const projDir = join(tmpDir, "-projects-myapp");
+    mkdirSync(projDir, { recursive: true });
+
+    const filePath = join(projDir, "session-004.jsonl");
+    // Seed with idle content
+    writeFileSync(filePath, JSON.stringify({ message: { role: "assistant", content: [{ type: "text", text: "hi" }] } }) + "\n");
+
+    watcher.start(ctx);
+    await new Promise((r) => setTimeout(r, 200));
+    const seedCount = events.length;
+
+    // Append assistant tool_use — initially "running"
+    appendFileSync(filePath, JSON.stringify({
+      message: { role: "assistant", content: [{ type: "tool_use" }] },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 2500));
+
+    const runningEvents = events.slice(seedCount).filter((e) => e.status === "running");
+    expect(runningEvents.length).toBeGreaterThanOrEqual(1);
+
+    // Wait for the promotion threshold (TOOL_USE_WAIT_MS = 3s) + a poll cycle
+    await new Promise((r) => setTimeout(r, 3500));
+
+    const waitingEvents = events.slice(seedCount).filter((e) => e.status === "waiting");
+    expect(waitingEvents.length).toBeGreaterThanOrEqual(1);
+    expect(waitingEvents[0]!.agent).toBe("claude-code");
+    expect(waitingEvents[0]!.session).toBe("myapp-session");
+  }, 10_000);
 });

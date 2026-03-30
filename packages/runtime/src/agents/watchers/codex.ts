@@ -33,11 +33,15 @@ interface SessionSnapshot {
   fileSize: number;
   projectDir?: string;
   threadName?: string;
+  /** Timestamp when status first became "running" from a function_call entry */
+  toolUseSeenAt?: number;
 }
 
 const POLL_MS = 2000;
 const STALE_MS = 5 * 60 * 1000;
 const THREAD_NAME_MAX = 80;
+/** How long to wait before promoting function_call "running" → "waiting" (permission prompt heuristic) */
+const TOOL_USE_WAIT_MS = 3000;
 
 function assistantStatus(phase?: string): AgentStatus {
   return phase === "commentary" ? "running" : "done";
@@ -77,6 +81,11 @@ export function determineStatus(entry: CodexEntry): AgentStatus | null {
   }
 
   return null;
+}
+
+/** Returns true if the entry is a function_call (tool invocation that may need permission) */
+export function isToolCallEntry(entry: CodexEntry): boolean {
+  return entry.type === "response_item" && entry.payload?.type === "function_call";
 }
 
 function parseThreadId(filePath: string): string {
@@ -121,6 +130,7 @@ function applyEntries(text: string, base: SessionSnapshot, indexedThreadName?: s
   let status = base.status;
   let projectDir = base.projectDir;
   let threadName = indexedThreadName ?? base.threadName;
+  let lastEntryIsToolCall = false;
 
   for (const rawLine of text.split("\n")) {
     if (!rawLine.trim()) continue;
@@ -143,10 +153,14 @@ function applyEntries(text: string, base: SessionSnapshot, indexedThreadName?: s
     const nextStatus = determineStatus(entry);
     if (nextStatus) {
       status = nextStatus;
+      lastEntryIsToolCall = isToolCallEntry(entry);
     }
   }
 
-  return { ...base, status, projectDir, threadName };
+  return {
+    ...base, status, projectDir, threadName,
+    toolUseSeenAt: lastEntryIsToolCall && status === "running" ? Date.now() : undefined,
+  };
 }
 
 async function collectSessionFiles(dir: string): Promise<string[]> {
@@ -240,7 +254,27 @@ export class CodexAgentWatcher implements AgentWatcher {
     const threadId = parseThreadId(filePath);
     const prev = this.sessions.get(threadId);
 
-    if (prev && fileStat.size === prev.fileSize) return;
+    if (prev && fileStat.size === prev.fileSize) {
+      // File unchanged — check if we should promote function_call "running" → "waiting"
+      if (prev.status === "running" && prev.toolUseSeenAt && Date.now() - prev.toolUseSeenAt >= TOOL_USE_WAIT_MS) {
+        prev.status = "waiting";
+        prev.toolUseSeenAt = undefined;
+        if (this.seeded && prev.projectDir) {
+          const session = this.ctx.resolveSession(prev.projectDir);
+          if (session) {
+            this.ctx.emit({
+              agent: "codex",
+              session,
+              status: "waiting",
+              ts: Date.now(),
+              threadId,
+              ...(prev.threadName && { threadName: prev.threadName }),
+            });
+          }
+        }
+      }
+      return;
+    }
 
     const indexedThreadName = this.threadNames.get(threadId);
     let nextSnapshot: SessionSnapshot;
