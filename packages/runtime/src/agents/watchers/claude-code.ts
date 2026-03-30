@@ -102,6 +102,8 @@ interface SessionState {
   toolUseSeenAt?: number;
   /** Timestamp when the file was last observed to have grown (for stuck detection) */
   lastGrowthAt?: number;
+  /** File mtime at last observation — used for seed emission ts instead of Date.now() */
+  lastMtimeMs?: number;
 }
 
 const POLL_MS = 2000;
@@ -122,6 +124,10 @@ const EXIT_COMMAND_PATTERN = "<command-name>/exit</command-name>";
 /** Slash commands like /vim, /clear, /model write entries with XML markup — not agent activity */
 const SLASH_COMMAND_PATTERN = "<command-name>/";
 const LOCAL_COMMAND_CAVEAT = "<local-command-caveat>";
+/** User ran `! command` at the prompt — bash I/O entries are not agent activity */
+const BASH_INPUT_PREFIX = "<bash-input>";
+const BASH_STDOUT_PREFIX = "<bash-stdout>";
+const BASH_STDERR_PREFIX = "<bash-stderr>";
 
 // --- Status detection ---
 
@@ -169,6 +175,8 @@ export function determineStatus(entry: JournalEntry): AgentStatus | null {
       if (text.includes(EXIT_COMMAND_PATTERN)) return "done";
       // Slash commands (/vim, /clear, /model, etc.) and their caveats → skip
       if (text.includes(SLASH_COMMAND_PATTERN) || text.startsWith(LOCAL_COMMAND_CAVEAT)) return null;
+      // Bash I/O from `! command` at the prompt → skip
+      if (text.startsWith(BASH_INPUT_PREFIX) || text.startsWith(BASH_STDOUT_PREFIX) || text.startsWith(BASH_STDERR_PREFIX)) return null;
     }
 
     // tool_result → running (tool just executed, next turn coming)
@@ -242,6 +250,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
   private projectsDir: string;
   private scanning = false;
   private seeded = false;
+  private scanPromise: Promise<void> | null = null;
 
   constructor() {
     this.projectsDir = join(homedir(), ".claude", "projects");
@@ -259,6 +268,13 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
     this.fsWatchers = [];
     if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
     this.ctx = null;
+  }
+
+  /** Trigger an immediate scan and return when complete.
+   *  If a scan is already in flight, waits for it then runs another. */
+  async flush(): Promise<void> {
+    if (this.scanPromise) await this.scanPromise;
+    await this.scan();
   }
 
   /** Emit a status change event if we have a valid session mapping */
@@ -343,6 +359,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         status: latestStatus, fileSize: size, threadName, projectDir,
         toolUseSeenAt: lastEntryIsToolUse && latestStatus === "running" ? mtimeMs : undefined,
         lastGrowthAt: (latestStatus === "running" || latestStatus === "waiting") ? mtimeMs : undefined,
+        lastMtimeMs: mtimeMs,
       });
       return;
     }
@@ -393,6 +410,13 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
     if (this.scanning || !this.ctx) return;
     this.scanning = true;
 
+    const p = this.scanInternal();
+    this.scanPromise = p;
+    await p;
+    this.scanPromise = null;
+  }
+
+  private async scanInternal(): Promise<void> {
     try {
       let dirs: string[];
       try { dirs = await readdir(this.projectsDir); } catch { return; }
@@ -420,7 +444,6 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       if (!this.seeded) {
         this.seeded = true;
         dbg("seed", "complete", { sessionCount: this.sessions.size });
-        // Emit seeded sessions with non-idle status (like amp watcher does)
         for (const [threadId, state] of this.sessions) {
           dbg("seed", "check", { threadId: threadId.slice(0, 8), status: state.status, projectDir: state.projectDir });
           if (state.status === "idle" || !state.projectDir) continue;
@@ -431,7 +454,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
             agent: "claude-code",
             session,
             status: state.status,
-            ts: Date.now(),
+            ts: state.lastMtimeMs ?? Date.now(),
             threadId,
             threadName: state.threadName,
           });

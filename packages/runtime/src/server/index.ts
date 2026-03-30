@@ -5,7 +5,7 @@ import type { MuxProvider } from "../contracts/mux";
 import { isFullSidebarCapable, isBatchCapable } from "../contracts/mux";
 import type { AgentEvent } from "../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext } from "../contracts/agent-watcher";
-import { AgentTracker, instanceKey } from "../agents/tracker";
+import { AgentTracker } from "../agents/tracker";
 import { SessionOrder } from "./session-order";
 import { SessionMetadataStore } from "./metadata-store";
 import { loadConfig, saveConfig } from "../config";
@@ -393,51 +393,6 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     return null;
   }
 
-  /** Merge pane-detected agents into watcher-provided agents for a session.
-   *  Watcher events take precedence — pane presence only adds synthetic entries
-   *  for agents that aren't already tracked by watchers. */
-  function mergeAgentsWithPanePresence(sessionName: string, watcherAgents: AgentEvent[]): AgentEvent[] {
-    const paneAgents = paneAgentsBySession.get(sessionName);
-    if (!paneAgents || paneAgents.size === 0) return watcherAgents;
-
-    const result = [...watcherAgents];
-    // Index watcher agents by threadId for enrichment
-    const watcherByThreadId = new Map<string, number>();
-    for (let i = 0; i < result.length; i++) {
-      const a = result[i]!;
-      if (a.threadId) watcherByThreadId.set(`${a.agent}:${a.threadId}`, i);
-    }
-    const trackedByKey = new Set(watcherAgents.map((a) => instanceKey(a.agent, a.threadId)));
-
-    for (const [_key, presence] of paneAgents) {
-      // If the pane scanner resolved a threadId that the watcher already tracks,
-      // stamp the paneId onto the watcher entry instead of adding a duplicate
-      if (presence.threadId) {
-        const idx = watcherByThreadId.get(`${presence.agent}:${presence.threadId}`);
-        if (idx != null) {
-          result[idx] = { ...result[idx]!, paneId: presence.paneId };
-          continue;
-        }
-      }
-      // Check by instanceKey as well
-      if (trackedByKey.has(instanceKey(presence.agent, presence.threadId))) continue;
-      // If we have no threadId from pane scan and watcher tracks any instance of this agent, skip
-      if (!presence.threadId && watcherAgents.some((a) => a.agent === presence.agent)) continue;
-
-      result.push({
-        agent: presence.agent,
-        session: sessionName,
-        status: presence.status ?? "idle",
-        ts: presence.lastSeenTs,
-        threadId: presence.threadId,
-        threadName: presence.threadName,
-        paneId: presence.paneId,
-      });
-    }
-
-    return result;
-  }
-
   function computeState(): ServerState {
     // Merge sessions from all providers
     const allMuxSessions: (import("../contracts/mux").MuxSessionInfo & { provider: MuxProvider })[] = [];
@@ -502,7 +457,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
         windows,
         uptime,
         agentState: tracker.getState(name),
-        agents: mergeAgentsWithPanePresence(name, tracker.getAgents(name)),
+        agents: tracker.getAgents(name),
         eventTimestamps: tracker.getEventTimestamps(name),
         metadata: metadataStore.get(name),
       };
@@ -1064,18 +1019,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
 
   // --- Pane agent scanning (detect agents running in current session panes) ---
 
-  interface PaneAgentPresence {
-    agent: string;
-    session: string;
-    paneId: string;
-    threadId?: string;
-    threadName?: string;
-    status?: import("../contracts/agent").AgentStatus;
-    lastSeenTs: number;
-  }
-
-  // Pane agent presence per session: sessionName → Map<instanceKey, PaneAgentPresence>
-  let paneAgentsBySession = new Map<string, Map<string, PaneAgentPresence>>();
+  // Pane presence is now folded into the tracker via applyPanePresence().
 
   /** Build parent→children map from a single ps snapshot (avoids per-pane pgrep calls). */
   function buildProcessTree(): { childrenOf: Map<number, number[]>; commOf: Map<number, string> } {
@@ -1220,6 +1164,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
                 if (text?.startsWith("[Request interrupted")) { lastStatus = "interrupted"; }
                 else if (text?.includes("<command-name>/exit</command-name>")) { lastStatus = "done"; }
                 else if (text?.includes("<command-name>/") || text?.startsWith("<local-command-caveat>")) { /* skip slash commands */ }
+                else if (text?.startsWith("<bash-input>") || text?.startsWith("<bash-stdout>") || text?.startsWith("<bash-stderr>")) { /* skip ! command I/O */ }
                 else { lastStatus = "running"; }
               }
             } catch { continue; }
@@ -1255,8 +1200,8 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
 
   /** Scan all panes across all tmux sessions and identify running agents.
    *  Uses a single `tmux list-panes -a` call for efficiency. */
-  function scanAllTmuxPaneAgents(): Map<string, Map<string, PaneAgentPresence>> {
-    const result = new Map<string, Map<string, PaneAgentPresence>>();
+  function scanAllTmuxPaneAgents(): Map<string, import("../contracts/agent").PanePresenceInput[]> {
+    const result = new Map<string, import("../contracts/agent").PanePresenceInput[]>();
 
     const raw = shell([
       "tmux", "list-panes", "-a",
@@ -1289,7 +1234,6 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
 
     // Build process tree once for all panes
     const tree = buildProcessTree();
-    const now = Date.now();
 
     for (const pane of nonSidebar) {
       for (const [agentName, patterns] of Object.entries(AGENT_TITLE_PATTERNS)) {
@@ -1315,20 +1259,17 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
           threadId = info.threadId;
         }
 
-        const key = `${agentName}:pane:${pane.id}`;
         let sessionAgents = result.get(pane.session);
         if (!sessionAgents) {
-          sessionAgents = new Map();
+          sessionAgents = [];
           result.set(pane.session, sessionAgents);
         }
-        sessionAgents.set(key, {
+        sessionAgents.push({
           agent: agentName,
-          session: pane.session,
           paneId: pane.id,
           threadId,
           threadName,
           status,
-          lastSeenTs: now,
         });
       }
     }
@@ -1336,43 +1277,32 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     return result;
   }
 
-  /** Refresh pane agent cache for all tmux sessions. */
+  /** Refresh pane agent presence by scanning tmux panes and folding results into the tracker. */
   function refreshPaneAgents(): void {
-    // Check if any provider is tmux
     const hasTmux = allProviders.some((p) => p.name === "tmux");
     if (!hasTmux) {
-      if (paneAgentsBySession.size > 0) {
-        paneAgentsBySession.clear();
-        tracker.setPinnedInstancesMulti(new Map());
-        broadcastState();
-      }
+      // No tmux provider — mark all previously-alive agents as exited
+      // by applying empty presence for each tracked session
+      // (applyPanePresence handles the exited transition internally)
       return;
     }
 
     const nextBySession = scanAllTmuxPaneAgents();
-    const allPinnedKeys = new Map<string, string[]>();
-    for (const [session, agents] of nextBySession) {
-      allPinnedKeys.set(session, [...agents.keys()]);
+    let changed = false;
+
+    // Apply presence for sessions that have pane agents
+    for (const [session, paneAgents] of nextBySession) {
+      if (tracker.applyPanePresence(session, paneAgents)) changed = true;
     }
 
-    // Check if anything changed
-    let changed = paneAgentsBySession.size !== nextBySession.size;
-    if (!changed) {
-      for (const [session, agents] of nextBySession) {
-        const prev = paneAgentsBySession.get(session);
-        if (!prev || prev.size !== agents.size) { changed = true; break; }
-        for (const [key, agent] of agents) {
-          const prevAgent = prev.get(key);
-          if (!prevAgent || prevAgent.threadName !== agent.threadName || prevAgent.status !== agent.status) { changed = true; break; }
+    // For sessions NOT in the scan, apply empty presence to transition alive → exited
+    if (lastState) {
+      for (const s of lastState.sessions) {
+        if (!nextBySession.has(s.name)) {
+          if (tracker.applyPanePresence(s.name, [])) changed = true;
         }
-        if (changed) break;
       }
     }
-
-    paneAgentsBySession = nextBySession;
-
-    // Update tracker pinning for all sessions
-    tracker.setPinnedInstancesMulti(allPinnedKeys);
 
     if (changed) broadcastState();
   }

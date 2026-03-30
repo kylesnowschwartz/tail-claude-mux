@@ -1,4 +1,4 @@
-import type { AgentEvent } from "../contracts/agent";
+import type { AgentEvent, PanePresenceInput } from "../contracts/agent";
 import { TERMINAL_STATUSES } from "../contracts/agent";
 
 const MAX_EVENT_TIMESTAMPS = 30;
@@ -24,8 +24,6 @@ export class AgentTracker {
   // Per-instance unseen tracking: "session\0instanceKey"
   private unseenInstances = new Set<string>();
   private active = new Set<string>();
-  // Pinned instances: agents backed by a live pane process — exempt from pruning
-  private pinnedKeys = new Map<string, Set<string>>(); // session → Set<instanceKey>
 
   private unseenKey(session: string, key: string): string {
     return `${session}\0${key}`;
@@ -136,7 +134,7 @@ export class AgentTracker {
     for (const [session, sessionInstances] of this.instances) {
       for (const [key, event] of sessionInstances) {
         if (event.status === "running" && now - event.ts > timeoutMs) {
-          if (this.isPinned(session, key)) continue;
+          if (event.liveness === "alive") continue;
           sessionInstances.delete(key);
           this.unseenInstances.delete(this.unseenKey(session, key));
         }
@@ -147,7 +145,7 @@ export class AgentTracker {
     }
   }
 
-  /** Auto-prune terminal instances older than timeout, but only if instance is not unseen or pinned */
+  /** Auto-prune terminal instances older than timeout, but only if instance is not unseen or alive */
   pruneTerminal(): void {
     const now = Date.now();
     for (const [session, sessionInstances] of this.instances) {
@@ -155,7 +153,7 @@ export class AgentTracker {
         if (!TERMINAL_STATUSES.has(event.status)) continue;
         const ukey = this.unseenKey(session, key);
         if (this.unseenInstances.has(ukey)) continue; // Don't prune unseen — user hasn't looked yet
-        if (this.isPinned(session, key)) continue; // Don't prune agents backed by live panes
+        if (event.liveness === "alive") continue; // Don't prune agents backed by live panes
         if (now - event.ts > TERMINAL_PRUNE_MS) {
           sessionInstances.delete(key);
         }
@@ -208,26 +206,113 @@ export class AgentTracker {
     for (const s of sessions) this.active.add(s);
   }
 
-  /** Update the set of pinned instance keys for a session (live pane-backed agents). */
-  setPinnedInstances(session: string | null, keys: string[]): void {
-    this.pinnedKeys.clear();
-    if (session && keys.length > 0) {
-      this.pinnedKeys.set(session, new Set(keys));
-    }
-  }
+  /** Fold pane scanner results into the tracker as the single source of truth.
+   *  - Matching watcher entries get paneId + liveness stamped
+   *  - Unmatched pane agents create synthetic entries
+   *  - Previously-alive agents missing from the scan transition to "exited"
+   *  Returns true if anything changed (caller uses this for broadcast decisions). */
+  applyPanePresence(session: string, paneAgents: PanePresenceInput[]): boolean {
+    let changed = false;
+    let sessionInstances = this.instances.get(session);
 
-  /** Update pinned instance keys for multiple sessions at once. */
-  setPinnedInstancesMulti(keysBySession: Map<string, string[]>): void {
-    this.pinnedKeys.clear();
-    for (const [session, keys] of keysBySession) {
-      if (keys.length > 0) {
-        this.pinnedKeys.set(session, new Set(keys));
+    // Index incoming pane agents by threadId for fast lookup
+    const paneByThreadKey = new Map<string, PanePresenceInput>();
+    const paneByPaneId = new Set<string>();
+    for (const pa of paneAgents) {
+      if (pa.threadId) {
+        paneByThreadKey.set(instanceKey(pa.agent, pa.threadId), pa);
+      }
+      paneByPaneId.add(pa.paneId);
+    }
+
+    // 1. Mark existing entries that were alive but are no longer in the pane set → "exited"
+    if (sessionInstances) {
+      for (const [key, event] of sessionInstances) {
+        if (event.liveness === "alive") {
+          // Check if this entry's paneId is still in the scan
+          const stillPresent = event.paneId && paneByPaneId.has(event.paneId);
+          // Also check by threadId match
+          const matchedByThread = paneByThreadKey.has(key);
+          if (!stillPresent && !matchedByThread) {
+            event.liveness = "exited";
+            event.paneId = undefined;
+            changed = true;
+          }
+        }
       }
     }
-  }
 
-  /** Check if an instance is pinned (backed by a live pane process). */
-  isPinned(session: string, key: string): boolean {
-    return this.pinnedKeys.get(session)?.has(key) ?? false;
+    // 2. Process each pane agent
+    for (const pa of paneAgents) {
+      if (!sessionInstances) {
+        sessionInstances = new Map();
+        this.instances.set(session, sessionInstances);
+      }
+
+      const key = pa.threadId ? instanceKey(pa.agent, pa.threadId) : null;
+
+      // Try to match by threadId first
+      if (key && sessionInstances.has(key)) {
+        const existing = sessionInstances.get(key)!;
+        const wasDifferent = existing.paneId !== pa.paneId || existing.liveness !== "alive";
+        existing.paneId = pa.paneId;
+        existing.liveness = "alive";
+        // Enrich threadName from pane if watcher didn't provide one
+        if (!existing.threadName && pa.threadName) {
+          existing.threadName = pa.threadName;
+        }
+        // Clean up any synthetic entry that was created for this pane before
+        // the threadId could be resolved (prevents duplicates)
+        const syntheticKey = `${pa.agent}:pane:${pa.paneId}`;
+        if (syntheticKey !== key && sessionInstances.has(syntheticKey)) {
+          sessionInstances.delete(syntheticKey);
+          this.unseenInstances.delete(this.unseenKey(session, syntheticKey));
+          changed = true;
+        }
+        if (wasDifferent) changed = true;
+        continue;
+      }
+
+      // No threadId from pane scan — check if watcher already tracks any instance of this agent
+      if (!key) {
+        let hasWatcherInstance = false;
+        for (const [, ev] of sessionInstances) {
+          if (ev.agent === pa.agent) { hasWatcherInstance = true; break; }
+        }
+        if (hasWatcherInstance) continue;
+      }
+
+      // Create synthetic entry for unmatched pane agent
+      const syntheticKey = pa.threadId
+        ? instanceKey(pa.agent, pa.threadId)
+        : `${pa.agent}:pane:${pa.paneId}`;
+      if (!sessionInstances.has(syntheticKey)) {
+        sessionInstances.set(syntheticKey, {
+          agent: pa.agent,
+          session,
+          status: pa.status ?? "idle",
+          ts: Date.now(),
+          threadId: pa.threadId,
+          threadName: pa.threadName,
+          paneId: pa.paneId,
+          liveness: "alive",
+        });
+        changed = true;
+      } else {
+        // Update existing synthetic entry
+        const existing = sessionInstances.get(syntheticKey)!;
+        const wasDifferent = existing.paneId !== pa.paneId
+          || existing.liveness !== "alive"
+          || existing.status !== (pa.status ?? existing.status)
+          || existing.threadName !== (pa.threadName ?? existing.threadName);
+        existing.paneId = pa.paneId;
+        existing.liveness = "alive";
+        if (pa.status) existing.status = pa.status;
+        if (pa.threadName) existing.threadName = pa.threadName;
+        if (wasDifferent) changed = true;
+      }
+    }
+
+    return changed;
   }
 }
