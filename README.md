@@ -1,5 +1,8 @@
 # opensessions
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Star History](https://img.shields.io/github/stars/Ataraxy-Labs/opensessions?style=social)](https://github.com/Ataraxy-Labs/opensessions)
+
 tmux is all you need. make tmux great again :) 
 
 <img width="4180" height="2416" alt="amp-img-e686694168e21738-aesthetic" src="https://github.com/user-attachments/assets/2caaee1a-b3f5-4041-aa3c-5b3668aa1912" />
@@ -156,6 +159,10 @@ For the full tmux workflow with keybindings, troubleshooting, and configuration 
 - The app is effectively pinned to `127.0.0.1:7391` today.
 - `theme`, `sidebarWidth`, `sidebarPosition`, `plugins`, and `mux` are wired through the runtime; other typed config fields are not all live yet.
 - Inline theme objects exist in core, but the running server persists and broadcasts theme names.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Ataraxy-Labs/opensessions&type=Date)](https://star-history.com/#Ataraxy-Labs/opensessions&Date)
 
 ## License
 
