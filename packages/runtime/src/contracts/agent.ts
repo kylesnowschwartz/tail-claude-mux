@@ -21,11 +21,10 @@ export interface AgentEvent {
 
 export const TERMINAL_STATUSES = new Set<AgentStatus>(["done", "error", "interrupted"]);
 
-/** Input from the pane scanner to applyPanePresence(). */
+/** Input from the pane scanner to applyPanePresence().
+ *  The scanner only answers "is there a live agent process in this pane?"
+ *  Status, threadId, and threadName come exclusively from watchers. */
 export interface PanePresenceInput {
   agent: string;
   paneId: string;
-  threadId?: string;
-  threadName?: string;
-  status?: AgentStatus;
 }

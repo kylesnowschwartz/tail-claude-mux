@@ -1019,17 +1019,6 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
 
   // --- Pane agent scanning (detect agents running in current session panes) ---
 
-  /** User message prefixes that are system/shell output — not agent activity.
-   *  Matches tail-claude's systemOutputTags + hardNoiseTags. */
-  const NOISE_USER_PREFIXES = [
-    "<local-command-caveat>", "<local-command-stdout>", "<local-command-stderr>",
-    "<bash-input>", "<bash-stdout>", "<bash-stderr>",
-    "<system-reminder>", "<task-notification>",
-  ];
-  function isNoiseUserMessage(text: string | undefined): boolean {
-    return text != null && NOISE_USER_PREFIXES.some((p) => text.startsWith(p));
-  }
-
   // Pane presence is now folded into the tracker via applyPanePresence().
 
   /** Build parent→children map from a single ps snapshot (avoids per-pane pgrep calls). */
@@ -1080,153 +1069,9 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     return false;
   }
 
-  /** Find child PID matching a name pattern using pre-built process tree. */
-  function findChildPidFast(
-    pid: number, name: string,
-    tree: ReturnType<typeof buildProcessTree>, depth = 0,
-  ): number | undefined {
-    if (depth > 2) return undefined;
-    const children = tree.childrenOf.get(pid);
-    if (!children) return undefined;
-    for (const childPid of children) {
-      const comm = tree.commOf.get(childPid);
-      if (comm && commMatches(comm, name)) return childPid;
-      const found = findChildPidFast(childPid, name, tree, depth + 1);
-      if (found) return found;
-    }
-    return undefined;
-  }
-
-  /** Resolve threadId/threadName for an amp pane from its title. */
-  function resolveAmpPaneInfo(title: string): { threadId?: string; threadName?: string } {
-    // Amp pane title format: "amp - <threadName> - <dir>"
-    if (!title.toLowerCase().startsWith("amp - ")) return {};
-    const rest = title.slice(6);
-    const dashIdx = rest.lastIndexOf(" - ");
-    const threadName = dashIdx > 0 ? rest.slice(0, dashIdx) : rest;
-    return { threadName: threadName || undefined };
-  }
-
-  /** Resolve threadId/threadName/status for a Claude Code pane via ~/.claude/sessions/<pid>.json + journal. */
-  function resolveClaudeCodePaneInfo(
-    panePid: number, tree: ReturnType<typeof buildProcessTree>,
-  ): { threadId?: string; threadName?: string; status?: import("../contracts/agent").AgentStatus } {
-    const agentPid = findChildPidFast(panePid, "claude", tree);
-    if (!agentPid) return {};
-    const sessionsDir = join(homedir(), ".claude", "sessions");
-    try {
-      const data = JSON.parse(readFileSync(join(sessionsDir, `${agentPid}.json`), "utf-8"));
-      const threadId: string | undefined = data.sessionId;
-      const cwd: string | undefined = data.cwd;
-      if (!threadId) return {};
-      // Scope journal search to the session's working directory to avoid
-      // matching a JSONL from a different project with the same sessionId
-      const journalInfo = resolveClaudeCodeJournalInfo(threadId, cwd);
-      return { threadId, ...journalInfo };
-    } catch { return {}; }
-  }
-
-  /** Read the JSONL journal to extract thread name and current status.
-   *  When cwd is provided, only searches the matching project directory. */
-  function resolveClaudeCodeJournalInfo(
-    threadId: string, cwd?: string,
-  ): { threadName?: string; status?: import("../contracts/agent").AgentStatus } {
-    const projectsDir = join(homedir(), ".claude", "projects");
-    try {
-      // If cwd is provided, try the scoped path first (encode path same as Claude Code)
-      const dirs: string[] = [];
-      if (cwd) {
-        const encoded = cwd.replace(/[/._]/g, "-");
-        dirs.push(encoded);
-      }
-      // Fall back to scanning all project dirs if scoped lookup fails
-      try {
-        for (const d of require("fs").readdirSync(projectsDir) as string[]) {
-          if (!dirs.includes(d)) dirs.push(d);
-        }
-      } catch {}
-      for (const dir of dirs) {
-        const filePath = join(projectsDir, dir, `${threadId}.jsonl`);
-        try {
-          const text = readFileSync(filePath, "utf-8");
-          const lines = text.split("\n").filter(Boolean);
-          let threadName: string | undefined;
-          let lastStatus: import("../contracts/agent").AgentStatus = "idle";
-
-          for (const line of lines) {
-            try {
-              const entry = JSON.parse(line);
-
-              // custom-title from /rename always wins
-              if (entry.type === "custom-title" && typeof entry.customTitle === "string") {
-                threadName = entry.customTitle;
-                continue;
-              }
-
-              const msg = entry.message;
-              if (!msg?.role) continue;
-
-              // Extract thread name from first user message (fallback)
-              if (!threadName && msg.role === "user") {
-                const content = msg.content;
-                let t: string | undefined;
-                if (typeof content === "string") t = content;
-                else if (Array.isArray(content)) t = content.find((c: any) => c.type === "text" && c.text)?.text;
-                if (t && !t.startsWith("<") && !t.startsWith("{") && !t.startsWith("[Request")) threadName = t.slice(0, 80);
-              }
-
-              // Determine status (same logic as watcher's determineStatus)
-              if (msg.role === "assistant") {
-                const items = Array.isArray(msg.content) ? msg.content : [];
-                if (items.some((c: any) => c.type === "tool_use")) { lastStatus = "running"; }
-                else if (items.some((c: any) => c.type === "thinking")) { lastStatus = "running"; }
-                else if (!msg.stop_reason) { lastStatus = "running"; }
-                else if (msg.stop_reason === "end_turn") { lastStatus = "done"; }
-                else if (msg.stop_reason === "tool_use") { lastStatus = "running"; }
-                else { lastStatus = "done"; }
-              } else if (msg.role === "user") {
-                const content = msg.content;
-                const text = typeof content === "string" ? content
-                  : Array.isArray(content) ? content.find((c: any) => c.type === "text" && c.text)?.text : undefined;
-                if (text?.startsWith("[Request interrupted")) { lastStatus = "interrupted"; }
-                else if (text?.includes("<command-name>/exit</command-name>")) { lastStatus = "done"; }
-                else if (text?.includes("<command-name>/")) { /* skip slash commands */ }
-                else if (isNoiseUserMessage(text)) { /* skip system/shell output */ }
-                else { lastStatus = "running"; }
-              }
-            } catch { continue; }
-          }
-
-          return { threadName, status: lastStatus };
-        } catch { continue; }
-      }
-    } catch {}
-    return {};
-  }
-
-  /** Resolve threadId for a Codex pane via logs_1.sqlite. */
-  function resolveCodexPaneInfo(
-    panePid: number, tree: ReturnType<typeof buildProcessTree>,
-  ): { threadId?: string; threadName?: string } {
-    const agentPid = findChildPidFast(panePid, "codex", tree);
-    if (!agentPid) return {};
-    const dbPath = join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "logs_1.sqlite");
-    let db: any;
-    try {
-      const { Database } = require("bun:sqlite");
-      db = new Database(dbPath, { readonly: true });
-    } catch { return {}; }
-    try {
-      const row = db.query(
-        `SELECT thread_id FROM logs WHERE process_uuid LIKE ? AND thread_id IS NOT NULL ORDER BY ts DESC LIMIT 1`,
-      ).get(`pid:${agentPid}:%`);
-      if (row?.thread_id) return { threadId: row.thread_id };
-    } catch {} finally { try { db.close(); } catch {} }
-    return {};
-  }
-
   /** Scan all panes across all tmux sessions and identify running agents.
-   *  Uses a single `tmux list-panes -a` call for efficiency. */
+   *  Returns only {agent, paneId} — no threadId, status, or threadName.
+   *  Watchers are the single source of truth for those fields. */
   function scanAllTmuxPaneAgents(): Map<string, import("../contracts/agent").PanePresenceInput[]> {
     const result = new Map<string, import("../contracts/agent").PanePresenceInput[]>();
 
@@ -1268,36 +1113,12 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
         // (e.g. an Amp thread named "Detect Claude session names" matches "claude")
         if (!matchProcessTreeFast(pane.pid, patterns, tree)) continue;
 
-        let threadId: string | undefined;
-        let threadName: string | undefined;
-        let status: import("../contracts/agent").AgentStatus | undefined;
-
-        // Resolve thread info per agent type
-        if (agentName === "amp") {
-          const info = resolveAmpPaneInfo(pane.title);
-          threadName = info.threadName;
-        } else if (agentName === "claude-code") {
-          const info = resolveClaudeCodePaneInfo(pane.pid, tree);
-          threadId = info.threadId;
-          threadName = info.threadName;
-          status = info.status;
-        } else if (agentName === "codex") {
-          const info = resolveCodexPaneInfo(pane.pid, tree);
-          threadId = info.threadId;
-        }
-
         let sessionAgents = result.get(pane.session);
         if (!sessionAgents) {
           sessionAgents = [];
           result.set(pane.session, sessionAgents);
         }
-        sessionAgents.push({
-          agent: agentName,
-          paneId: pane.id,
-          threadId,
-          threadName,
-          status,
-        });
+        sessionAgents.push({ agent: agentName, paneId: pane.id });
       }
     }
 
