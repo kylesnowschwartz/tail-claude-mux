@@ -1471,6 +1471,21 @@ function SessionCard(props: SessionCardProps) {
     return parts.join(" · ");
   };
 
+  const LIVE_STATUSES = new Set(["running", "idle", "waiting"]);
+  const agentCount = () =>
+    props.session.agents?.filter((a) => LIVE_STATUSES.has(a.status)).length ?? 0;
+
+  const agentBadge = () => {
+    const n = agentCount();
+    if (n === 0) return "";
+    return n === 1 ? "●" : `●${n}`;
+  };
+
+  const agentBadgeColor = () => {
+    if (props.isFocused) return P().subtext0;
+    return P().overlay0;
+  };
+
   const metaTone = () => props.session.metadata?.status?.tone;
 
   const bgColor = () => {
@@ -1503,6 +1518,11 @@ function SessionCard(props: SessionCardProps) {
                 {truncName()}
               </span>
             </text>
+            <Show when={agentBadge()}>
+              <text flexShrink={0}>
+                <span style={{ fg: agentBadgeColor() }}>{" "}{agentBadge()}</span>
+              </text>
+            </Show>
             <Show when={statusIcon()}>
               <text flexShrink={0}>
                 <span style={{ fg: statusColor() }}>{" "}{statusIcon()}</span>

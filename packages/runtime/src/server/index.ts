@@ -864,7 +864,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
       const trimmed = childPid.trim();
       if (!trimmed) continue;
       const childCmd = shell(["ps", "-p", trimmed, "-o", "comm="]);
-      if (childCmd && patterns.some((pat) => childCmd.toLowerCase().includes(pat))) return true;
+      if (childCmd && patterns.some((pat) => commMatches(childCmd.toLowerCase(), pat))) return true;
       if (matchProcessTree(trimmed, patterns, depth + 1)) return true;
     }
     return false;
@@ -1089,6 +1089,18 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     return { childrenOf, commOf };
   }
 
+  /** Match a comm string against a pattern as a whole word.
+   *  "claude" matches "claude", "/usr/bin/claude", "claude-code"
+   *  but NOT "tail-claude" or "my-claude-fork". The pattern must appear
+   *  at the start of the comm or after a path separator (/). */
+  function commMatches(comm: string, pat: string): boolean {
+    const idx = comm.indexOf(pat);
+    if (idx < 0) return false;
+    // Pattern must be at start, or preceded by a path separator
+    if (idx > 0 && comm[idx - 1] !== "/") return false;
+    return true;
+  }
+
   /** Walk up to 3 levels of child processes using a pre-built process tree. */
   function matchProcessTreeFast(
     pid: number, patterns: string[],
@@ -1099,7 +1111,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     if (!children) return false;
     for (const childPid of children) {
       const comm = tree.commOf.get(childPid);
-      if (comm && patterns.some((pat) => comm.includes(pat))) return true;
+      if (comm && patterns.some((pat) => commMatches(comm, pat))) return true;
       if (matchProcessTreeFast(childPid, patterns, tree, depth + 1)) return true;
     }
     return false;
@@ -1115,7 +1127,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     if (!children) return undefined;
     for (const childPid of children) {
       const comm = tree.commOf.get(childPid);
-      if (comm?.includes(name)) return childPid;
+      if (comm && commMatches(comm, name)) return childPid;
       const found = findChildPidFast(childPid, name, tree, depth + 1);
       if (found) return found;
     }
