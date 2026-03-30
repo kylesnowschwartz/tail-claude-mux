@@ -401,16 +401,24 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     if (!paneAgents || paneAgents.size === 0) return watcherAgents;
 
     const result = [...watcherAgents];
-    // Build a set of tracked agent:threadId keys for matching
+    // Index watcher agents by threadId for enrichment
+    const watcherByThreadId = new Map<string, number>();
+    for (let i = 0; i < result.length; i++) {
+      const a = result[i]!;
+      if (a.threadId) watcherByThreadId.set(`${a.agent}:${a.threadId}`, i);
+    }
     const trackedByKey = new Set(watcherAgents.map((a) => instanceKey(a.agent, a.threadId)));
-    // Also track which agent names + threadIds are covered by watchers
-    const trackedThreadIds = new Set(
-      watcherAgents.filter((a) => a.threadId).map((a) => `${a.agent}:${a.threadId}`),
-    );
 
     for (const [_key, presence] of paneAgents) {
-      // If the pane scanner resolved a threadId, check if watcher already tracks it
-      if (presence.threadId && trackedThreadIds.has(`${presence.agent}:${presence.threadId}`)) continue;
+      // If the pane scanner resolved a threadId that the watcher already tracks,
+      // stamp the paneId onto the watcher entry instead of adding a duplicate
+      if (presence.threadId) {
+        const idx = watcherByThreadId.get(`${presence.agent}:${presence.threadId}`);
+        if (idx != null) {
+          result[idx] = { ...result[idx]!, paneId: presence.paneId };
+          continue;
+        }
+      }
       // Check by instanceKey as well
       if (trackedByKey.has(instanceKey(presence.agent, presence.threadId))) continue;
       // If we have no threadId from pane scan and watcher tracks any instance of this agent, skip

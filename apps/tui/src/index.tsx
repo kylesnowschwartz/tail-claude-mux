@@ -1471,9 +1471,8 @@ function SessionCard(props: SessionCardProps) {
     return parts.join(" · ");
   };
 
-  const LIVE_STATUSES = new Set(["running", "idle", "waiting"]);
   const agentCount = () =>
-    props.session.agents?.filter((a) => LIVE_STATUSES.has(a.status)).length ?? 0;
+    props.session.agents?.filter((a) => a.paneId || !["done", "error"].includes(a.status)).length ?? 0;
 
   const agentBadge = () => {
     const n = agentCount();
