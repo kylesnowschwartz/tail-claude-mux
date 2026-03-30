@@ -1106,18 +1106,34 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     try {
       const data = JSON.parse(readFileSync(join(sessionsDir, `${agentPid}.json`), "utf-8"));
       const threadId: string | undefined = data.sessionId;
+      const cwd: string | undefined = data.cwd;
       if (!threadId) return {};
-      // Try to get thread name and status from the journal
-      const journalInfo = resolveClaudeCodeJournalInfo(threadId);
+      // Scope journal search to the session's working directory to avoid
+      // matching a JSONL from a different project with the same sessionId
+      const journalInfo = resolveClaudeCodeJournalInfo(threadId, cwd);
       return { threadId, ...journalInfo };
     } catch { return {}; }
   }
 
-  /** Read the JSONL journal to extract thread name and current status. */
-  function resolveClaudeCodeJournalInfo(threadId: string): { threadName?: string; status?: import("../contracts/agent").AgentStatus } {
+  /** Read the JSONL journal to extract thread name and current status.
+   *  When cwd is provided, only searches the matching project directory. */
+  function resolveClaudeCodeJournalInfo(
+    threadId: string, cwd?: string,
+  ): { threadName?: string; status?: import("../contracts/agent").AgentStatus } {
     const projectsDir = join(homedir(), ".claude", "projects");
     try {
-      const dirs = require("fs").readdirSync(projectsDir) as string[];
+      // If cwd is provided, try the scoped path first (encode path same as Claude Code)
+      const dirs: string[] = [];
+      if (cwd) {
+        const encoded = cwd.replace(/[/._]/g, "-");
+        dirs.push(encoded);
+      }
+      // Fall back to scanning all project dirs if scoped lookup fails
+      try {
+        for (const d of require("fs").readdirSync(projectsDir) as string[]) {
+          if (!dirs.includes(d)) dirs.push(d);
+        }
+      } catch {}
       for (const dir of dirs) {
         const filePath = join(projectsDir, dir, `${threadId}.jsonl`);
         try {
