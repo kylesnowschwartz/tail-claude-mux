@@ -19,12 +19,10 @@ export {
 } from "./contracts/mux";
 export type { AgentStatus, AgentLiveness, AgentEvent, PanePresenceInput } from "./contracts/agent";
 export { TERMINAL_STATUSES } from "./contracts/agent";
-export type { AgentWatcher, AgentWatcherContext } from "./contracts/agent-watcher";
+export type { AgentWatcher, AgentWatcherContext, HookPayload, HookReceiver } from "./contracts/agent-watcher";
+export { isHookReceiver } from "./contracts/agent-watcher";
 export { AgentTracker } from "./agents/tracker";
-export { AmpAgentWatcher } from "./agents/watchers/amp";
-export { ClaudeCodeAgentWatcher } from "./agents/watchers/claude-code";
-export { CodexAgentWatcher } from "./agents/watchers/codex";
-export { OpenCodeAgentWatcher } from "./agents/watchers/opencode";
+export { ClaudeCodeHookAdapter } from "./agents/watchers/claude-code-hooks";
 export { MuxRegistry } from "./mux/registry";
 export { detectMux } from "./mux/detect";
 export { PluginLoader } from "./plugins/loader";

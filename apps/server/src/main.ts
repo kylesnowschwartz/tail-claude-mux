@@ -1,8 +1,5 @@
 import {
-  AmpAgentWatcher,
-  ClaudeCodeAgentWatcher,
-  CodexAgentWatcher,
-  OpenCodeAgentWatcher,
+  ClaudeCodeHookAdapter,
   PluginLoader,
   SERVER_HOST,
   SERVER_PORT,
@@ -62,10 +59,7 @@ if (extraProviders.length > 0) {
   console.log(`Extra mux providers: ${extraProviders.map((provider) => provider.name).join(", ")}`);
 }
 
-loader.registerWatcher(new AmpAgentWatcher());
-loader.registerWatcher(new ClaudeCodeAgentWatcher());
-loader.registerWatcher(new CodexAgentWatcher());
-loader.registerWatcher(new OpenCodeAgentWatcher());
+loader.registerWatcher(new ClaudeCodeHookAdapter());
 
 const watchers = loader.getWatchers();
 if (watchers.length > 0) {
