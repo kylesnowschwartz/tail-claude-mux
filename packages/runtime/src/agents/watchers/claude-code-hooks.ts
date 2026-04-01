@@ -181,13 +181,14 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
   }
 
   handleHook(payload: HookPayload): void {
-    if (!this.ctx) return;
+    dbg("hook", "received", { event: payload.event, cwd: payload.cwd, session_id: payload.session_id?.slice(0, 8) });
+    if (!this.ctx) { dbg("hook", "no-ctx"); return; }
 
     const newStatus = HOOK_STATUS_MAP[payload.event];
-    if (!newStatus) return; // Unknown event — forward-compatible, ignore
+    if (!newStatus) { dbg("hook", "unknown-event", { event: payload.event }); return; }
 
     const session = this.ctx.resolveSession(payload.cwd);
-    if (!session) return; // Unresolved project directory
+    if (!session) { dbg("hook", "no-session", { cwd: payload.cwd }); return; }
 
     const threadId = payload.session_id;
     let state = this.threads.get(threadId);
@@ -215,15 +216,20 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
         state!.waitingTimer = undefined;
         if (state!.status === "running") {
           state!.status = "waiting";
+          dbg("hook", "promote-waiting", { threadId: threadId.slice(0, 8), session });
           this.emit(threadId, state!, session);
         }
       }, WAITING_DELAY_MS);
     }
 
     // Deduplicate: don't emit if status hasn't changed
-    if (state.status === newStatus) return;
+    if (state.status === newStatus) {
+      dbg("hook", "dedup", { threadId: threadId.slice(0, 8), status: newStatus });
+      return;
+    }
 
     state.status = newStatus;
+    dbg("hook", "emit", { threadId: threadId.slice(0, 8), session, status: newStatus });
     this.emit(threadId, state, session);
   }
 
