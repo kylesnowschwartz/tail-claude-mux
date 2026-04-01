@@ -444,97 +444,124 @@ function App() {
       renderer.removeListener("capabilities", doStartupRefocus);
     });
 
-    const socket = new WebSocket(`ws://${SERVER_HOST}:${SERVER_PORT}`);
-    ws = socket;
+    let intentionalQuit = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let resizeHandler: (() => void) | null = null;
 
-    socket.onopen = () => {
-      setConnected(true);
-      const tty = clientTty();
-      if (tty) send({ type: "identify", clientTty: tty });
-      reIdentify();
+    function connectWebSocket() {
+      const socket = new WebSocket(`ws://${SERVER_HOST}:${SERVER_PORT}`);
+      ws = socket;
 
-      // Report sidebar width on SIGWINCH (terminal resize / pane drag)
-      // Only the TUI in the current session reports — other TUIs' resizes
-      // are always enforcement echoes, never user drags.
-      let lastReportedWidth = renderer.terminalWidth;
-      const onResize = () => {
-        const width = renderer.terminalWidth;
-        if (width !== lastReportedWidth) {
-          lastReportedWidth = width;
-          const my = mySession();
-          const current = currentSession();
-          if (my && current && my !== current) return;
-          send({ type: "report-width", width });
-        }
-      };
-      renderer.on("resize", onResize);
-      onCleanup(() => renderer.removeListener("resize", onResize));
-    };
+      socket.onopen = () => {
+        setConnected(true);
+        const tty = clientTty();
+        if (tty) send({ type: "identify", clientTty: tty });
+        reIdentify();
 
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data as string) as ServerMessage;
-        let startupFocusToPublish: string | null = null;
-        batch(() => {
-          if (msg.type === "state") {
-            const startupFocus = !startupFocusSynced
-              && startupSessionName
-              && msg.sessions.some((session) => session.name === startupSessionName)
-              ? startupSessionName
-              : msg.focusedSession;
-
-            if (startupFocus === startupSessionName) {
-              startupFocusSynced = true;
-              if (msg.focusedSession !== startupSessionName) {
-                startupFocusToPublish = startupSessionName;
-              }
-            }
-
-            setSessions(reconcile(msg.sessions, { key: "name" }));
-            setFocusedSession(startupFocus);
-            setCurrentSession(msg.currentSession);
-            setTheme(resolveTheme(msg.theme));
-          } else if (msg.type === "focus") {
-            setFocusedSession(msg.focusedSession);
-            setCurrentSession(msg.currentSession);
-          } else if (msg.type === "your-session") {
-            setMySession(msg.name);
-            if (msg.clientTty) setClientTty(msg.clientTty);
-
-            if (!startupFocusSynced && sessions.some((session) => session.name === msg.name)) {
-              startupFocusSynced = true;
-              setFocusedSession(msg.name);
-              if (focusedSession() !== msg.name) {
-                startupFocusToPublish = msg.name;
-              }
-            }
-          } else if (msg.type === "re-identify") {
-            reIdentify();
+        // Report sidebar width on SIGWINCH (terminal resize / pane drag)
+        // Only the TUI in the current session reports — other TUIs' resizes
+        // are always enforcement echoes, never user drags.
+        if (resizeHandler) renderer.removeListener("resize", resizeHandler);
+        let lastReportedWidth = renderer.terminalWidth;
+        resizeHandler = () => {
+          const width = renderer.terminalWidth;
+          if (width !== lastReportedWidth) {
+            lastReportedWidth = width;
+            const my = mySession();
+            const current = currentSession();
+            if (my && current && my !== current) return;
+            send({ type: "report-width", width });
           }
-        });
+        };
+        renderer.on("resize", resizeHandler);
+      };
 
-        if (startupFocusToPublish) {
-          send({ type: "focus-session", name: startupFocusToPublish });
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data as string) as ServerMessage;
+
+          // Intentional quit — server told us to exit
+          if ((msg as any).type === "quit") {
+            intentionalQuit = true;
+            if (ws) ws.close();
+            renderer.destroy();
+            return;
+          }
+
+          let startupFocusToPublish: string | null = null;
+          batch(() => {
+            if (msg.type === "state") {
+              const startupFocus = !startupFocusSynced
+                && startupSessionName
+                && msg.sessions.some((session) => session.name === startupSessionName)
+                ? startupSessionName
+                : msg.focusedSession;
+
+              if (startupFocus === startupSessionName) {
+                startupFocusSynced = true;
+                if (msg.focusedSession !== startupSessionName) {
+                  startupFocusToPublish = startupSessionName;
+                }
+              }
+
+              setSessions(reconcile(msg.sessions, { key: "name" }));
+              setFocusedSession(startupFocus);
+              setCurrentSession(msg.currentSession);
+              setTheme(resolveTheme(msg.theme));
+            } else if (msg.type === "focus") {
+              setFocusedSession(msg.focusedSession);
+              setCurrentSession(msg.currentSession);
+            } else if (msg.type === "your-session") {
+              setMySession(msg.name);
+              if (msg.clientTty) setClientTty(msg.clientTty);
+
+              if (!startupFocusSynced && sessions.some((session) => session.name === msg.name)) {
+                startupFocusSynced = true;
+                setFocusedSession(msg.name);
+                if (focusedSession() !== msg.name) {
+                  startupFocusToPublish = msg.name;
+                }
+              }
+            } else if (msg.type === "re-identify") {
+              reIdentify();
+            }
+          });
+
+          if (startupFocusToPublish) {
+            send({ type: "focus-session", name: startupFocusToPublish });
+          }
+        } catch {}
+      };
+
+      socket.onclose = () => {
+        setConnected(false);
+        ws = null;
+        if (intentionalQuit) return;
+
+        // Retry connection — server may be restarting
+        let attempts = 0;
+        const MAX_ATTEMPTS = 30;
+        const RETRY_MS = 500;
+
+        function retry() {
+          if (intentionalQuit || attempts >= MAX_ATTEMPTS) {
+            renderer.destroy();
+            return;
+          }
+          attempts++;
+          reconnectTimer = setTimeout(() => connectWebSocket(), RETRY_MS);
         }
-      } catch {}
-    };
+        retry();
+      };
+    }
 
-    socket.onclose = () => {
-      setConnected(false);
-      renderer.destroy();
-    };
+    connectWebSocket();
 
-    onCleanup(() => socket.close());
-
-    // Listen for quit messages from server
-    socket.addEventListener("message", (event) => {
-      try {
-        const msg = JSON.parse(event.data as string);
-        if (msg.type === "quit") {
-          if (ws) ws.close();
-          renderer.destroy();
-        }
-      } catch {}
+    onCleanup(() => {
+      intentionalQuit = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (resizeHandler) renderer.removeListener("resize", resizeHandler);
+      if (ws) ws.close();
     });
   });
 

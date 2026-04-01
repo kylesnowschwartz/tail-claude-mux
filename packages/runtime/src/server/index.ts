@@ -1428,6 +1428,27 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
         return new Response("ok", { status: 200 });
       }
 
+      if (req.method === "POST" && url.pathname === "/restart") {
+        log("http", "POST /restart — spawning new server and exiting");
+        // Respond before shutting down so the caller gets confirmation
+        setTimeout(() => {
+          cleanup();
+          server.stop();
+          // Re-exec the server with the same entry point
+          const serverEntry = join(
+            process.env.OPENSESSIONS_DIR ?? join(import.meta.dir, "..", "..", "..", ".."),
+            "apps", "server", "src", "main.ts",
+          );
+          const proc = Bun.spawn([process.execPath, "run", serverEntry], {
+            stdio: ["ignore", "ignore", "ignore"],
+            env: { ...process.env },
+          });
+          proc.unref();
+          process.exit(0);
+        }, 50);
+        return new Response("restarting", { status: 200 });
+      }
+
       if (req.method === "POST" && url.pathname === "/switch-index") {
         try {
           const index = Number.parseInt(url.searchParams.get("index") ?? "", 10);
