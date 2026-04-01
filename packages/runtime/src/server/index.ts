@@ -5,6 +5,7 @@ import type { MuxProvider } from "../contracts/mux";
 import { isFullSidebarCapable, isBatchCapable } from "../contracts/mux";
 import type { AgentEvent } from "../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext } from "../contracts/agent-watcher";
+import { isHookReceiver } from "../contracts/agent-watcher";
 import { AgentTracker } from "../agents/tracker";
 import { SessionOrder } from "./session-order";
 import { SessionMetadataStore } from "./metadata-store";
@@ -1397,6 +1398,18 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
 
       if (req.method === "POST" && url.pathname === "/refresh") {
         broadcastState();
+        return new Response("ok", { status: 200 });
+      }
+
+      // Hook endpoint: receives lifecycle events from agent processes.
+      // Always returns 200 — hook failures must never block the agent.
+      if (req.method === "POST" && url.pathname === "/hook") {
+        try {
+          const body = await req.json();
+          for (const w of allWatchers) {
+            if (isHookReceiver(w)) w.handleHook(body);
+          }
+        } catch {}
         return new Response("ok", { status: 200 });
       }
 
