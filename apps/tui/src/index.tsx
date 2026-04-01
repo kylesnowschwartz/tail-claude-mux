@@ -697,6 +697,10 @@ function App() {
         send({ type: "refresh" });
         flash("refreshed");
         break;
+      case "=":
+        send({ type: "equalize-width" });
+        flash("equalized");
+        break;
       case "t":
         themeBeforePreview = theme();
         setModal("theme-picker");

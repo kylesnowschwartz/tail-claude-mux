@@ -112,7 +112,8 @@ export type ClientCommand =
   | { type: "identify-pane"; paneId: string; sessionName: string }
   | { type: "focus-agent-pane"; session: string; agent: string; threadId?: string; threadName?: string }
   | { type: "kill-agent-pane"; session: string; agent: string; threadId?: string; threadName?: string }
-  | { type: "report-width"; width: number };
+  | { type: "report-width"; width: number }
+  | { type: "equalize-width" };
 
 // Catppuccin Mocha palette
 export const C = {

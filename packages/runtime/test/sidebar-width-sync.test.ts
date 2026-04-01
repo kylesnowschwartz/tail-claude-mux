@@ -9,7 +9,7 @@ describe("sidebar width sync", () => {
   });
 
   test("clampSidebarWidth passes through values above minimum", () => {
-    expect(clampSidebarWidth(30)).toBe(30);
+    expect(clampSidebarWidth(50)).toBe(50);
     expect(clampSidebarWidth(MIN_SIDEBAR_WIDTH)).toBe(MIN_SIDEBAR_WIDTH);
     expect(clampSidebarWidth(100)).toBe(100);
   });
