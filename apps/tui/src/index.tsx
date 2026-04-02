@@ -1508,7 +1508,8 @@ function SessionCard(props: SessionCardProps) {
 
   const agentCount = () =>
     props.session.agents?.filter((a) =>
-      a.liveness === "alive" || !["done", "error", "interrupted"].includes(a.status),
+      a.liveness === "alive" ||
+      (a.liveness !== "exited" && !["done", "error", "interrupted"].includes(a.status)),
     ).length ?? 0;
 
   const agentBadge = () => {

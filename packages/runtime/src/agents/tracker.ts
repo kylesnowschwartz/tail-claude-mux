@@ -242,14 +242,28 @@ export class AgentTracker {
     const activePaneIds = new Set<string>();
     for (const pa of paneAgents) activePaneIds.add(pa.paneId);
 
-    // 1. Transition previously-alive entries whose pane disappeared → "exited"
+    // 1. Handle previously-alive entries whose pane disappeared
+    //    - Synthetics (pane-keyed, no watcher data): delete outright — they have no
+    //      meaningful state to preserve and become zombie indicators if left behind.
+    //    - Watcher-sourced entries: transition liveness to "exited" so the watcher
+    //      can still manage their status lifecycle.
     if (sessionInstances) {
-      for (const [, event] of sessionInstances) {
+      for (const [key, event] of sessionInstances) {
         if (event.liveness === "alive" && event.paneId && !activePaneIds.has(event.paneId)) {
-          event.liveness = "exited";
-          event.paneId = undefined;
+          if (key.includes(":pane:")) {
+            // Synthetic — remove entirely
+            sessionInstances.delete(key);
+            this.unseenInstances.delete(this.unseenKey(session, key));
+          } else {
+            // Watcher-sourced — keep entry, clear pane binding
+            event.liveness = "exited";
+            event.paneId = undefined;
+          }
           changed = true;
         }
+      }
+      if (sessionInstances.size === 0) {
+        this.instances.delete(session);
       }
     }
 

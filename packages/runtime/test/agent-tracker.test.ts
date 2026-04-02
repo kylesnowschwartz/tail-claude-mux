@@ -255,24 +255,40 @@ describe("AgentTracker", () => {
       expect(agents[0]!.threadId).toBeUndefined(); // scanner doesn't resolve threadId
     });
 
-    test("transitions previously-alive agent to exited when missing from scan", () => {
-      // First: apply presence to make it alive
+    test("transitions watcher-sourced entry to exited when pane disappears", () => {
+      // Watcher creates a real entry, then scanner enriches it
+      tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "running" }));
       tracker.applyPanePresence("sess-1", [
         { agent: "claude-code", paneId: "%1" },
       ]);
+      expect(tracker.getAgents("sess-1")[0]!.liveness).toBe("alive");
 
-      // Verify it's alive
-      let agents = tracker.getAgents("sess-1");
-      expect(agents[0]!.liveness).toBe("alive");
-
-      // Second: empty scan — agent disappeared
+      // Pane disappears — watcher entry should survive but transition to exited
       const changed = tracker.applyPanePresence("sess-1", []);
 
       expect(changed).toBe(true);
-      agents = tracker.getAgents("sess-1");
+      const agents = tracker.getAgents("sess-1");
       expect(agents.length).toBe(1);
       expect(agents[0]!.liveness).toBe("exited");
       expect(agents[0]!.paneId).toBeUndefined();
+      // Watcher-sourced data preserved
+      expect(agents[0]!.threadId).toBe("abc");
+      expect(agents[0]!.status).toBe("running");
+    });
+
+    test("deletes synthetic entries when their pane disappears", () => {
+      // Synthetic created by pane scanner (no watcher data)
+      tracker.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%5" },
+      ]);
+      expect(tracker.getAgents("sess-1").length).toBe(1);
+      expect(tracker.getAgents("sess-1")[0]!.status).toBe("idle");
+
+      // Pane disappears — synthetic should be removed entirely, not left as zombie
+      const changed = tracker.applyPanePresence("sess-1", []);
+
+      expect(changed).toBe(true);
+      expect(tracker.getAgents("sess-1").length).toBe(0);
     });
 
     test("does not transition unknown-liveness agents to exited", () => {
