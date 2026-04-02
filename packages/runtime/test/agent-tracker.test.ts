@@ -201,9 +201,9 @@ describe("AgentTracker", () => {
 
   // --- pruneTerminal ---
 
-  test("pruneTerminal removes seen terminal instances after timeout", () => {
+  test("pruneTerminal removes seen terminal instances after timeout when pane exited", () => {
     const oldTs = Date.now() - 6 * 60 * 1000; // 6 min ago, past TERMINAL_PRUNE_MS
-    tracker.applyEvent(event({ session: "sess-1", status: "done", ts: oldTs }));
+    tracker.applyEvent(event({ session: "sess-1", status: "done", ts: oldTs, liveness: "exited" }));
     tracker.markSeen("sess-1"); // Mark seen so pruneTerminal can remove it
 
     tracker.pruneTerminal();
@@ -330,6 +330,18 @@ describe("AgentTracker", () => {
       tracker.pruneStuck(3 * 60 * 1000);
 
       expect(tracker.getState("sess-1")).toBeNull();
+    });
+
+    test("pruneTerminal skips entries with unknown liveness (no pane scan yet)", () => {
+      const oldTs = Date.now() - 6 * 60 * 1000;
+      tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "done", ts: oldTs }));
+      tracker.markSeen("sess-1");
+
+      // No pane scan has run — liveness is undefined
+      tracker.pruneTerminal();
+
+      // Should survive: unknown liveness means we can't confirm the pane is gone
+      expect(tracker.getAgents("sess-1").length).toBe(1);
     });
 
     test("pruneTerminal skips alive agents even with terminal status", () => {

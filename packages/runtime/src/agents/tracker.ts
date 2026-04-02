@@ -173,7 +173,7 @@ export class AgentTracker {
         if (!TERMINAL_STATUSES.has(event.status)) continue;
         const ukey = this.unseenKey(session, key);
         if (this.unseenInstances.has(ukey)) continue; // Don't prune unseen — user hasn't looked yet
-        if (event.liveness === "alive") continue; // Don't prune agents backed by live panes
+        if (event.liveness !== "exited") continue; // Only prune when we know the pane is gone
         if (now - event.ts > TERMINAL_PRUNE_MS) {
           sessionInstances.delete(key);
         }
