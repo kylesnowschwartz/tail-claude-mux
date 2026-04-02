@@ -72,6 +72,22 @@ function toneColor(tone: MetadataTone | undefined, palette: ReturnType<() => The
   }
 }
 
+function formatDir(dir: string | undefined): { project: string; parent: string } {
+  if (!dir) return { project: "", parent: "" };
+  const home = process.env.HOME ?? "";
+  const display = home && dir.startsWith(home) ? "~" + dir.slice(home.length) : dir;
+  const segments = display.split("/").filter(Boolean);
+  if (segments.length <= 1) return { project: display, parent: "" };
+  const project = segments[segments.length - 1];
+  const parent = segments[segments.length - 2];
+  return { project, parent };
+}
+
+function sanitizeThreadName(raw: string): string {
+  const firstLine = raw.split("\n")[0];
+  return firstLine.replace(/^(?:---+|#+|\*{1,2}|>\s*)+\s*/, "").trim();
+}
+
 function logResizeDebug(message: string, data?: Record<string, unknown>): void {
   const ts = new Date().toISOString();
   const extra = data ? ` ${JSON.stringify(data)}` : "";
@@ -1166,13 +1182,7 @@ function DetailPanel(props: DetailPanelProps) {
     return m.logs.slice(-8);
   };
 
-  const truncDir = () => {
-    const d = props.session.dir;
-    if (!d) return "";
-    const home = process.env.HOME ?? "";
-    const short = home && d.startsWith(home) ? "~" + d.slice(home.length) : d;
-    return short.length > 24 ? "…" + short.slice(short.length - 23) : short;
-  };
+  const dirParts = () => formatDir(props.session.dir);
 
   return (
     <box flexDirection="column" flexShrink={0} paddingLeft={1}>
@@ -1217,8 +1227,13 @@ function DetailPanel(props: DetailPanelProps) {
 
       {/* Directory */}
       <text truncate>
-        <span style={{ fg: P().overlay0, attributes: DIM }}>{truncDir()}</span>
+        <span style={{ fg: P().subtext0 }}>{dirParts().project}</span>
       </text>
+      <Show when={dirParts().parent}>
+        <text truncate>
+          <span style={{ fg: P().overlay0, attributes: DIM }}>{"  "}{dirParts().parent}</span>
+        </text>
+      </Show>
 
       {/* Agent instances */}
       <Show when={hasAgents()}>
@@ -1376,6 +1391,9 @@ function AgentListItem(props: AgentListItemProps) {
             <text flexGrow={1} truncate>
               <span style={{ fg: color() }}>{icon()}</span>
               <span style={{ fg: props.isKeyboardFocused ? P().text : P().subtext1, attributes: props.isKeyboardFocused ? BOLD : undefined }}>{" "}{props.agent.agent}</span>
+              <Show when={props.agent.threadId}>
+                <span style={{ fg: P().overlay0, attributes: DIM }}>{" #"}{props.agent.threadId!.slice(0, 4)}</span>
+              </Show>
             </text>
             <Show when={!isTerminal() || !isUnseen()}>
               <text flexShrink={0}>
@@ -1399,7 +1417,7 @@ function AgentListItem(props: AgentListItemProps) {
           {/* Row 2: thread name */}
           <Show when={props.agent.threadName}>
             <text truncate>
-              <span style={{ fg: isUnseen() ? color() : P().overlay0 }}>{props.agent.threadName}</span>
+              <span style={{ fg: isUnseen() ? color() : P().overlay0, attributes: { italic: true } }}>{sanitizeThreadName(props.agent.threadName!)}</span>
             </text>
           </Show>
         </box>
