@@ -402,6 +402,35 @@ describe("AgentTracker", () => {
       expect(agents[0]!.liveness).toBe("alive");
     });
 
+    test("two panes of same agent match distinct watcher entries (no spurious idle)", () => {
+      // Two Claude Code instances in the same session, each with a watcher entry
+      tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "thread-aaa", status: "done" }));
+      tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "thread-bbb", status: "running" }));
+
+      // Pane scanner finds two claude-code panes
+      const changed = tracker.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%10" },
+        { agent: "claude-code", paneId: "%11" },
+      ]);
+
+      expect(changed).toBe(true);
+      const agents = tracker.getAgents("sess-1");
+
+      // Both watcher entries should be enriched — no synthetic "idle" entry created
+      expect(agents.length).toBe(2);
+      const statuses = agents.map((a) => a.status).sort();
+      expect(statuses).toEqual(["done", "running"]);
+
+      // Each got a distinct paneId
+      const panes = new Set(agents.map((a) => a.paneId));
+      expect(panes.size).toBe(2);
+      expect(panes.has("%10")).toBe(true);
+      expect(panes.has("%11")).toBe(true);
+
+      // No idle synthetics
+      expect(agents.every((a) => a.status !== "idle")).toBe(true);
+    });
+
     test("cleans up synthetic entry when watcher creates entry for same agent", () => {
       // Scanner detects agent before watcher → creates synthetic
       tracker.applyPanePresence("sess-1", [

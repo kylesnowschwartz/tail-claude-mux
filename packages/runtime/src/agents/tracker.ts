@@ -268,33 +268,43 @@ export class AgentTracker {
     }
 
     // 2. Stamp pane info onto existing entries, or create minimal synthetics
+    //    Track which watcher entries have already been claimed by a pane so that
+    //    multiple panes running the same agent each match a distinct watcher entry.
+    const claimedKeys = new Set<string>();
+
     for (const pa of paneAgents) {
       if (!sessionInstances) {
         sessionInstances = new Map();
         this.instances.set(session, sessionInstances);
       }
 
-      // Find an existing entry for this agent (prefer watcher-sourced over synthetic)
+      // Find an existing entry for this agent that hasn't already been claimed.
+      // Prefer watcher-sourced entries (no ":pane:" in key) over synthetics.
+      let bestKey: string | undefined;
       let bestEvent: AgentEvent | undefined;
       for (const [k, ev] of sessionInstances) {
         if (ev.agent !== pa.agent) continue;
+        if (claimedKeys.has(k)) continue;
         if (!bestEvent || !k.includes(":pane:")) {
+          bestKey = k;
           bestEvent = ev;
-          // If this is a watcher-sourced entry (not pane-keyed), prefer it and stop
           if (!k.includes(":pane:")) break;
         }
       }
 
-      if (bestEvent) {
+      if (bestEvent && bestKey) {
+        claimedKeys.add(bestKey);
         const wasDifferent = bestEvent.paneId !== pa.paneId || bestEvent.liveness !== "alive";
         bestEvent.paneId = pa.paneId;
         bestEvent.liveness = "alive";
         if (wasDifferent) changed = true;
+
         continue;
       }
 
       // No existing entry — create minimal synthetic
       const syntheticKey = `${pa.agent}:pane:${pa.paneId}`;
+
       if (!sessionInstances.has(syntheticKey)) {
         sessionInstances.set(syntheticKey, {
           agent: pa.agent,
