@@ -291,16 +291,60 @@ describe("AgentTracker", () => {
       expect(tracker.getAgents("sess-1").length).toBe(0);
     });
 
-    test("does not transition unknown-liveness agents to exited", () => {
-      // Watcher-only entry (no pane info)
+    test("does not transition unknown-liveness running agents to exited", () => {
+      // A "running" entry may be mid-stream before the pane scanner sees it
       tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "running" }));
 
-      // Empty pane scan — should NOT affect watcher-only entries
       const changed = tracker.applyPanePresence("sess-1", []);
 
       expect(changed).toBe(false);
       const agents = tracker.getAgents("sess-1");
-      expect(agents[0]!.liveness).toBeUndefined(); // still unknown
+      expect(agents[0]!.liveness).toBeUndefined(); // still unknown — not safe to assume exited
+    });
+
+    test("transitions unknown-liveness terminal agents to exited (seed ghosts)", () => {
+      // Cold-start seed creates entries with null liveness for sessions found in JSONL.
+      // If the pane scanner runs and finds no matching pane, these are dead.
+      for (const status of ["done", "interrupted"] as const) {
+        const tid = `ghost-${status}`;
+        tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: tid, status }));
+      }
+
+      const changed = tracker.applyPanePresence("sess-1", []);
+
+      expect(changed).toBe(true);
+      const agents = tracker.getAgents("sess-1");
+      expect(agents.length).toBe(2);
+      for (const a of agents) {
+        expect(a.liveness).toBe("exited");
+      }
+    });
+
+    test("transitions unknown-liveness idle/waiting agents to exited (seed ghosts)", () => {
+      tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "idle-ghost", status: "idle" }));
+      tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "waiting-ghost", status: "waiting" }));
+
+      const changed = tracker.applyPanePresence("sess-1", []);
+
+      expect(changed).toBe(true);
+      const agents = tracker.getAgents("sess-1");
+      for (const a of agents) {
+        expect(a.liveness).toBe("exited");
+      }
+    });
+
+    test("does not mark claimed entries as exited even with terminal status", () => {
+      // Agent has terminal status but pane scanner found a matching pane — still alive
+      tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "alive-done", status: "done" }));
+
+      const changed = tracker.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%10" },
+      ]);
+
+      expect(changed).toBe(true);
+      const agents = tracker.getAgents("sess-1");
+      expect(agents[0]!.liveness).toBe("alive");
+      expect(agents[0]!.paneId).toBe("%10");
     });
 
     test("pruneStuck skips alive agents", () => {

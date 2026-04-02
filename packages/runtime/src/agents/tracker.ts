@@ -324,6 +324,23 @@ export class AgentTracker {
       }
     }
 
+    // 3. Mark unclaimed seed ghosts as exited.
+    //    Entries from the cold-start seed have null liveness and no paneId.
+    //    If the pane scanner ran, found panes for this session, but didn't claim
+    //    a seed entry, then no running process corresponds to it.
+    //    Only apply to terminal statuses (done/interrupted/idle) — a "running"
+    //    entry may be mid-stream before the scanner has seen it.
+    if (sessionInstances) {
+      for (const [key, event] of sessionInstances) {
+        if (claimedKeys.has(key)) continue;
+        if (key.includes(":pane:")) continue; // Synthetics handled in step 1
+        if (event.liveness !== null && event.liveness !== undefined) continue;
+        if (!TERMINAL_STATUSES.has(event.status) && event.status !== "idle" && event.status !== "waiting") continue;
+        event.liveness = "exited";
+        changed = true;
+      }
+    }
+
     return changed;
   }
 }
