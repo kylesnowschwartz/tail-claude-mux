@@ -11,6 +11,7 @@ import {
   type SessionData,
   type ClientCommand,
   type Theme,
+  type ThemePalette,
   type MetadataTone,
   SERVER_PORT,
   SERVER_HOST,
@@ -86,6 +87,18 @@ function formatDir(dir: string | undefined): { project: string; parent: string }
 function sanitizeThreadName(raw: string): string {
   const firstLine = raw.split("\n")[0];
   return firstLine.replace(/^(?:---+|#+|\*{1,2}|>\s*)+\s*/, "").trim();
+}
+
+/** Build an FZF_DEFAULT_OPTS --color string from an opensessions palette. */
+function paletteToFzfColors(p: ThemePalette): string {
+  return [
+    `--color=fg:${p.text},bg:${p.base},hl:${p.blue}`,
+    `--color=fg+:${p.surface2},bg+:${p.surface0},hl+:${p.blue}`,
+    `--color=info:${p.blue},prompt:${p.blue},pointer:${p.blue}`,
+    `--color=marker:${p.green},spinner:${p.blue},header:${p.overlay0}`,
+    `--color=border:${p.surface2},gutter:${p.base}`,
+    `--color=query:${p.text},disabled:${p.overlay0}`,
+  ].join(" ");
 }
 
 function logResizeDebug(message: string, data?: Record<string, unknown>): void {
@@ -432,6 +445,7 @@ function App() {
       width: "60%",
       height: "60%",
       closeOnExit: true,
+      env: { OPENSESSIONS_FZF_COLORS: paletteToFzfColors(P()) },
     });
   }
 

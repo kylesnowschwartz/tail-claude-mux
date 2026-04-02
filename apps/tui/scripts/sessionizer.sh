@@ -9,6 +9,15 @@ if [ -z "$SESSIONIZER_DIR" ] && command -v tmux &>/dev/null; then
 fi
 SEARCH_DIRS="${SESSIONIZER_DIR:-$HOME/Documents}"
 
+# Resolve fzf colors: opensessions theme > the-themer > shell defaults
+if [ -n "$OPENSESSIONS_FZF_COLORS" ]; then
+  export FZF_DEFAULT_OPTS="$OPENSESSIONS_FZF_COLORS"
+else
+  THEMER_FZF="${HOME}/.config/the-themer/fzf/current.zsh"
+  # shellcheck source=/dev/null
+  [ -f "$THEMER_FZF" ] && source "$THEMER_FZF"
+fi
+
 if ! command -v fzf &>/dev/null; then
   echo "fzf is required for the sessionizer. Install it: https://github.com/junegunn/fzf"
   exit 1
