@@ -141,19 +141,19 @@ export const C = {
 } as const;
 
 export const STATUS_COLORS: Record<AgentStatus, string> = {
-  idle: C.surface2,
-  running: C.yellow,
+  idle: C.green,
+  running: C.blue,
   done: C.green,
   error: C.red,
-  waiting: C.blue,
-  interrupted: C.peach,
+  waiting: C.yellow,
+  interrupted: C.green,
 };
 
 export const STATUS_ICONS: Record<AgentStatus, string> = {
-  idle: "○",
+  idle: "◇",
   running: "●",
-  done: "✓",
+  done: "◇",
   error: "✗",
   waiting: "◉",
-  interrupted: "⚠",
+  interrupted: "◇",
 };

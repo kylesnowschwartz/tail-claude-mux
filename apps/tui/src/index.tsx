@@ -1339,38 +1339,48 @@ function AgentListItem(props: AgentListItemProps) {
   const [isDismissHover, setIsDismissHover] = createSignal(false);
   const [isFlash, setIsFlash] = createSignal(false);
 
-  const isTerminal = () =>
-    ["done", "error", "interrupted"].includes(props.agent.status) && props.agent.liveness !== "alive";
+  // Resolve the five-label scheme from tracker status + liveness
+  const label = (): "working" | "waiting" | "ready" | "stopped" | "error" => {
+    const s = props.agent.status;
+    if (s === "running") return "working";
+    if (s === "waiting") return "waiting";
+    if (s === "error") return "error";
+    // done/interrupted/idle — liveness determines ready vs stopped
+    // "alive" means pane scanner confirmed the process exists → ready at prompt
+    // "exited" means pane scanner saw it disappear → stopped
+    // undefined means no pane data (e.g. watcher-seeded, server just started)
+    //   → for terminal statuses (done/interrupted), assume stopped
+    //   → for idle (synthetic cold-start), assume ready
+    if (props.agent.liveness === "alive") return "ready";
+    if (s === "done" || s === "interrupted") return "stopped";
+    return "ready";
+  };
+
+  const isTerminal = () => label() === "stopped" || label() === "error";
   const isUnseen = () => isTerminal() && props.agent.unseen === true;
 
   const icon = () => {
     if (isUnseen()) return UNSEEN_ICON;
-    if (isTerminal()) return props.agent.status === "done" ? "✓" : props.agent.status === "error" ? "✗" : "⚠";
-    if (props.agent.status === "running") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
-    if (props.agent.status === "waiting") return "◉";
-    return "○";
+    const l = label();
+    if (l === "working") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
+    if (l === "waiting") return "◉";
+    if (l === "ready") return "◇";
+    if (l === "stopped") return "■";
+    if (l === "error") return "✗";
+    return "◇";
   };
 
   const color = () => {
-    if (isTerminal()) {
-      if (props.agent.status === "error") return P().red;
-      if (props.agent.status === "interrupted") return P().peach;
-      return isUnseen() ? P().teal : P().green;
-    }
-    return SC()[props.agent.status];
+    const l = label();
+    if (l === "working") return P().blue;
+    if (l === "waiting") return P().yellow;
+    if (l === "ready") return P().green;
+    if (l === "stopped") return P().surface2;
+    if (l === "error") return P().red;
+    return P().surface2;
   };
 
-  const statusText = () => {
-    if (props.agent.status === "running") return "running";
-    // Alive + done = idle at prompt, not finished
-    if (props.agent.status === "done" && props.agent.liveness === "alive") return "idle";
-    if (props.agent.status === "done") return "done";
-    if (props.agent.status === "error") return "error";
-    if (props.agent.status === "interrupted" && props.agent.liveness === "alive") return "idle";
-    if (props.agent.status === "interrupted") return "stopped";
-    if (props.agent.status === "waiting") return "waiting";
-    return "";
-  };
+  const statusText = () => label();
 
   const triggerFlash = () => {
     setIsFlash(true);
@@ -1457,40 +1467,55 @@ function SessionCard(props: SessionCardProps) {
   const P = () => props.theme().palette;
   const SC = () => props.statusColors();
 
-  const status = () => props.session.agentState?.status ?? "idle";
+  // Resolve five-label scheme for session card
+  const label = (): "working" | "waiting" | "ready" | "stopped" | "error" => {
+    const state = props.session.agentState;
+    if (!state) return "ready";
+    if (state.status === "running") return "working";
+    if (state.status === "waiting") return "waiting";
+    if (state.status === "error") return "error";
+    if (state.liveness === "alive") return "ready";
+    if (state.status === "done" || state.status === "interrupted") return "stopped";
+    return "ready";
+  };
+
   const unseen = () => props.session.unseen;
 
   const isUnseenTerminal = () =>
-    unseen() && ["done", "error", "interrupted"].includes(status());
+    unseen() && (label() === "stopped" || label() === "error");
 
   const accentColor = () => {
     if (props.isCurrent) return P().green;
     if (isUnseenTerminal()) return unseenAccentColor();
-    const s = status();
-    if (s === "error") return P().red;
-    if (s === "interrupted") return P().peach;
-    if (s === "running") return P().yellow;
+    const l = label();
+    if (l === "error") return P().red;
+    if (l === "working") return P().blue;
     if (props.isFocused) return P().lavender;
     return "transparent";
   };
 
   const unseenAccentColor = () => {
-    const s = status();
-    if (s === "error") return P().red;
-    if (s === "interrupted") return P().peach;
+    if (label() === "error") return P().red;
     return P().teal;
   };
 
   const statusIcon = () => {
-    const s = status();
-    if (s === "running") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
+    const l = label();
+    if (l === "working") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
     if (isUnseenTerminal()) return UNSEEN_ICON;
+    if (l === "ready" && props.session.agentState) return "◇";
     return "";
   };
 
   const statusColor = () => {
     if (isUnseenTerminal()) return unseenAccentColor();
-    return SC()[status()];
+    const l = label();
+    if (l === "working") return P().blue;
+    if (l === "waiting") return P().yellow;
+    if (l === "ready") return P().green;
+    if (l === "stopped") return P().surface2;
+    if (l === "error") return P().red;
+    return P().surface2;
   };
 
   const nameColor = () => {
