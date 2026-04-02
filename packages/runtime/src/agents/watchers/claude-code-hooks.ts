@@ -1,8 +1,9 @@
 /**
  * Hook-based Claude Code agent watcher.
  *
- * Receives lifecycle events (UserPromptSubmit, PreToolUse, Stop, Notification)
- * pushed from Claude Code via POST /hook, instead of polling JSONL files.
+ * Receives lifecycle events (UserPromptSubmit, PreToolUse, PermissionRequest,
+ * PostToolUse, Stop, Notification) pushed from Claude Code via POST /hook,
+ * instead of polling JSONL files.
  *
  * JSONL reading is kept for two bounded purposes:
  *   1. Cold-start seed: scan recent files once on startup to bootstrap state
@@ -136,20 +137,23 @@ interface ThreadState {
   status: AgentStatus;
   threadName?: string;
   projectDir: string;
-  waitingTimer?: ReturnType<typeof setTimeout>;
   nameResolved: boolean;
 }
 
 const STALE_MS = 5 * 60 * 1000;
-const WAITING_DELAY_MS = 3000;
+
+/** Notification subtypes that indicate the user must act. */
+const WAITING_NOTIFICATION_TYPES = new Set(["permission_prompt", "idle_prompt"]);
 
 // --- Hook event → status mapping ---
 
 const HOOK_STATUS_MAP: Record<string, AgentStatus> = {
   UserPromptSubmit: "running",
   PreToolUse: "running",
+  PermissionRequest: "waiting",
+  PostToolUse: "running",
   Stop: "done",
-  Notification: "done",
+  // Notification is handled separately — status depends on notification_type
 };
 
 // --- Adapter ---
@@ -173,9 +177,6 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
   }
 
   stop(): void {
-    for (const state of this.threads.values()) {
-      if (state.waitingTimer) clearTimeout(state.waitingTimer);
-    }
     this.threads.clear();
     this.ctx = null;
   }
@@ -184,8 +185,9 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
     dbg("hook", "received", { event: payload.event, cwd: payload.cwd, session_id: payload.session_id?.slice(0, 8) });
     if (!this.ctx) { dbg("hook", "no-ctx"); return; }
 
-    const newStatus = HOOK_STATUS_MAP[payload.event];
-    if (!newStatus) { dbg("hook", "unknown-event", { event: payload.event }); return; }
+    // Resolve status: Notification branches on subtype, others use the flat map
+    const newStatus = this.resolveStatus(payload);
+    if (!newStatus) { dbg("hook", "ignored", { event: payload.event, notification_type: payload.notification_type }); return; }
 
     const session = this.ctx.resolveSession(payload.cwd);
     if (!session) { dbg("hook", "no-session", { cwd: payload.cwd }); return; }
@@ -204,24 +206,6 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
       this.resolveThreadName(threadId, payload.cwd);
     }
 
-    // Clear any pending waiting timer
-    if (state.waitingTimer) {
-      clearTimeout(state.waitingTimer);
-      state.waitingTimer = undefined;
-    }
-
-    // Start waiting promotion timer on PreToolUse
-    if (payload.event === "PreToolUse") {
-      state.waitingTimer = setTimeout(() => {
-        state!.waitingTimer = undefined;
-        if (state!.status === "running") {
-          state!.status = "waiting";
-          dbg("hook", "promote-waiting", { threadId: threadId.slice(0, 8), session });
-          this.emit(threadId, state!, session);
-        }
-      }, WAITING_DELAY_MS);
-    }
-
     // Deduplicate: don't emit if status hasn't changed
     if (state.status === newStatus) {
       dbg("hook", "dedup", { threadId: threadId.slice(0, 8), status: newStatus });
@@ -231,6 +215,18 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
     state.status = newStatus;
     dbg("hook", "emit", { threadId: threadId.slice(0, 8), session, status: newStatus });
     this.emit(threadId, state, session);
+  }
+
+  /** Map a hook payload to a status, or null if the event should be ignored. */
+  private resolveStatus(payload: HookPayload): AgentStatus | null {
+    if (payload.event === "Notification") {
+      if (payload.notification_type && WAITING_NOTIFICATION_TYPES.has(payload.notification_type)) {
+        return "waiting";
+      }
+      // Unknown or unhandled notification subtypes — ignore rather than guess
+      return null;
+    }
+    return HOOK_STATUS_MAP[payload.event] ?? null;
   }
 
   private emit(threadId: string, state: ThreadState, session: string): void {

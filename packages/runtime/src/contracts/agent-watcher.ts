@@ -38,14 +38,16 @@ export interface AgentWatcher {
 
 /** Payload sent by Claude Code lifecycle hooks via POST /hook. */
 export interface HookPayload {
-  /** Hook event name: "UserPromptSubmit" | "PreToolUse" | "Stop" | "Notification" */
+  /** Hook event name: "UserPromptSubmit" | "PreToolUse" | "PermissionRequest" | "PostToolUse" | "Stop" | "Notification" */
   event: string;
   /** Claude Code session UUID — used as threadId */
   session_id: string;
   /** Project directory the agent is working in */
   cwd: string;
-  /** Tool name (PreToolUse only) */
+  /** Tool name (PreToolUse, PermissionRequest, PostToolUse) */
   tool_name?: string;
+  /** Notification subtype (Notification only): "permission_prompt" | "idle_prompt" | "auth_success" | "elicitation_dialog" */
+  notification_type?: string;
 }
 
 /** A watcher that can receive hook events pushed from the agent process. */

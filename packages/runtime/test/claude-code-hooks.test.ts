@@ -71,36 +71,48 @@ describe("ClaudeCodeHookAdapter", () => {
     expect(ctx.events[0].status).toBe("running");
   });
 
-  test("PreToolUse promotes to waiting after 3s with no follow-up", async () => {
+  test("PreToolUse does not promote to waiting (no timer heuristic)", async () => {
     adapter.handleHook(hook("PreToolUse", "sess-1", "/tmp/myproject"));
 
-    // Immediately: running
     expect(ctx.events).toHaveLength(1);
     expect(ctx.events[0].status).toBe("running");
 
-    // Wait for the 3s timer to fire
-    await new Promise((r) => setTimeout(r, 3200));
+    // Wait well past old 3s timer — no waiting emission should appear
+    await new Promise((r) => setTimeout(r, 3500));
 
-    expect(ctx.events).toHaveLength(2);
-    expect(ctx.events[1].status).toBe("waiting");
-    expect(ctx.events[1].threadId).toBe("sess-1");
+    // Still just the one "running" event — no timer-based promotion
+    expect(ctx.events).toHaveLength(1);
   });
 
-  test("PreToolUse followed by Stop within 3s suppresses waiting", async () => {
-    adapter.handleHook(hook("PreToolUse", "sess-1", "/tmp/myproject"));
+  // --- PostToolUse ---
+
+  test("PostToolUse emits running", () => {
+    // First set to waiting via PermissionRequest, then PostToolUse returns to running
+    adapter.handleHook(hook("PermissionRequest", "sess-1", "/tmp/myproject", { tool_name: "Bash" }));
+    adapter.handleHook(hook("PostToolUse", "sess-1", "/tmp/myproject", { tool_name: "Bash" }));
+
+    expect(ctx.events).toHaveLength(2);
+    expect(ctx.events[1].status).toBe("running");
+  });
+
+  // --- PermissionRequest ---
+
+  test("PermissionRequest emits waiting", () => {
+    adapter.handleHook(hook("PermissionRequest", "sess-1", "/tmp/myproject", { tool_name: "Bash" }));
+
     expect(ctx.events).toHaveLength(1);
-    expect(ctx.events[0].status).toBe("running");
+    expect(ctx.events[0].status).toBe("waiting");
+    expect(ctx.events[0].session).toBe("myproject");
+    expect(ctx.events[0].threadId).toBe("sess-1");
+  });
 
-    // Stop arrives 100ms later — within the 3s window
-    await new Promise((r) => setTimeout(r, 100));
-    adapter.handleHook(hook("Stop", "sess-1", "/tmp/myproject"));
+  test("PermissionRequest followed by PostToolUse transitions to running", () => {
+    adapter.handleHook(hook("PermissionRequest", "sess-1", "/tmp/myproject", { tool_name: "Bash" }));
+    adapter.handleHook(hook("PostToolUse", "sess-1", "/tmp/myproject", { tool_name: "Bash" }));
 
     expect(ctx.events).toHaveLength(2);
-    expect(ctx.events[1].status).toBe("done");
-
-    // Wait past the 3s mark — no waiting emission should appear
-    await new Promise((r) => setTimeout(r, 3200));
-    expect(ctx.events).toHaveLength(2);
+    expect(ctx.events[0].status).toBe("waiting");
+    expect(ctx.events[1].status).toBe("running");
   });
 
   // --- Stop ---
@@ -114,11 +126,36 @@ describe("ClaudeCodeHookAdapter", () => {
 
   // --- Notification ---
 
-  test("Notification emits done", () => {
-    adapter.handleHook(hook("Notification", "sess-1", "/tmp/myproject"));
+  test("Notification with permission_prompt emits waiting", () => {
+    adapter.handleHook(hook("Notification", "sess-1", "/tmp/myproject", {
+      notification_type: "permission_prompt",
+    } as any));
 
     expect(ctx.events).toHaveLength(1);
-    expect(ctx.events[0].status).toBe("done");
+    expect(ctx.events[0].status).toBe("waiting");
+  });
+
+  test("Notification with idle_prompt emits waiting", () => {
+    adapter.handleHook(hook("Notification", "sess-1", "/tmp/myproject", {
+      notification_type: "idle_prompt",
+    } as any));
+
+    expect(ctx.events).toHaveLength(1);
+    expect(ctx.events[0].status).toBe("waiting");
+  });
+
+  test("Notification without notification_type is ignored", () => {
+    adapter.handleHook(hook("Notification", "sess-1", "/tmp/myproject"));
+
+    expect(ctx.events).toHaveLength(0);
+  });
+
+  test("Notification with auth_success is ignored", () => {
+    adapter.handleHook(hook("Notification", "sess-1", "/tmp/myproject", {
+      notification_type: "auth_success",
+    } as any));
+
+    expect(ctx.events).toHaveLength(0);
   });
 
   // --- Unknown event ---

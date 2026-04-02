@@ -10,10 +10,10 @@ opensessions registers one built-in watcher at server startup.
 
 ### Claude Code (Hook-Based)
 
-- Receives lifecycle hooks (`UserPromptSubmit`, `PreToolUse`, `Stop`, `Notification`) via `POST /hook`.
+- Receives lifecycle hooks (`UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `Stop`, `Notification`) via `POST /hook`.
 - Claude Code pushes events through `scripts/hook.sh`, registered in `~/.claude/settings.json`.
-- Maps hooks to status: `UserPromptSubmit`/`PreToolUse` → `running`, `Stop`/`Notification` → `done`.
-- `PreToolUse` starts a 3-second timer; if no follow-up hook arrives, promotes to `waiting` (permission prompt heuristic).
+- Maps hooks to status: `UserPromptSubmit`/`PreToolUse`/`PostToolUse` → `running`, `PermissionRequest` → `waiting`, `Stop` → `done`.
+- `Notification` branches on `notification_type`: `permission_prompt`/`idle_prompt` → `waiting`, others ignored.
 - On cold start, performs a one-time seed scan of `~/.claude/projects/` JSONL files to bootstrap state for sessions already running.
 - On first hook for an unknown session, reads the JSONL file once to resolve the thread name.
 - No polling, no `fs.watch`, no intervals after startup.

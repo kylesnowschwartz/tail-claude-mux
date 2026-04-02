@@ -15,7 +15,7 @@ import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync } from
 import { join, dirname } from "path";
 import { homedir } from "os";
 
-const HOOK_EVENTS = ["UserPromptSubmit", "PreToolUse", "Stop", "Notification"] as const;
+const HOOK_EVENTS = ["UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop", "Notification"] as const;
 
 /**
  * Register opensessions hooks in Claude Code's settings.json.
