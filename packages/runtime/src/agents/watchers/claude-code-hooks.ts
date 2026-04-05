@@ -16,6 +16,7 @@ import { homedir } from "os";
 import { appendFileSync } from "fs";
 
 import type { AgentStatus } from "../../contracts/agent";
+import { TERMINAL_STATUSES } from "../../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext, HookPayload, HookReceiver } from "../../contracts/agent-watcher";
 
 function dbg(tag: string, msg: string, data?: Record<string, unknown>) {
@@ -167,7 +168,7 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
   private threads = new Map<string, ThreadState>();
   private ctx: AgentWatcherContext | null = null;
   private projectsDir: string;
-  private seeded = false;
+
 
   constructor(projectsDir?: string) {
     this.projectsDir = projectsDir ?? join(homedir(), ".claude", "projects");
@@ -175,7 +176,6 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
 
   start(ctx: AgentWatcherContext): void {
     this.ctx = ctx;
-    this.seeded = true; // Mark seeded immediately — seed scan is fire-and-forget
     this.seedFromJsonl();
   }
 
@@ -299,7 +299,7 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
           if (s !== null) latestStatus = s;
         }
 
-        if (latestStatus === "idle") continue;
+        if (latestStatus === "idle" || TERMINAL_STATUSES.has(latestStatus)) continue;
 
         const session = this.ctx?.resolveSession(projectDir);
         if (!session) continue;
@@ -327,7 +327,7 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
 
   // --- One-time thread name resolution ---
 
-  private async resolveThreadName(threadId: string, cwd: string): Promise<void> {
+  private async resolveThreadName(threadId: string, _cwd: string): Promise<void> {
     const state = this.threads.get(threadId);
     if (!state || state.nameResolved) return;
     state.nameResolved = true;
