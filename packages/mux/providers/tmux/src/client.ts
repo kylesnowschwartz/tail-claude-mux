@@ -512,8 +512,18 @@ export class TmuxClient {
     this.run(["set-hook", "-g", name, command]);
   }
 
+  /** Set a global window-level hook (-gw). Pane hooks like pane-exited are
+   *  window options — using -g silently accepts them but never fires. */
+  setGlobalWindowHook(name: HookName, command: string): void {
+    this.run(["set-hook", "-gw", name, command]);
+  }
+
   unsetGlobalHook(name: HookName): void {
     this.run(["set-hook", "-gu", name]);
+  }
+
+  unsetGlobalWindowHook(name: HookName): void {
+    this.run(["set-hook", "-guw", name]);
   }
 
   // ─── Environment ───────────────────────────────────
