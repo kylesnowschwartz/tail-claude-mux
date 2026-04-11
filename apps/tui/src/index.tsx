@@ -294,7 +294,7 @@ function App() {
 
     const current = focusedSession();
     const currentIdx = Math.max(0, list.findIndex((s) => s.name === current));
-    const nextIdx = Math.max(0, Math.min(list.length - 1, currentIdx + delta));
+    const nextIdx = (currentIdx + delta + list.length) % list.length;
     const next = list[nextIdx]?.name ?? null;
 
     if (!next || next === current) return;
