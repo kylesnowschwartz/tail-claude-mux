@@ -1434,7 +1434,7 @@ function SessionCard(props: SessionCardProps) {
 
       {/* Expanded detail — shown inline when focused */}
       <Show when={props.isFocused}>
-        <box flexDirection="column" paddingLeft={1}>
+        <box flexDirection="column" paddingLeft={3}>
           {/* Directory — only when cwd doesn't match session name */}
           <Show when={dirMismatch()}>
             <text truncate>
