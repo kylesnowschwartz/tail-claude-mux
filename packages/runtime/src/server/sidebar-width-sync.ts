@@ -14,9 +14,10 @@ const NAME_TRUNC_LIMIT = 18;
 const BRANCH_TRUNC_LIMIT = 15;
 
 // Expanded agent list item layout (inside focused card border + paddingLeft={3}):
-//   expandPad(3) + agentPadLeft(1) + icon(1) + " "(1) + name + status + " ✕"(2) + agentPadRight(1)
+//   expandPad(3) + agentPadLeft(1) + icon(1) + " "(1) + name + [threadId] + status + " ✕"(2) + agentPadRight(1)
 const AGENT_ROW_FIXED = 3 + 1 + 1 + 1 + 2 + 1; // = 9
 const LONGEST_STATUS_LABEL = 7;    // "stopped" — the widest of the five labels
+const THREAD_ID_COLS = 6;          // " #" + 4 chars (threadId.slice(0, 4))
 
 /**
  * Compute the narrowest sidebar width that still fits session content
@@ -54,7 +55,8 @@ export function computeMinSidebarWidth(sessions: SessionData[]): number {
     // Expanded agent rows (only the focused card shows these, but any card
     // can become focused, so measure all of them)
     for (const a of s.agents ?? []) {
-      const agentRow = AGENT_ROW_FIXED + a.agent.length + LONGEST_STATUS_LABEL;
+      const threadCols = a.threadId ? THREAD_ID_COLS : 0;
+      const agentRow = AGENT_ROW_FIXED + a.agent.length + threadCols + LONGEST_STATUS_LABEL;
       widestContent = Math.max(widestContent, agentRow);
     }
   }

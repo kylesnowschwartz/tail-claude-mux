@@ -154,6 +154,16 @@ describe("computeMinSidebarWidth", () => {
     ])).toBe(29);
   });
 
+  test("thread ID adds 6 cols to agent row", () => {
+    // "claude-code" = 11, threadId present → 9 + 11 + 6 + 7 = 33 + border 2 = 35
+    const agents = [
+      { agent: "claude-code", session: "x", status: "running" as const, ts: 0, liveness: "alive" as const, threadId: "52e9abcd" },
+    ];
+    expect(computeMinSidebarWidth([
+      makeSession({ name: "short", agents }),
+    ])).toBe(35);
+  });
+
   test("exited agents still contribute to expanded row width", () => {
     // Even exited agents render in the list — "claude" = 6 → 9+6+7 = 22
     // + border 2 = 24
