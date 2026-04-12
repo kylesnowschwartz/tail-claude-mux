@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import {
   clampSidebarWidth,
-  MIN_SIDEBAR_WIDTH,
+  ABSOLUTE_MIN_SIDEBAR_WIDTH,
   SAVE_DEBOUNCE_MS,
 } from "../src/server/sidebar-width-sync";
 
@@ -24,7 +24,7 @@ describe("report-width debounce logic", () => {
 
   test("clamp without window width still enforces floor", () => {
     // On startup, window width is unknown. Floor-only.
-    expect(clampSidebarWidth(5)).toBe(MIN_SIDEBAR_WIDTH);
+    expect(clampSidebarWidth(5)).toBe(ABSOLUTE_MIN_SIDEBAR_WIDTH);
     expect(clampSidebarWidth(50)).toBe(50);
   });
 

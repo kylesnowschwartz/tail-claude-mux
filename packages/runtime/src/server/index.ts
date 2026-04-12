@@ -12,7 +12,8 @@ import { SessionMetadataStore } from "./metadata-store";
 import { loadConfig, saveConfig } from "../config";
 import {
   clampSidebarWidth,
-  MIN_SIDEBAR_WIDTH,
+  computeMinSidebarWidth,
+  ABSOLUTE_MIN_SIDEBAR_WIDTH,
   SAVE_DEBOUNCE_MS,
 } from "./sidebar-width-sync";
 import {
@@ -1365,7 +1366,10 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
       }
       case "equalize-width": {
         cancelPendingSave();
-        configuredWidth = MIN_SIDEBAR_WIDTH;
+        const sessions = lastState?.sessions ?? [];
+        configuredWidth = sessions.length > 0
+          ? computeMinSidebarWidth(sessions)
+          : ABSOLUTE_MIN_SIDEBAR_WIDTH;
         saveConfig({ sidebarWidth: configuredWidth });
         enforceSidebarWidth();
         broadcastState();
