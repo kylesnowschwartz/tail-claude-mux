@@ -112,6 +112,9 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     const paneExitedCmd = hookPost("/pane-exited");
     tmux.setGlobalWindowHook("pane-exited", paneExitedCmd);
     tmux.setGlobalHook("after-kill-pane", paneExitedCmd);
+    // pane-focus-in: notify sidebar TUIs which pane has focus
+    const paneFocusCmd = hookPost("/pane-focus", "#{pane_id}");
+    tmux.setGlobalWindowHook("pane-focus-in", paneFocusCmd);
   }
 
   cleanupHooks(): void {
@@ -124,6 +127,7 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     tmux.unsetGlobalHook("after-resize-pane");
     tmux.unsetGlobalWindowHook("pane-exited");
     tmux.unsetGlobalHook("after-kill-pane");
+    tmux.unsetGlobalWindowHook("pane-focus-in");
   }
 
   getAllPaneCounts(): Map<string, number> {

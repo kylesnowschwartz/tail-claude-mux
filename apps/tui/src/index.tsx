@@ -400,17 +400,9 @@ function App() {
     // Fallback: if no capability response arrives within 2s, refocus anyway
     const refocusTimeout = setTimeout(doStartupRefocus, 2000);
 
-    // Track terminal pane focus via ANSI focus reporting (\e[?1004h)
-    const onPaneFocus = () => setPaneFocused(true);
-    const onPaneBlur = () => setPaneFocused(false);
-    renderer.on("focus", onPaneFocus);
-    renderer.on("blur", onPaneBlur);
-
     onCleanup(() => {
       clearTimeout(refocusTimeout);
       renderer.removeListener("capabilities", doStartupRefocus);
-      renderer.removeListener("focus", onPaneFocus);
-      renderer.removeListener("blur", onPaneBlur);
     });
 
     let intentionalQuit = false;
@@ -496,6 +488,10 @@ function App() {
                 if (focusedSession() !== msg.name) {
                   startupFocusToPublish = msg.name;
                 }
+              }
+            } else if (msg.type === "pane-focus") {
+              if (muxCtx.type !== "none") {
+                setPaneFocused(msg.paneId === muxCtx.paneId);
               }
             } else if (msg.type === "re-identify") {
               reIdentify();
@@ -720,17 +716,12 @@ function App() {
 
   return (
     <box flexDirection="column" flexGrow={1} backgroundColor={P().crust}>
-      {/* Focus accent bar — bright stripe at top when pane has terminal focus */}
-      <box height={1} flexShrink={0}>
-        <text style={{ fg: paneFocused() ? P().blue : P().surface0 }}>{"▔".repeat(200)}</text>
-      </box>
-
       {/* Header */}
-      <box flexDirection="column" paddingLeft={1} paddingTop={0} paddingBottom={0} flexShrink={0}>
+      <box flexDirection="column" paddingLeft={1} paddingTop={1} paddingBottom={0} flexShrink={0}>
         <text>
-          <span style={{ fg: paneFocused() ? P().blue : P().overlay1 }}>{"  "}</span>
-          <span style={{ fg: paneFocused() ? P().text : P().subtext0, attributes: BOLD }}>Sessions</span>
-          <span style={{ fg: paneFocused() ? P().subtext0 : P().overlay0 }}>{" "}{String(sessions.length)}</span>
+          <span style={{ fg: paneFocused() ? P().subtext0 : P().overlay1 }}>{"  "}</span>
+          <span style={{ fg: paneFocused() ? P().subtext1 : P().subtext0, attributes: BOLD }}>Sessions</span>
+          <span style={{ fg: paneFocused() ? P().overlay1 : P().overlay0 }}>{" "}{String(sessions.length)}</span>
           {runningCount() > 0 ? <span style={{ fg: P().yellow }}>{" "}{"⚡"}{runningCount()}</span> : ""}
           <Show when={flashMessage()}><span style={{ fg: P().overlay0, attributes: DIM }}>{" "}{flashMessage()}</span></Show>
           {errorCount() > 0 ? <span style={{ fg: P().red }}>{" "}{"✗"}{errorCount()}</span> : ""}
@@ -783,7 +774,7 @@ function App() {
         </box>
 
         {/* Focused session — bordered frame pinned at center */}
-        <box border borderStyle="rounded" borderColor={P().surface2} flexShrink={0} height={maxCardHeight()} overflow="hidden">
+        <box border borderStyle="rounded" borderColor={paneFocused() ? P().overlay0 : P().surface2} flexShrink={0} height={maxCardHeight()} overflow="hidden">
           <Show when={focusedData()}>
             {(data) => (
               <SessionCard
@@ -865,11 +856,11 @@ function App() {
 
       {/* Footer */}
       {(() => {
-        const keyFg = () => paneFocused() ? P().subtext0 : P().overlay0;
-        const labelFg = () => paneFocused() ? P().text : P().overlay1;
+        const keyFg = () => paneFocused() ? P().overlay1 : P().overlay0;
+        const labelFg = () => paneFocused() ? P().subtext0 : P().overlay1;
         return (
           <box flexDirection="column" paddingLeft={1} paddingBottom={1} paddingTop={0} flexShrink={0}>
-            <box height={1}><text style={{ fg: paneFocused() ? P().blue : P().surface2 }}>{"─".repeat(200)}</text></box>
+            <box height={1}><text style={{ fg: paneFocused() ? P().overlay0 : P().surface2 }}>{"─".repeat(200)}</text></box>
             <Show when={panelFocus() === "sessions"} fallback={
               <text>
                 <span style={{ fg: keyFg() }}>{"←"}</span>

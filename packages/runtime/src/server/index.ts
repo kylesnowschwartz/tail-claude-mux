@@ -1464,6 +1464,17 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
         return new Response("ok", { status: 200 });
       }
 
+      if (req.method === "POST" && url.pathname === "/pane-focus") {
+        try {
+          const paneId = (await req.text()).trim().replace(/^"+|"+$/g, "").replace(/^'+|'+$/g, "");
+          if (paneId) {
+            const msg: import("../shared").PaneFocusUpdate = { type: "pane-focus", paneId };
+            server.publish("sidebar", JSON.stringify(msg));
+          }
+        } catch {}
+        return new Response("ok", { status: 200 });
+      }
+
       if (req.method === "POST" && url.pathname === "/toggle") {
         try {
           const body = await req.text();

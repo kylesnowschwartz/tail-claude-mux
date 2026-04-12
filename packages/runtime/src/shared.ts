@@ -60,7 +60,12 @@ export interface ReIdentify {
   type: "re-identify";
 }
 
-export type ServerMessage = ServerState | FocusUpdate | ResizeNotify | QuitNotify | YourSession | ReIdentify;
+export interface PaneFocusUpdate {
+  type: "pane-focus";
+  paneId: string;
+}
+
+export type ServerMessage = ServerState | FocusUpdate | ResizeNotify | QuitNotify | YourSession | ReIdentify | PaneFocusUpdate;
 
 // --- Programmatic metadata (agent/script-pushed) ---
 
