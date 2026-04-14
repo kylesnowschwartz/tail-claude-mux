@@ -735,9 +735,9 @@ function App() {
       {/* Header */}
       <box flexDirection="column" paddingLeft={1} paddingTop={1} paddingBottom={0} flexShrink={0}>
         <text>
-          <span style={{ fg: paneFocused() ? P().subtext0 : P().overlay1 }}>{"  "}</span>
-          <span style={{ fg: paneFocused() ? P().subtext1 : P().subtext0, attributes: BOLD }}>Sessions</span>
-          <span style={{ fg: paneFocused() ? P().overlay1 : P().overlay0 }}>{" "}{String(sessions.length)}</span>
+          <span style={{ fg: paneFocused() ? P().blue : P().overlay1 }}>{"  "}</span>
+          <span style={{ fg: paneFocused() ? P().text : P().overlay1, attributes: BOLD }}>Sessions</span>
+          <span style={{ fg: paneFocused() ? P().subtext0 : P().overlay0 }}>{" "}{String(sessions.length)}</span>
           {runningCount() > 0 ? <span style={{ fg: P().yellow }}>{" "}{"⚡"}{runningCount()}</span> : ""}
           <Show when={flashMessage()}><span style={{ fg: P().overlay0, attributes: DIM }}>{" "}{flashMessage()}</span></Show>
           {errorCount() > 0 ? <span style={{ fg: P().red }}>{" "}{"✗"}{errorCount()}</span> : ""}
@@ -759,6 +759,7 @@ function App() {
                   session={session}
                   isFocused={false}
                   isCurrent={session.name === currentSession()}
+                  paneFocused={paneFocused}
                   spinIdx={spinIdx}
                   theme={theme}
                   statusColors={S}
@@ -795,13 +796,14 @@ function App() {
         </box>
 
         {/* Focused session — bordered frame pinned at center */}
-        <box border borderStyle="rounded" borderColor={paneFocused() ? P().overlay0 : P().surface2} flexShrink={0} height={maxCardHeight()} overflow="hidden">
+        <box border borderStyle="rounded" borderColor={paneFocused() ? P().blue : P().surface2} flexShrink={0} height={maxCardHeight()} overflow="hidden">
           <Show when={focusedData()}>
             {(data) => (
               <SessionCard
                 session={data()}
                 isFocused={true}
                 isCurrent={data().name === currentSession()}
+                paneFocused={paneFocused}
                 spinIdx={spinIdx}
                 theme={theme}
                 statusColors={S}
@@ -844,6 +846,7 @@ function App() {
                   session={session}
                   isFocused={false}
                   isCurrent={session.name === currentSession()}
+                  paneFocused={paneFocused}
                   spinIdx={spinIdx}
                   theme={theme}
                   statusColors={S}
@@ -882,8 +885,8 @@ function App() {
 
       {/* Footer */}
       {(() => {
-        const keyFg = () => paneFocused() ? P().overlay1 : P().overlay0;
-        const labelFg = () => paneFocused() ? P().subtext0 : P().overlay1;
+        const keyFg = () => paneFocused() ? P().subtext0 : P().surface2;
+        const labelFg = () => paneFocused() ? P().overlay1 : P().surface2;
         return (
           <box flexDirection="column" paddingLeft={1} paddingBottom={1} paddingTop={0} flexShrink={0}>
             <box height={1}><text style={{ fg: paneFocused() ? P().overlay0 : P().surface2 }}>{"─".repeat(200)}</text></box>
@@ -1250,6 +1253,7 @@ interface SessionCardProps {
   session: SessionData;
   isFocused: boolean;
   isCurrent: boolean;
+  paneFocused: Accessor<boolean>;
   spinIdx: Accessor<number>;
   theme: Accessor<Theme>;
   statusColors: Accessor<Theme["status"]>;
@@ -1298,8 +1302,9 @@ function SessionCard(props: SessionCardProps) {
   };
 
   const nameColor = () => {
-    if (props.isCurrent) return P().subtext1;
-    return P().subtext0;
+    const focused = props.paneFocused();
+    if (props.isCurrent) return focused ? P().text : P().subtext0;
+    return focused ? P().subtext1 : P().overlay1;
   };
 
   const truncName = () => {
@@ -1384,14 +1389,17 @@ function SessionCard(props: SessionCardProps) {
     return "";
   };
 
+  const currentIndicator = () => props.isCurrent ? "▎" : " ";
+  const currentBarColor = () => props.paneFocused() ? P().blue : P().overlay0;
+
   return (
     <box id={`session-${props.session.name}`} flexDirection="column" flexShrink={0}>
       <box
         flexDirection="row"
         backgroundColor={bgColor()}
         onMouseDown={props.onSelect}
-        paddingLeft={1}
       >
+        <text flexShrink={0}><span style={{ fg: currentBarColor() }}>{currentIndicator()}</span></text>
         {/* Content */}
         <box flexDirection="column" flexGrow={1} paddingRight={1}>
           {/* Row 1: name + agent badge (left) + status icons (right) */}
@@ -1422,14 +1430,14 @@ function SessionCard(props: SessionCardProps) {
             <box flexDirection="row">
               <Show when={props.session.branch}>
                 <text truncate flexGrow={1}>
-                  <span style={{ fg: props.isFocused ? P().pink : P().overlay0 }}>
+                  <span style={{ fg: props.isFocused ? P().pink : (props.paneFocused() ? P().overlay0 : P().surface2) }}>
                     {"⎇ "}{truncBranch()}
                   </span>
                 </text>
               </Show>
               <Show when={portHint()}>
                 <text flexShrink={0}>
-                  <span style={{ fg: props.isFocused ? P().sky : P().overlay0 }}>
+                  <span style={{ fg: props.isFocused ? P().sky : (props.paneFocused() ? P().overlay0 : P().surface2) }}>
                     {props.session.branch ? " " : ""}
                     {portHint()}
                   </span>
