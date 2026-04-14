@@ -1136,6 +1136,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
           result.set(pane.session, sessionAgents);
         }
         sessionAgents.push({ agent: agentName, paneId: pane.id });
+        break; // One agent per pane — first match wins (ordered so parents precede child tools)
       }
     }
 
