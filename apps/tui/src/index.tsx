@@ -207,17 +207,33 @@ function App() {
     return sessions.findIndex(s => s.name === name);
   });
 
-  const sessionsBefore = createMemo(() => {
+  // Rolodex: sessions form a continuous wheel around the focused card.
+  // The non-focused sessions are ordered clockwise (after→wrap→before),
+  // then split in half: first half goes below, second half goes above.
+  // Each half may contain a wrap boundary where natural order meets wrapped.
+  const rolodex = createMemo(() => {
     const idx = focusedIdx();
-    if (idx <= 0) return [];
-    return sessions.slice(0, idx);
+    const n = sessions.length;
+    if (idx < 0 || n <= 1) return { before: [] as SessionData[], after: [] as SessionData[], wrapBefore: -1, wrapAfter: -1 };
+
+    const clockwise = [...sessions.slice(idx + 1), ...sessions.slice(0, idx)];
+    const half = Math.ceil(clockwise.length / 2);
+    const afterNatural = n - 1 - idx; // count of naturally-after items in clockwise
+
+    const wrapAfter = (afterNatural > 0 && afterNatural < half) ? afterNatural : -1;
+    const wrapBeforeRaw = afterNatural - half;
+    const wrapBefore = (wrapBeforeRaw > 0 && wrapBeforeRaw < clockwise.length - half) ? wrapBeforeRaw : -1;
+
+    return {
+      after: clockwise.slice(0, half),
+      before: clockwise.slice(half),
+      wrapAfter,
+      wrapBefore,
+    };
   });
 
-  const sessionsAfter = createMemo(() => {
-    const idx = focusedIdx();
-    if (idx < 0) return sessions.slice(0);
-    return sessions.slice(idx + 1);
-  });
+  const sessionsBefore = createMemo(() => rolodex().before);
+  const sessionsAfter = createMemo(() => rolodex().after);
 
   // Compute the tallest card height across all sessions so the
   // focused-card frame never resizes as you cycle.
@@ -734,41 +750,46 @@ function App() {
         {/* Sessions above focused — bottom-aligned so nearest is adjacent */}
         <box flexDirection="column" flexGrow={1} flexBasis={0} justifyContent="flex-end" gap={1} paddingBottom={1}>
           <For each={sessionsBefore()}>
-            {(session) => (
-              <SessionCard
-                session={session}
-                isFocused={false}
-                isCurrent={session.name === currentSession()}
-                spinIdx={spinIdx}
-                theme={theme}
-                statusColors={S}
-                onSelect={() => {
-                  setFocusedSession(session.name);
-                  send({ type: "focus-session", name: session.name });
-                  switchToSession(session.name);
-                }}
-                panelFocus={panelFocus}
-                focusedAgentIdx={focusedAgentIdx}
-                onAgentDismiss={(agent) => {
-                  send({
-                    type: "dismiss-agent",
-                    session: session.name,
-                    agent: agent.agent,
-                    threadId: agent.threadId,
-                  });
-                }}
-                onAgentFocus={(agent) => {
-                  appendFileSync("/tmp/opensessions-tui-agent-click.log",
-                    `[${new Date().toISOString()}] sending focus-agent-pane session=${session.name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`);
-                  send({
-                    type: "focus-agent-pane",
-                    session: session.name,
-                    agent: agent.agent,
-                    threadId: agent.threadId,
-                    threadName: agent.threadName,
-                  });
-                }}
-              />
+            {(session, i) => (
+              <>
+                <Show when={i() === rolodex().wrapBefore}>
+                  <box height={1} paddingLeft={1}><text style={{ fg: P().surface1 }}>{"─".repeat(200)}</text></box>
+                </Show>
+                <SessionCard
+                  session={session}
+                  isFocused={false}
+                  isCurrent={session.name === currentSession()}
+                  spinIdx={spinIdx}
+                  theme={theme}
+                  statusColors={S}
+                  onSelect={() => {
+                    setFocusedSession(session.name);
+                    send({ type: "focus-session", name: session.name });
+                    switchToSession(session.name);
+                  }}
+                  panelFocus={panelFocus}
+                  focusedAgentIdx={focusedAgentIdx}
+                  onAgentDismiss={(agent) => {
+                    send({
+                      type: "dismiss-agent",
+                      session: session.name,
+                      agent: agent.agent,
+                      threadId: agent.threadId,
+                    });
+                  }}
+                  onAgentFocus={(agent) => {
+                    appendFileSync("/tmp/opensessions-tui-agent-click.log",
+                      `[${new Date().toISOString()}] sending focus-agent-pane session=${session.name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`);
+                    send({
+                      type: "focus-agent-pane",
+                      session: session.name,
+                      agent: agent.agent,
+                      threadId: agent.threadId,
+                      threadName: agent.threadName,
+                    });
+                  }}
+                />
+              </>
             )}
           </For>
         </box>
@@ -814,41 +835,46 @@ function App() {
         {/* Sessions below focused */}
         <box flexDirection="column" flexGrow={1} flexBasis={0} gap={1} paddingTop={1}>
           <For each={sessionsAfter()}>
-            {(session) => (
-              <SessionCard
-                session={session}
-                isFocused={false}
-                isCurrent={session.name === currentSession()}
-                spinIdx={spinIdx}
-                theme={theme}
-                statusColors={S}
-                onSelect={() => {
-                  setFocusedSession(session.name);
-                  send({ type: "focus-session", name: session.name });
-                  switchToSession(session.name);
-                }}
-                panelFocus={panelFocus}
-                focusedAgentIdx={focusedAgentIdx}
-                onAgentDismiss={(agent) => {
-                  send({
-                    type: "dismiss-agent",
-                    session: session.name,
-                    agent: agent.agent,
-                    threadId: agent.threadId,
-                  });
-                }}
-                onAgentFocus={(agent) => {
-                  appendFileSync("/tmp/opensessions-tui-agent-click.log",
-                    `[${new Date().toISOString()}] sending focus-agent-pane session=${session.name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`);
-                  send({
-                    type: "focus-agent-pane",
-                    session: session.name,
-                    agent: agent.agent,
-                    threadId: agent.threadId,
-                    threadName: agent.threadName,
-                  });
-                }}
-              />
+            {(session, i) => (
+              <>
+                <Show when={i() === rolodex().wrapAfter}>
+                  <box height={1} paddingLeft={1}><text style={{ fg: P().surface1 }}>{"─".repeat(200)}</text></box>
+                </Show>
+                <SessionCard
+                  session={session}
+                  isFocused={false}
+                  isCurrent={session.name === currentSession()}
+                  spinIdx={spinIdx}
+                  theme={theme}
+                  statusColors={S}
+                  onSelect={() => {
+                    setFocusedSession(session.name);
+                    send({ type: "focus-session", name: session.name });
+                    switchToSession(session.name);
+                  }}
+                  panelFocus={panelFocus}
+                  focusedAgentIdx={focusedAgentIdx}
+                  onAgentDismiss={(agent) => {
+                    send({
+                      type: "dismiss-agent",
+                      session: session.name,
+                      agent: agent.agent,
+                      threadId: agent.threadId,
+                    });
+                  }}
+                  onAgentFocus={(agent) => {
+                    appendFileSync("/tmp/opensessions-tui-agent-click.log",
+                      `[${new Date().toISOString()}] sending focus-agent-pane session=${session.name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`);
+                    send({
+                      type: "focus-agent-pane",
+                      session: session.name,
+                      agent: agent.agent,
+                      threadId: agent.threadId,
+                      threadName: agent.threadName,
+                    });
+                  }}
+                />
+              </>
             )}
           </For>
         </box>
