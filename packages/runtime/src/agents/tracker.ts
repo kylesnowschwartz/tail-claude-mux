@@ -32,6 +32,21 @@ export class AgentTracker {
   applyEvent(event: AgentEvent, options?: { seed?: boolean }): void {
     const key = instanceKey(event.agent, event.threadId);
 
+    // Watcher signalled the agent session is definitively ended — remove now
+    // rather than waiting for the terminal-prune window. Covers /exit, Ctrl+C,
+    // and any other clean shutdown where a SessionEnd-equivalent fires.
+    if (event.ended) {
+      const sessionInstances = this.instances.get(event.session);
+      if (sessionInstances) {
+        sessionInstances.delete(key);
+        this.unseenInstances.delete(this.unseenKey(event.session, key));
+        if (sessionInstances.size === 0) {
+          this.instances.delete(event.session);
+        }
+      }
+      return;
+    }
+
     // Store instance
     let sessionInstances = this.instances.get(event.session);
     if (!sessionInstances) {

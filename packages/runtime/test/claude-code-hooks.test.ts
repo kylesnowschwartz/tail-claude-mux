@@ -331,6 +331,26 @@ describe("ClaudeCodeHookAdapter", () => {
     expect(ctx.events).toHaveLength(3);
     expect(ctx.events[2].status).toBe("idle");
   });
+
+  test("SessionEnd emits ended=true", () => {
+    adapter.handleHook(hook("UserPromptSubmit", "sess-1", "/tmp/myproject"));
+    adapter.handleHook(hook("SessionEnd", "sess-1", "/tmp/myproject"));
+
+    expect(ctx.events[1].ended).toBe(true);
+  });
+
+  test("SessionEnd after Stop still emits (bypasses dedup)", () => {
+    // Regression: Stop sets status=done, then SessionEnd would be deduped
+    // because status is unchanged. SessionEnd must bypass dedup so the
+    // tracker receives the ended signal and removes the instance.
+    adapter.handleHook(hook("UserPromptSubmit", "sess-1", "/tmp/myproject"));
+    adapter.handleHook(hook("Stop", "sess-1", "/tmp/myproject"));
+    adapter.handleHook(hook("SessionEnd", "sess-1", "/tmp/myproject"));
+
+    expect(ctx.events).toHaveLength(3);
+    expect(ctx.events[2].status).toBe("done");
+    expect(ctx.events[2].ended).toBe(true);
+  });
 });
 
 // --- toolDescription unit tests ---

@@ -19,6 +19,10 @@ export interface AgentEvent {
   liveness?: AgentLiveness;
   /** Human-readable description of current activity, e.g. "Reading config.ts" or "Bash: git push" */
   toolDescription?: string;
+  /** Signals the tracker to remove this instance immediately instead of holding
+   *  it in the terminal-prune window. Set by watchers when the underlying
+   *  agent session has definitively ended (e.g. SessionEnd hook). */
+  ended?: boolean;
 }
 
 export const TERMINAL_STATUSES = new Set<AgentStatus>(["done", "error", "interrupted"]);

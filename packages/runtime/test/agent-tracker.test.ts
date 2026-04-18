@@ -98,6 +98,41 @@ describe("AgentTracker", () => {
     expect(tracker.isUnseen("sess-1")).toBe(true); // thread B still unseen
   });
 
+  // --- ended flag ---
+
+  test("applyEvent with ended=true removes the instance immediately", () => {
+    tracker.applyEvent(event({ session: "sess-1", status: "running", threadId: "t1" }));
+    expect(tracker.getAgents("sess-1")).toHaveLength(1);
+
+    tracker.applyEvent(event({ session: "sess-1", status: "done", threadId: "t1", ended: true }));
+
+    expect(tracker.getAgents("sess-1")).toHaveLength(0);
+    expect(tracker.isUnseen("sess-1")).toBe(false);
+  });
+
+  test("applyEvent with ended=true bypasses the terminal-prune window", () => {
+    // Simulates the SessionEnd-after-Stop case: tracker already holds a done
+    // entry marked unseen; the ended flag must clear it without waiting.
+    tracker.applyEvent(event({ session: "sess-1", status: "done", threadId: "t1" }));
+    expect(tracker.isUnseen("sess-1")).toBe(true);
+
+    tracker.applyEvent(event({ session: "sess-1", status: "done", threadId: "t1", ended: true }));
+
+    expect(tracker.getAgents("sess-1")).toHaveLength(0);
+    expect(tracker.isUnseen("sess-1")).toBe(false);
+  });
+
+  test("applyEvent with ended=true only removes the targeted instance", () => {
+    tracker.applyEvent(event({ session: "sess-1", status: "running", threadId: "t1" }));
+    tracker.applyEvent(event({ session: "sess-1", status: "running", threadId: "t2" }));
+
+    tracker.applyEvent(event({ session: "sess-1", status: "done", threadId: "t1", ended: true }));
+
+    const remaining = tracker.getAgents("sess-1");
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].threadId).toBe("t2");
+  });
+
   // --- getState ---
 
   test("getState returns null for unknown session", () => {

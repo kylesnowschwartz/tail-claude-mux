@@ -267,6 +267,18 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
       this.resolveThreadName(threadId, payload.cwd);
     }
 
+    // SessionEnd must bypass the dedup check below: a prior Stop event
+    // already set status=done, so the dedup path would otherwise swallow
+    // the end signal and leave a ghost entry until the 5-min prune.
+    if (payload.event === "SessionEnd") {
+      state.status = newStatus;
+      state.lastToolDescription = undefined;
+      dbg("hook", "emit-ended", { threadId: threadId.slice(0, 8), session });
+      this.emit(threadId, state, session, { ended: true });
+      this.threads.delete(threadId);
+      return;
+    }
+
     // Compute tool description for tool-related events
     const hasToolContext = payload.event === "PreToolUse" || payload.event === "PermissionRequest";
     if (hasToolContext) {
@@ -287,11 +299,6 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
     state.status = newStatus;
     dbg("hook", "emit", { threadId: threadId.slice(0, 8), session, status: newStatus, tool: state.lastToolDescription });
     this.emit(threadId, state, session);
-
-    // SessionEnd: clean up thread state — the session is gone
-    if (payload.event === "SessionEnd") {
-      this.threads.delete(threadId);
-    }
   }
 
   /** Map a hook payload to a status, or null if the event should be ignored. */
@@ -309,7 +316,7 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
     return HOOK_STATUS_MAP[payload.event] ?? null;
   }
 
-  private emit(threadId: string, state: ThreadState, session: string): void {
+  private emit(threadId: string, state: ThreadState, session: string, extras?: { ended?: boolean }): void {
     if (!this.ctx) return;
     this.ctx.emit({
       agent: "claude-code",
@@ -319,6 +326,7 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
       threadId,
       threadName: state.threadName,
       toolDescription: state.lastToolDescription,
+      ...(extras?.ended ? { ended: true } : {}),
     });
   }
 
