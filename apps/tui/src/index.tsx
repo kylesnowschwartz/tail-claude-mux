@@ -82,15 +82,18 @@ function sanitizeThreadName(raw: string): string {
   return firstLine.replace(/^(?:---+|#+|\*{1,2}|>\s*)+\s*/, "").trim();
 }
 
-/** Build an FZF_DEFAULT_OPTS --color string from an opensessions palette. */
+/** Build an FZF_DEFAULT_OPTS --color string from an opensessions palette.
+ *  fzf doesn't understand the literal string "transparent" — it wants -1 to
+ *  mean "use terminal default", which is how we render transparency. */
 function paletteToFzfColors(p: ThemePalette): string {
+  const c = (v: string) => (v === "transparent" ? "-1" : v);
   return [
-    `--color=fg:${p.text},bg:${p.base},hl:${p.blue}`,
-    `--color=fg+:${p.surface2},bg+:${p.surface0},hl+:${p.blue}`,
-    `--color=info:${p.blue},prompt:${p.blue},pointer:${p.blue}`,
-    `--color=marker:${p.green},spinner:${p.blue},header:${p.overlay0}`,
-    `--color=border:${p.surface2},gutter:${p.base}`,
-    `--color=query:${p.text},disabled:${p.overlay0}`,
+    `--color=fg:${c(p.text)},bg:${c(p.base)},hl:${c(p.blue)}`,
+    `--color=fg+:${c(p.surface2)},bg+:${c(p.surface0)},hl+:${c(p.blue)}`,
+    `--color=info:${c(p.blue)},prompt:${c(p.blue)},pointer:${c(p.blue)}`,
+    `--color=marker:${c(p.green)},spinner:${c(p.blue)},header:${c(p.overlay0)}`,
+    `--color=border:${c(p.surface2)},gutter:${c(p.base)}`,
+    `--color=query:${c(p.text)},disabled:${c(p.overlay0)}`,
   ].join(" ");
 }
 
