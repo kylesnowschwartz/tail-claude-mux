@@ -72,7 +72,7 @@ Then remove the `set -g @plugin 'Ataraxy-Labs/opensessions'` line from `~/.tmux.
 
 ## Today
 
-- Live agent state across sessions for Amp, Claude Code, Codex, and OpenCode.
+- Live agent state across sessions for Claude Code and pi, plus community watchers for Amp, Codex, and OpenCode (via plugins).
 - Per-thread unseen markers for `done`, `error`, and `interrupted` states.
 - Session context in the UI: branch in the list, working directory in the detail panel, thread names, and detected localhost ports.
 - Programmatic metadata API: agents and scripts push status, progress, and logs to the sidebar via HTTP.
@@ -139,6 +139,7 @@ For the full tmux workflow with keybindings, troubleshooting, and configuration 
 - Session ordering is persisted in `~/.config/opensessions/session-order.json`.
 - Amp watcher reads `~/.local/share/amp/threads/*.json` and clears unseen state from Amp's `session.json` when a thread becomes seen there.
 - Claude Code watcher reads JSONL transcripts in `~/.claude/projects/`.
+- pi watcher receives lifecycle events from a pi extension (`integrations/pi-extension/`); install with `bun run scripts/setup-pi-extension.ts`.
 - Codex watcher reads transcript JSONL files in `~/.codex/sessions/` or `$CODEX_HOME/sessions/` and resolves sessions from `turn_context.cwd`.
 - OpenCode watcher polls the SQLite database in `~/.local/share/opencode/opencode.db`.
 - Hidden sidebars are stashed in a tmux session named `_os_stash`, so they can come back without restarting the sidebar process.
@@ -163,6 +164,7 @@ For the full tmux workflow with keybindings, troubleshooting, and configuration 
 
 - `opensessions.tmux` — root TPM entrypoint for users
 - `integrations/tmux-plugin` — tmux-facing scripts and host integration glue
+- `integrations/pi-extension` — pi extension that pushes lifecycle events to opensessions
 
 ## Current Caveats
 

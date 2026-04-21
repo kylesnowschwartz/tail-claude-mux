@@ -6,7 +6,21 @@ For end-user setup, start with the docs linked from [README.md](./README.md). Fo
 
 ## Built-In Watchers
 
-opensessions registers one built-in watcher at server startup.
+opensessions registers two built-in watchers at server startup: Claude Code
+and pi. Both share the single `POST /hook` endpoint and are distinguished
+by an optional `agent` field on the payload.
+
+### Shared Hook Transport
+
+`POST /hook` delivers a `HookPayload` to every registered `HookReceiver`.
+Adapters filter on the `agent` discriminator:
+
+- `agent` missing or `"claude-code"` → handled by `ClaudeCodeHookAdapter`.
+- `agent: "pi"` → handled by `PiHookAdapter`.
+- Other values are ignored by both built-in adapters.
+
+A single hook body can in principle be observed by multiple watchers, but
+built-in adapters claim payloads exclusively via the discriminator.
 
 ### Claude Code (Hook-Based)
 
@@ -20,9 +34,27 @@ opensessions registers one built-in watcher at server startup.
 - On first hook for an unknown session, reads the JSONL file once to resolve the thread name.
 - No polling, no `fs.watch`, no intervals after startup.
 
-#### Hook Setup
+#### Claude Code Hook Setup
 
 Run `bun run scripts/setup-hooks.ts` to register hooks in `~/.claude/settings.json`. The setup is idempotent.
+
+### Pi (Hook-Based)
+
+- Receives pi-native snake_case events (`session_start`, `agent_start`, `agent_end`, `tool_execution_start`, `tool_execution_end`, `session_shutdown`) via `POST /hook` with `agent: "pi"` on the payload.
+- A pi extension (`integrations/pi-extension/`) subscribes to pi's lifecycle events and POSTs to `http://127.0.0.1:${OPENSESSIONS_PORT:-7391}/hook`. Every POST is fire-and-forget with a 2s request timeout so hook failures never block the agent.
+- Status mapping:
+  - `session_start` → `idle` (optional `session_name` becomes `threadName`).
+  - `agent_start` → `running`, clears `toolDescription`.
+  - `tool_execution_start` → `running` with a description like `Reading foo.ts` / `Running git status`.
+  - `tool_execution_end` → `running`; tool-level errors (`tool_is_error: true`) are surfaced in logs but do not change status. The LLM routinely recovers from tool failures.
+  - `agent_end` with `stop_reason: "stop" | "length" | "toolUse"` → `done`; `"aborted"` → `interrupted`; `"error"` → `error` with the truncated `error_message` as `toolDescription`.
+  - `session_shutdown` → emits `done` with `ended: true` and drops thread state immediately so the tracker does not hold the instance through the terminal-prune window.
+- `threadId` is pi's session UUID (`ctx.sessionManager.getSessionId()`), so multiple concurrent pi instances in the same mux session render as separate sidebar rows.
+- On cold start, scans `~/.pi/agent/sessions/` for files modified within the last 5 minutes and reads `SessionHeader.cwd` from each to avoid pi's lossy directory-name encoding. Hooks always win if a thread is known from both sources.
+
+#### Pi Extension Setup
+
+Run `bun run scripts/setup-pi-extension.ts` to symlink `integrations/pi-extension/` into `~/.pi/agent/extensions/opensessions`. The setup is idempotent. See [`integrations/pi-extension/README.md`](./integrations/pi-extension/README.md) for details.
 
 ### Adding Other Agents
 
