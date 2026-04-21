@@ -36,20 +36,41 @@ export interface AgentWatcher {
 
 // --- Hook-based detection ---
 
-/** Payload sent by Claude Code lifecycle hooks via POST /hook. */
+/** Payload sent by agent lifecycle hooks via POST /hook.
+ *  All registered hook receivers see every payload; each adapter filters on
+ *  the optional `agent` discriminator to claim its own events. Payloads with
+ *  no `agent` field are treated as Claude Code for backward compatibility. */
 export interface HookPayload {
-  /** Hook event name: "UserPromptSubmit" | "PreToolUse" | "PermissionRequest" | "PostToolUse" | "Stop" | "Notification" | "SessionStart" | "SessionEnd" */
+  /** Optional agent discriminator. Missing/undefined → Claude Code (legacy).
+   *  Known values: "claude-code", "pi". */
+  agent?: string;
+  /** Hook event name. Claude Code: "UserPromptSubmit" | "PreToolUse" |
+   *  "PermissionRequest" | "PostToolUse" | "Stop" | "Notification" |
+   *  "SessionStart" | "SessionEnd". Pi (snake_case): "session_start" |
+   *  "agent_start" | "agent_end" | "tool_execution_start" |
+   *  "tool_execution_end" | "session_shutdown". */
   event: string;
-  /** Claude Code session UUID — used as threadId */
+  /** Agent session UUID — used as threadId */
   session_id: string;
   /** Project directory the agent is working in */
   cwd: string;
-  /** Tool name (PreToolUse, PermissionRequest, PostToolUse) */
+  /** Tool name (PreToolUse, PermissionRequest, PostToolUse, tool_execution_*) */
   tool_name?: string;
-  /** Tool input parameters (PreToolUse, PermissionRequest) — contains file_path, command, pattern, etc. */
+  /** Tool input parameters — contains file_path, command, pattern, etc. */
   tool_input?: Record<string, unknown>;
-  /** Notification subtype (Notification only): "permission_prompt" | "idle_prompt" | "auth_success" | "elicitation_dialog" */
+  /** Notification subtype (Claude Code Notification only). */
   notification_type?: string;
+  /** Pi session_start only: optional display name from SessionInfo or first user message. */
+  session_name?: string;
+  /** Pi tool_execution_end only: whether the tool reported an error. Tool-level
+   *  errors do not change status; the LLM routinely recovers from them. */
+  tool_is_error?: boolean;
+  /** Pi agent_end only: why the assistant stopped. */
+  stop_reason?: "stop" | "length" | "toolUse" | "error" | "aborted";
+  /** Pi agent_end only: error message when stop_reason === "error". */
+  error_message?: string;
+  /** Pi session_shutdown only: why the session is ending. */
+  shutdown_reason?: "quit" | "reload" | "new" | "resume" | "fork";
 }
 
 /** A watcher that can receive hook events pushed from the agent process. */

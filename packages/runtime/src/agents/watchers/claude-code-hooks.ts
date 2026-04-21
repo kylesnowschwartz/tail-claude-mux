@@ -241,6 +241,12 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
   }
 
   handleHook(payload: HookPayload): void {
+    // Filter on the optional `agent` discriminator. Missing/undefined falls
+    // through as Claude Code (legacy hook payloads have no `agent` field).
+    if (payload.agent !== undefined && payload.agent !== "claude-code") {
+      dbg("hook", "ignored-foreign-agent", { agent: payload.agent, event: payload.event });
+      return;
+    }
     dbg("hook", "received", { event: payload.event, cwd: payload.cwd, session_id: payload.session_id?.slice(0, 8) });
     if (!this.ctx) { dbg("hook", "no-ctx"); return; }
 

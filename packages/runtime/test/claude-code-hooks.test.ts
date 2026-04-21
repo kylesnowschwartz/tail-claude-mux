@@ -166,6 +166,38 @@ describe("ClaudeCodeHookAdapter", () => {
     expect(ctx.events).toHaveLength(0);
   });
 
+  // --- Agent discriminator ---
+
+  test("payload with agent: 'pi' is ignored", () => {
+    adapter.handleHook({
+      agent: "pi",
+      event: "session_start",
+      session_id: "sess-pi-1",
+      cwd: "/tmp/myproject",
+    });
+
+    expect(ctx.events).toHaveLength(0);
+  });
+
+  test("payload with agent: 'claude-code' still dispatches", () => {
+    adapter.handleHook({
+      agent: "claude-code",
+      event: "SessionStart",
+      session_id: "sess-1",
+      cwd: "/tmp/myproject",
+    });
+
+    expect(ctx.events).toHaveLength(1);
+    expect(ctx.events[0].status).toBe("idle");
+  });
+
+  test("payload without agent field still dispatches (legacy)", () => {
+    adapter.handleHook(hook("SessionStart", "sess-1", "/tmp/myproject"));
+
+    expect(ctx.events).toHaveLength(1);
+    expect(ctx.events[0].agent).toBe("claude-code");
+  });
+
   // --- Unresolved session ---
 
   test("unresolved cwd emits nothing", () => {
