@@ -82,6 +82,16 @@ function sanitizeThreadName(raw: string): string {
   return firstLine.replace(/^(?:---+|#+|\*{1,2}|>\s*)+\s*/, "").trim();
 }
 
+/** Short display form for a threadId.
+ *  Uses the last 4 chars of the ID because multiple agents (pi, OpenCode)
+ *  produce IDs with deterministic *prefixes* (UUIDv7 timestamp, `ses_`
+ *  sigil) while their random bits live at the tail. For Claude Code's
+ *  UUIDv4 the distribution is uniform, so the tail is just as good as the
+ *  head. */
+function shortThreadId(id: string): string {
+  return id.length <= 4 ? id : id.slice(-4);
+}
+
 /** Build an FZF_DEFAULT_OPTS --color string from an opensessions palette.
  *  fzf doesn't understand the literal string "transparent" — it wants -1 to
  *  mean "use terminal default", which is how we render transparency. */
@@ -1288,7 +1298,7 @@ function AgentListItem(props: AgentListItemProps) {
           <text flexGrow={1} truncate>
             <span style={{ fg: props.isKeyboardFocused ? P().text : P().subtext1, attributes: props.isKeyboardFocused ? BOLD : undefined }}>{props.agent.agent}</span>
             <Show when={props.agent.threadId}>
-              <span style={{ fg: P().overlay0, attributes: DIM }}>{" #"}{props.agent.threadId!.slice(0, 4)}</span>
+              <span style={{ fg: P().overlay0, attributes: DIM }}>{" #"}{shortThreadId(props.agent.threadId!)}</span>
             </Show>
           </text>
           <Show when={isUnseen()}>

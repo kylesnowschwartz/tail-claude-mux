@@ -17,7 +17,7 @@ const BRANCH_ICON_COLS = 2;         // "⎇ " prefix when branch is present
 // Expanded agent list item layout (inside focused card border + paddingLeft={1}):
 //   expandPad(1) + dismiss(2) + name + [threadId] + [unseenBadge] + statusIcon(2) + padRight(1)
 const AGENT_ROW_FIXED = 1 + 2 + 2 + 1; // = 6
-const THREAD_ID_COLS = 6;          // " #" + 4 chars (threadId.slice(0, 4))
+const THREAD_ID_COLS = 6;          // " #" + 4 chars (threadId.slice(-4))
 
 /**
  * Compute the narrowest sidebar width that still fits session content
