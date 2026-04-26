@@ -10,6 +10,17 @@ dataset.
 > count format is numeric-only; ports are removed entirely as a
 > feature; collapsed-session severity is conditional (blank when
 > nominal). See locked-decisions table below.
+>
+> **Updated 2026-04-28 after live-QA pivot.** The rolodex is now a
+> *linear tape*: sessions stay in their natural order, the focused card
+> stays vertically centred, and the viewport slides over them. The
+> earlier wheel/rotation model (clockwise split into halves around the
+> focused pin) was confusing in practice — users lost track of where
+> they were in the list. Navigation (`j`/`k`) still wraps modularly so
+> a single keystroke at the bottom takes you to the top. The chevron
+> separators above and below the focused card stay; their semantics
+> simplify from "wrap point" to "structural separator between focused
+> card and surrounding tape." See locked decision #6.
 
 ---
 
@@ -22,6 +33,7 @@ dataset.
 | 3 | Same-type count format                | **Numeric-only** — `2`, `3`, `9+`. The earlier `2π` form was reverted (Codex B1/Q3).                                          |
 | 4 | Activity zone heading                 | **Session-name label** — `opensessions ` (focused-session name + nf-md arrow-right separator).                              |
 | 5 | Rolodex wrap rules                    | nf-md chevron-up / chevron-down anchored mid-rule, always visible (`──  ──`, `──  ──`).                                     |
+| 6 | Rolodex layout & navigation           | **Linear tape.** Sessions in natural order; focused card pinned at vertical centre; viewport slides over the tape. `j`/`k` wrap modularly (a single press at either end snaps to the opposite end). The earlier wheel/rotation model is retired. |
 | ↑ | What about ports as a feature?        | **Removed entirely.** During implementation, delete the lsof polling loop, the `ports: number[]` field on `SessionData`, the rendering code, the width-sync accounting, and the doc references. |
 | ↑ | Unseen state visual                   | **Colour-only** — name shifts to `teal` (replaces Tier 2/Tier 1 colour). No glyph. See `03-vocabulary.md` §4.                |
 | ↑ | Italic                                 | Sanctioned only inside the activity zone description column (Tier 3 + italic; freshest entry steps up to Tier 2 + italic). Anywhere else, italic is a violation. |

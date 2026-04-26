@@ -90,9 +90,22 @@ itself the pulse. Reopens if Phase-3 mockups feel too quiet.
 
 ## 3. ROLODEX zone
 
-The existing rolodex grammar (focused card pinned at vertical centre,
-neighbours above and below, wrap-rules at the edges) is good HUD discipline
-and is kept. What changes inside each card:
+The rolodex is a **linear tape**: sessions stay in their natural order,
+the focused card is pinned at the vertical centre of the zone, and the
+viewport slides over the tape as the focus index changes. Navigation
+(`j`/`k`) wraps modularly — a single press at either end of the list
+snaps the viewport to the opposite end — but **the visible layout never
+rotates.** Sessions appear in stable, predictable positions relative to
+each other; only the viewport's location on the tape moves.
+
+An earlier draft modelled this as a wheel (clockwise rotation around the
+focused pin, with the surrounding sessions split into halves). That was
+retired after live-QA disorientation; see
+`04-mockups/02-canonical.md` locked decision #6.
+
+The chevron rules above and below the focused card are kept as
+*structural separators* (always visible, not gated on any list-wrap
+point). What changes inside each card:
 
 ### 3.1 Session row (collapsed)
 

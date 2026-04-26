@@ -40,6 +40,25 @@ using the real 5-session dataset captured from a live screenshot.
 
 ---
 
+## Status (live)
+
+Implementation has started — Stages 1 and 2 are landed (vocab + tiers
+modules; severity glyph swap; mock flag with canonical scenarios;
+header counter retirement; branch glyph + numeric count + B5
+conditional severity; chevron wrap rules). The design docs in this
+folder remain the spec; one decision was revised after live QA:
+
+- **2026-04-28 — rolodex layout pivot.** The wheel/rotation model was
+  retired in favour of a *linear tape* (sessions in natural order;
+  focused card pinned vertically centred; viewport slides over the
+  tape; `j`/`k` wraps modularly). The wheel disoriented users in
+  practice. See `04-mockups/02-canonical.md` locked decision #6 and the
+  dated update note at the top of that file.
+
+Other locked decisions are unchanged.
+
+---
+
 ## How long do you have?
 
 ### 5 minutes

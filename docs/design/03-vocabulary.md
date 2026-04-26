@@ -237,8 +237,8 @@ or agent name itself**:
 | Working-dir row leader |  folder-outline | `\u{F0770}` | nf-md | Tier 4 (muted) |
 | Activity zone leader |  chevron-right | `\u{F0142}` | nf-md | Tier 4 (muted) |
 | Activity zone heading separator |  arrow-right | `\u{F0054}` | nf-md | Tier 4 (muted) — used between session name and the entries (`opensessions 䍡`) |
-| Rolodex wrap-up rule |  chevron-up | `\u{F0143}` | nf-md | `surface1` (Tier 4 colour) — anchored mid-rule |
-| Rolodex wrap-down rule |  chevron-down | `\u{F0140}` | nf-md | `surface1` |
+| Rolodex top separator |  chevron-up | `\u{F0143}` | nf-md | `surface1` (Tier 4 colour) — anchored mid-rule, marks the boundary above the focused card; always visible regardless of viewport position on the tape |
+| Rolodex bottom separator |  chevron-down | `\u{F0140}` | nf-md | `surface1` — anchored mid-rule, marks the boundary below the focused card; always visible |
 | Zone separator (rule between zones) | `─` | `\u{2500}` | box-drawing | `surface1` |
 | Focused-card border (corners) | `╭ ╮ ╯ ╰` | `\u{256D} \u{256E} \u{256F} \u{2570}` | box-drawing | `blue` (focused) / `surface2` (unfocused) |
 | Focused-card border (edges) | `─ │` | `\u{2500} \u{2502}` | box-drawing | same as corners |
