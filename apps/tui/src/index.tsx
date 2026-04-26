@@ -26,6 +26,7 @@ import {
   SEV_STOPPED,
   SEV_ERROR,
 } from "./vocab";
+import { getScenario, listScenarios } from "./mocks/scenarios";
 
 // Detect which mux we're running inside
 type MuxContext =
@@ -159,6 +160,14 @@ function getClientTty(): string {
   }
   // Zellij doesn't expose client TTY
   return "";
+}
+
+function parseMockFlag(): string | null {
+  for (const arg of process.argv.slice(2)) {
+    if (arg === "--mock") return "quiet";
+    if (arg.startsWith("--mock=")) return arg.slice("--mock=".length);
+  }
+  return null;
 }
 
 function getLocalSessionName(): string | null {
@@ -430,6 +439,26 @@ function App() {
   }
 
   onMount(() => {
+    // --- Mock mode: seed the store from a canonical scenario and skip the WS path ---
+    const mockName = parseMockFlag();
+    if (mockName) {
+      const scenario = getScenario(mockName);
+      if (scenario) {
+        batch(() => {
+          setSessions(reconcile(scenario.sessions, { key: "name" }));
+          setFocusedSession(scenario.focusedSession);
+          setCurrentSession(scenario.currentSession);
+          setMySession(scenario.currentSession);
+          setPaneFocused(scenario.paneFocused);
+          setConnected(true);
+        });
+        // Tick the spinner so working agents animate even without a server.
+        const spinTimer = setInterval(() => setSpinIdx((i) => (i + 1) % SPINNERS.length), 120);
+        onCleanup(() => clearInterval(spinTimer));
+      }
+      return;
+    }
+
     // Refocus the main pane once terminal capability detection finishes.
     // This avoids the race where start.sh refocuses too early and capability
     // responses leak as garbage text into the main pane.
@@ -1661,7 +1690,18 @@ function SessionCard(props: SessionCardProps) {
 }
 
 async function main() {
-  await ensureServer();
+  const mock = parseMockFlag();
+  if (!mock) {
+    await ensureServer();
+  } else {
+    const scenario = getScenario(mock);
+    if (!scenario) {
+      console.error(`Unknown mock scenario: ${mock}`);
+      console.error(`Available: ${listScenarios().join(", ")}`);
+      process.exit(1);
+    }
+    console.error(`[mock mode: ${scenario.name}] ${scenario.description}`);
+  }
   render(() => <App />, {
     exitOnCtrlC: true,
     targetFPS: 30,
