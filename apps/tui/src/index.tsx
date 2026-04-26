@@ -266,23 +266,28 @@ function App() {
     return sessions.findIndex(s => s.name === name);
   });
 
-  // Rolodex: sessions form a continuous wheel around the focused card.
-  // The non-focused sessions are ordered clockwise (after→wrap→before),
-  // then split in half: first half goes below, second half goes above.
+  // Rolodex: a *linear tape* of sessions in their natural order. The focused
+  // card is pinned at the vertical centre of the zone; the viewport slides
+  // over the tape as the focus index changes. Sessions appear in stable,
+  // predictable positions relative to each other — the visible layout
+  // never rotates.
   //
-  // The chevron wrap-rule above and below the focused card is now always
-  // visible (a structural separator, not gated on the wrap point), so the
-  // legacy `wrapBefore`/`wrapAfter` indices are no longer needed.
+  // `j`/`k` navigation wraps modularly (see moveLocalFocus) so a single
+  // press at either end snaps to the opposite end. That wrap is a
+  // *navigation* behaviour; the tape itself does not wrap visually — at the
+  // boundaries the `before` / `after` halves shrink, leaving empty space
+  // above or below the focused card. The chevron separators above and below
+  // the focused card stay always-visible regardless.
+  //
+  // See docs/design/04-mockups/02-canonical.md locked decision #6 and the
+  // 2026-04-28 dated update note for the design rationale (the earlier
+  // wheel/rotation model disoriented users in live QA).
   const rolodex = createMemo(() => {
     const idx = focusedIdx();
-    const n = sessions.length;
-    if (idx < 0 || n <= 1) return { before: [] as SessionData[], after: [] as SessionData[] };
-
-    const clockwise = [...sessions.slice(idx + 1), ...sessions.slice(0, idx)];
-    const half = Math.ceil(clockwise.length / 2);
+    if (idx < 0) return { before: [] as SessionData[], after: [] as SessionData[] };
     return {
-      after: clockwise.slice(0, half),
-      before: clockwise.slice(half),
+      before: sessions.slice(0, idx),
+      after: sessions.slice(idx + 1),
     };
   });
 
