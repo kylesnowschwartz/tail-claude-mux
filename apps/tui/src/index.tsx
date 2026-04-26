@@ -19,6 +19,13 @@ import {
   resolveTheme,
 } from "@opensessions/runtime";
 import { TmuxClient } from "@opensessions/mux-tmux";
+import {
+  SEV_WORKING_SPINNER,
+  SEV_WAITING,
+  SEV_READY,
+  SEV_STOPPED,
+  SEV_ERROR,
+} from "./vocab";
 
 // Detect which mux we're running inside
 type MuxContext =
@@ -42,8 +49,7 @@ function detectMuxContext(): MuxContext {
 
 const muxCtx = detectMuxContext();
 
-const SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const UNSEEN_ICON = "●";
+const SPINNERS = SEV_WORKING_SPINNER;
 const BOLD = TextAttributes.BOLD;
 const DIM = TextAttributes.DIM;
 const THEME_NAMES = Object.keys(BUILTIN_THEMES);
@@ -1241,11 +1247,11 @@ function AgentListItem(props: AgentListItemProps) {
   const icon = () => {
     const l = label();
     if (l === "working") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
-    if (l === "waiting") return "◆";
-    if (l === "ready") return "◇";
-    if (l === "stopped") return "·";
-    if (l === "error") return "✗";
-    return "◇";
+    if (l === "waiting") return SEV_WAITING;
+    if (l === "ready") return SEV_READY;
+    if (l === "stopped") return SEV_STOPPED;
+    if (l === "error") return SEV_ERROR;
+    return SEV_READY;
   };
 
   const color = () => {
@@ -1296,16 +1302,16 @@ function AgentListItem(props: AgentListItemProps) {
             <span style={{ fg: isDismissHover() ? P().red : P().overlay0 }}>{"✕ "}</span>
           </text>
           <text flexGrow={1} truncate>
-            <span style={{ fg: props.isKeyboardFocused ? P().text : P().subtext1, attributes: props.isKeyboardFocused ? BOLD : undefined }}>{props.agent.agent}</span>
+            <span style={{
+              fg: isUnseen()
+                ? P().teal
+                : (props.isKeyboardFocused ? P().text : P().subtext1),
+              attributes: props.isKeyboardFocused ? BOLD : undefined,
+            }}>{props.agent.agent}</span>
             <Show when={props.agent.threadId}>
               <span style={{ fg: P().overlay0, attributes: DIM }}>{" #"}{shortThreadId(props.agent.threadId!)}</span>
             </Show>
           </text>
-          <Show when={isUnseen()}>
-            <text flexShrink={0}>
-              <span style={{ fg: P().teal }}>{" "}{UNSEEN_ICON}</span>
-            </text>
-          </Show>
           <text flexShrink={0}>
             <span style={{ fg: color() }}>{" "}{icon()}</span>
           </text>
@@ -1369,10 +1375,10 @@ function SessionCard(props: SessionCardProps) {
   const statusIcon = () => {
     const l = label();
     if (l === "working") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
-    if (l === "waiting") return "◆";
-    if (l === "ready" && props.session.agentState) return "◇";
-    if (l === "stopped") return "·";
-    if (l === "error") return "✗";
+    if (l === "waiting") return SEV_WAITING;
+    if (l === "ready" && props.session.agentState) return SEV_READY;
+    if (l === "stopped") return SEV_STOPPED;
+    if (l === "error") return SEV_ERROR;
     return "";
   };
 
@@ -1388,6 +1394,9 @@ function SessionCard(props: SessionCardProps) {
 
   const nameColor = () => {
     const focused = props.paneFocused();
+    // Unseen sessions get the teal colour shift (color-only marker, replaces
+    // the retired ● glyph). See docs/design/03-vocabulary.md §4 "Unseen state".
+    if (unseen()) return P().teal;
     if (props.isCurrent) return focused ? P().text : P().subtext0;
     return focused ? P().subtext1 : P().overlay1;
   };
@@ -1498,11 +1507,7 @@ function SessionCard(props: SessionCardProps) {
               </Show>
             </text>
             <box flexGrow={1} />
-            <Show when={unseen()}>
-              <text flexShrink={0}>
-                <span style={{ fg: P().teal }}>{" "}{UNSEEN_ICON}</span>
-              </text>
-            </Show>
+            {/* Unseen marker is now color-only on the name (see nameColor()). */}
             <Show when={statusIcon()}>
               <text flexShrink={0}>
                 <span style={{ fg: statusColor() }}>{" "}{statusIcon()}</span>
