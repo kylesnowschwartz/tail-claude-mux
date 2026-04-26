@@ -1,0 +1,254 @@
+// Tmux header synchroniser.
+//
+// Single-writer translation from opensessions state -> tmux user options
+// that the status line in `integrations/tmux-plugin/scripts/header.tmux`
+// reads to render per-window agent glyphs and theme-aware colours.
+//
+// Spec: docs/specs/tmux-header.md
+
+import type { SessionData } from "../shared";
+import type { Theme } from "../themes";
+
+// --- Glyph table (v1 placeholders; one-line swap when SVG-derived font ships) ---
+
+// Glyphs intentionally drawn from widely-supported Unicode blocks (U+25xx
+// geometric shapes, U+26xx miscellaneous symbols, basic Greek). Less common
+// codepoints render as tofu boxes in monospace fonts that don't carry them.
+// MesloLGS Nerd Font has these; so do most monospace stacks. Swap in the
+// user's custom SVG-derived font glyphs by editing this table only.
+export const AGENT_GLYPHS: Record<string, string> = {
+  "claude-code": "★",
+  "pi": "π",
+  "codex": "▲",
+  "amp": "♦",
+  "generic": "●",
+};
+
+export const AGENT_PRIORITY: readonly string[] = ["claude-code", "pi", "codex", "amp"];
+
+export function pickAgentForWindow(agents: string[]): string {
+  for (const candidate of AGENT_PRIORITY) {
+    if (agents.includes(candidate)) return candidate;
+  }
+  return agents[0] ?? "generic";
+}
+
+// --- Palette tokens propagated to per-server tmux options ---
+
+const PALETTE_TOKENS = [
+  "base", "text", "blue", "surface0", "surface2",
+  "overlay0", "yellow", "red", "green",
+] as const satisfies readonly (keyof Theme["palette"])[];
+
+// --- Sync state ---
+
+export interface WindowState {
+  glyph: string;
+  fg: string;
+  agent: string;
+}
+
+export type SyncedState = Map<string, WindowState>;
+
+export interface PaletteState {
+  themeName: string | undefined;
+  values: Map<string, string>;
+}
+
+export interface PlanInput {
+  sessions: SessionData[];
+  theme: Theme;
+  themeName: string | undefined;
+  enabled: boolean;
+  paneToWindow: Map<string, string>;
+  prevWindows: SyncedState;
+  prevPalette: PaletteState | null;
+}
+
+export interface PlanOutput {
+  commands: string[][];
+  newWindows: SyncedState;
+  newPalette: PaletteState;
+}
+
+// --- Pure planner ---
+
+/** Compute the desired window state and palette from server state, diff against
+ *  the previous values, and emit the minimal set of tmux invocations needed to
+ *  reach the new state. */
+export function planTmuxHeaderSync(input: PlanInput): PlanOutput {
+  const newPalette = buildPaletteState(input.theme, input.themeName);
+
+  if (!input.enabled) {
+    // Gate off: produce no commands; carry forward state so a later enable
+    // does not falsely claim "no diff".
+    return {
+      commands: [],
+      newWindows: new Map(),
+      newPalette: { themeName: undefined, values: new Map() },
+    };
+  }
+
+  const newWindows = computeWindowStates(input);
+  const commands: string[][] = [];
+
+  // Palette: write whenever theme changes or palette has never been written.
+  if (!input.prevPalette || input.prevPalette.themeName !== newPalette.themeName) {
+    for (const [token, value] of newPalette.values) {
+      commands.push(["set-option", "-g", `@os-thm-${token}`, value]);
+    }
+  }
+
+  // Per-window diffs.
+  for (const [windowId, next] of newWindows) {
+    const prev = input.prevWindows.get(windowId);
+    if (prev && prev.glyph === next.glyph && prev.fg === next.fg && prev.agent === next.agent) continue;
+    commands.push(["set-option", "-w", "-t", windowId, "@os-agent", next.glyph]);
+    commands.push(["set-option", "-w", "-t", windowId, "@os-agent-fg", next.fg]);
+    commands.push(["set-option", "-w", "-t", windowId, "@os-agent-type", next.agent]);
+  }
+
+  // Cleanup: windows that had a glyph but no longer do.
+  for (const windowId of input.prevWindows.keys()) {
+    if (newWindows.has(windowId)) continue;
+    commands.push(["set-option", "-wu", "-t", windowId, "@os-agent"]);
+    commands.push(["set-option", "-wu", "-t", windowId, "@os-agent-fg"]);
+    commands.push(["set-option", "-wu", "-t", windowId, "@os-agent-type"]);
+  }
+
+  return { commands, newWindows, newPalette };
+}
+
+function buildPaletteState(theme: Theme, themeName: string | undefined): PaletteState {
+  const values = new Map<string, string>();
+  for (const token of PALETTE_TOKENS) values.set(token, toTmuxColour(theme.palette[token]));
+  return { themeName, values };
+}
+
+/** Translate an opensessions palette value to a tmux-renderable colour.
+ *  The "transparent" theme stores the literal string "transparent" for base
+ *  surfaces; tmux understands "default" but not "transparent". */
+function toTmuxColour(value: string): string {
+  return value === "transparent" ? "default" : value;
+}
+
+function computeWindowStates(input: PlanInput): SyncedState {
+  // Group alive agents by tmux windowId.
+  const windowAgents = new Map<string, string[]>();
+  for (const session of input.sessions) {
+    for (const agent of session.agents) {
+      if (agent.liveness !== "alive") continue;
+      const paneId = agent.paneId;
+      if (!paneId) continue;
+      const windowId = input.paneToWindow.get(paneId);
+      if (!windowId) continue;
+      const list = windowAgents.get(windowId) ?? [];
+      list.push(agent.agent);
+      windowAgents.set(windowId, list);
+    }
+  }
+
+  const fg = toTmuxColour(input.theme.palette.blue);
+  const result: SyncedState = new Map();
+  for (const [windowId, agents] of windowAgents) {
+    const dominant = pickAgentForWindow(agents);
+    const glyph = AGENT_GLYPHS[dominant] ?? AGENT_GLYPHS["generic"]!;
+    result.set(windowId, { glyph, fg, agent: dominant });
+  }
+  return result;
+}
+
+// --- Shell adapter ---
+
+export interface SyncDeps {
+  /** Run a tmux command and return stdout. Caller-provided so tests can stub. */
+  shellTmux: (args: string[]) => string;
+  /** Structured logger; same shape as the server's `log()`. */
+  log: (msg: string, data?: Record<string, unknown>) => void;
+}
+
+let lastWindows: SyncedState = new Map();
+let lastPalette: PaletteState | null = null;
+
+export function __resetTmuxHeaderSyncStateForTests(): void {
+  lastWindows = new Map();
+  lastPalette = null;
+}
+
+export interface SyncArgs {
+  sessions: SessionData[];
+  theme: Theme;
+  themeName: string | undefined;
+  enabled: boolean;
+}
+
+/** Live sync. Called from `broadcastStateImmediate`; idempotent and non-throwing. */
+export function syncTmuxHeaderOptions(args: SyncArgs, deps: SyncDeps): void {
+  try {
+    if (!args.enabled) {
+      lastWindows = new Map();
+      lastPalette = null;
+      return;
+    }
+
+    const paneToWindow = readPaneToWindow(deps);
+    if (paneToWindow.size === 0) {
+      // Empty result is ambiguous: a transient `tmux list-panes` failure
+      // (now non-throwing thanks to shellStatus, but still possible for
+      // genuinely empty servers) is indistinguishable from a no-windows
+      // state. Either way, do NOT clear caches. If windows really vanished,
+      // the next successful scan will see an empty cache+empty world, no-op.
+      // If the panes recover, we still hold the prior state and can compute
+      // a correct cleanup diff. Clearing the cache here used to (a) leak
+      // stale per-window options when the recovery scan re-emitted writes
+      // against an empty cache, and (b) clear lastWindows but not
+      // lastPalette, leaving the bar on fallback colours after a tmux
+      // server restart that wiped @os-thm-* options.
+      return;
+    }
+
+    const plan = planTmuxHeaderSync({
+      sessions: args.sessions,
+      theme: args.theme,
+      themeName: args.themeName,
+      enabled: args.enabled,
+      paneToWindow,
+      prevWindows: lastWindows,
+      prevPalette: lastPalette,
+    });
+
+    if (plan.commands.length > 0) {
+      runTmuxCommands(plan.commands, deps);
+    }
+
+    lastWindows = plan.newWindows;
+    lastPalette = plan.newPalette;
+  } catch (err) {
+    deps.log("sync failed", { error: String(err) });
+  }
+}
+
+function readPaneToWindow(deps: SyncDeps): Map<string, string> {
+  const map = new Map<string, string>();
+  const out = deps.shellTmux(["list-panes", "-a", "-F", "#{pane_id}|#{window_id}"]);
+  if (!out) return map;
+  for (const line of out.split("\n")) {
+    if (!line) continue;
+    const idx = line.indexOf("|");
+    if (idx <= 0) continue;
+    map.set(line.slice(0, idx), line.slice(idx + 1));
+  }
+  return map;
+}
+
+function runTmuxCommands(commands: string[][], deps: SyncDeps): void {
+  // Chain into a single tmux invocation via `;` separators to amortise the
+  // process-spawn cost. tmux requires `\;` so it doesn't get eaten by the
+  // shell; spawning directly without a shell, we pass `;` as its own arg.
+  const chained: string[] = [];
+  for (let i = 0; i < commands.length; i++) {
+    if (i > 0) chained.push(";");
+    chained.push(...commands[i]!);
+  }
+  deps.shellTmux(chained);
+}

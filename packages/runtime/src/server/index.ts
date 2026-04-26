@@ -10,6 +10,8 @@ import { AgentTracker } from "../agents/tracker";
 import { SessionOrder } from "./session-order";
 import { SessionMetadataStore } from "./metadata-store";
 import { loadConfig, saveConfig } from "../config";
+import { resolveTheme } from "../themes";
+import { syncTmuxHeaderOptions } from "./tmux-header-sync";
 import {
   clampSidebarWidth,
   computeMinSidebarWidth,
@@ -47,6 +49,37 @@ function shell(cmd: string[]): string {
   } catch {
     return "";
   }
+}
+
+/** Match a comm string against a pattern as a whole word.
+ *  "claude" matches "claude", "/usr/bin/claude", "claude-code"
+ *  but NOT "tail-claude", "pip" (vs "pi"), or "claude.fork".
+ *  The pattern must:
+ *    - start at the beginning of comm OR be preceded by a path separator (/)
+ *    - end at the end of comm OR be followed by a hyphen (-)
+ *  The hyphen-suffix exception preserves matches like "claude" → "claude-code". */
+export function commMatches(comm: string, pat: string): boolean {
+  const idx = comm.indexOf(pat);
+  if (idx < 0) return false;
+  if (idx > 0 && comm[idx - 1] !== "/") return false;
+  const tail = comm[idx + pat.length];
+  if (tail !== undefined && tail !== "-") return false;
+  return true;
+}
+
+/** Like `shell()` but throws on nonzero exit. Use when "command failed" must
+ *  be observable — e.g. so a caller's try/catch can avoid advancing cached
+ *  state past a TOCTOU failure. The plain `shell()` helper masks failures
+ *  (returns empty string on both "command succeeded with no output" and
+ *  "command failed") which is fine for git probes but wrong for sync paths
+ *  that compute idempotency diffs against an in-memory cache. */
+function shellStatus(cmd: string[]): string {
+  const result = Bun.spawnSync(cmd, { stdout: "pipe", stderr: "pipe" });
+  if (!result.success) {
+    const stderr = result.stderr.toString().trim();
+    throw new Error(`${cmd.join(" ")} exited ${result.exitCode ?? "?"}: ${stderr || "<no stderr>"}`);
+  }
+  return result.stdout.toString().trim();
 }
 
 // --- Git helpers ---
@@ -297,6 +330,24 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     theme: currentTheme, configKeys: Object.keys(config),
   });
 
+  // Read @opensessions-header gate once. Toggling at runtime requires a server
+  // restart — same cost shape as other @opensessions-* options read at TPM init.
+  const headerEnabled = (() => {
+    const raw = shell(["tmux", "show-option", "-gqv", "@opensessions-header"]);
+    return raw.trim() === "on";
+  })();
+  log("server", "tmux header", { enabled: headerEnabled });
+
+  function tmuxHeaderShell(args: string[]): string {
+    // shellStatus throws on nonzero exit. The try/catch in syncTmuxHeaderOptions
+    // catches it and exits without advancing lastWindows/lastPalette, so the
+    // failed write will be retried on the next broadcast.
+    return shellStatus(["tmux", ...args]);
+  }
+  function tmuxHeaderLog(msg: string, data?: Record<string, unknown>): void {
+    log("tmux-header", msg, data);
+  }
+
   // Bootstrap active sessions
   const currentSession = mux.getCurrentSession();
   if (currentSession) {
@@ -495,6 +546,15 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     tracker.pruneTerminal();
     lastState = computeState();
     syncGitWatchers(lastState.sessions, broadcastState);
+    syncTmuxHeaderOptions(
+      {
+        sessions: lastState.sessions,
+        theme: resolveTheme(currentTheme),
+        themeName: currentTheme,
+        enabled: headerEnabled,
+      },
+      { shellTmux: tmuxHeaderShell, log: tmuxHeaderLog },
+    );
     const msg = JSON.stringify(lastState);
     server.publish("sidebar", msg);
   }
@@ -848,6 +908,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     "claude-code": ["claude"],
     codex: ["codex"],
     opencode: ["opencode"],
+    pi: ["pi"],
   };
 
   const PANE_HIGHLIGHT_BORDER = "fg=#fab387,bold";
@@ -1058,17 +1119,8 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     return { childrenOf, commOf };
   }
 
-  /** Match a comm string against a pattern as a whole word.
-   *  "claude" matches "claude", "/usr/bin/claude", "claude-code"
-   *  but NOT "tail-claude" or "my-claude-fork". The pattern must appear
-   *  at the start of the comm or after a path separator (/). */
-  function commMatches(comm: string, pat: string): boolean {
-    const idx = comm.indexOf(pat);
-    if (idx < 0) return false;
-    // Pattern must be at start, or preceded by a path separator
-    if (idx > 0 && comm[idx - 1] !== "/") return false;
-    return true;
-  }
+  // commMatches is hoisted to module scope (see export at file bottom) so
+  // unit tests can exercise the boundary rules without spinning up a server.
 
   /** Walk up to 3 levels of child processes using a pre-built process tree. */
   function matchProcessTreeFast(
