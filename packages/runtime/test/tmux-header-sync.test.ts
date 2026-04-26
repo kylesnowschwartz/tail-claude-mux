@@ -2,6 +2,8 @@ import { describe, test, expect } from "bun:test";
 import {
   AGENT_GLYPHS,
   AGENT_PRIORITY,
+  buildAgentGlyphs,
+  isClawdInstalled,
   pickAgentForWindow,
   planTmuxHeaderSync,
   syncTmuxHeaderOptions,
@@ -78,6 +80,30 @@ describe("AGENT_GLYPHS", () => {
       expect(typeof value).toBe("string");
       expect(value.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("buildAgentGlyphs (Clawd detection)", () => {
+  test("emits Clawd codepoint U+100CC0 when font is installed", () => {
+    const glyphs = buildAgentGlyphs({ clawdInstalled: true });
+    expect(glyphs["claude-code"]).toBe("\u{100CC0}");
+  });
+
+  test("falls back to U+2605 (★) when font is not installed", () => {
+    const glyphs = buildAgentGlyphs({ clawdInstalled: false });
+    expect(glyphs["claude-code"]).toBe("★");
+  });
+
+  test("non-clawd glyphs are unaffected by detection state", () => {
+    const installed = buildAgentGlyphs({ clawdInstalled: true });
+    const missing = buildAgentGlyphs({ clawdInstalled: false });
+    for (const key of ["pi", "codex", "amp", "generic"]) {
+      expect(installed[key]).toBe(missing[key]!);
+    }
+  });
+
+  test("isClawdInstalled returns a boolean", () => {
+    expect(typeof isClawdInstalled()).toBe("boolean");
   });
 });
 

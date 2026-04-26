@@ -29,3 +29,8 @@ test:
 [group('dev')]
 log:
     tail -f /tmp/opensessions-debug.log
+
+# Install the Clawd mascot font for the tmux header (idempotent)
+[group('dev')]
+install-clawd:
+    "{{root}}/scripts/install-clawd-font.sh"

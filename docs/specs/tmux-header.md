@@ -96,15 +96,28 @@ Lifetime: re-written when the server detects a theme change. Otherwise stable.
 
 ---
 
-## 4. AGENT_GLYPHS table (v1 placeholders)
+## 4. AGENT_GLYPHS table
 
 | Agent name | Glyph | Codepoint | Notes |
 |---|---|---|---|
-| `claude-code` | `★` | U+2605 BLACK STAR | Placeholder; swap when the user's custom SVG-derived font ships. |
+| `claude-code` |  / `★` | U+100CC0 *(Clawd)* / U+2605 *(fallback)* | Detect-and-fall-back: emits Clawd when the font is installed, else BLACK STAR. See §4.1. |
 | `pi` | `π` | U+03C0 GREEK SMALL LETTER PI | |
 | `codex` | `▲` | U+25B2 BLACK UP-POINTING TRIANGLE | |
 | `amp` | `♦` | U+2666 BLACK DIAMOND SUIT | |
 | `generic` | `●` | U+25CF BLACK CIRCLE | Fallback when no specific entry exists. |
+
+### 4.1. Clawd auto-detect
+
+`isClawdInstalled()` in `tmux-header-sync.ts` does one `existsSync` against the OS-standard user-fonts path at module load:
+
+| Platform | Path |
+|---|---|
+| macOS | `~/Library/Fonts/Clawd.ttf` |
+| Linux | `~/.local/share/fonts/Clawd.ttf` |
+
+`buildAgentGlyphs({ clawdInstalled })` produces the table — Clawd codepoint when true, `★` when false. The probe is one-shot at module load; restart the server after running the installer. The font itself is vendored at `fonts/Clawd.ttf`; `just install-clawd` (or `scripts/install-clawd-font.sh` directly) is the idempotent installer.
+
+Mascot likeness is a trademark of Anthropic; personal-use vendoring is fine, public redistribution outside this fork needs Anthropic's nod.
 
 **Constraints on glyph values:**
 - Single column-cell wide. Multi-cell glyphs (most emoji) drift status-line column accounting.

@@ -6,23 +6,47 @@
 //
 // Spec: docs/specs/tmux-header.md
 
+import { existsSync } from "node:fs";
+import { homedir, platform } from "node:os";
+import { join } from "node:path";
 import type { SessionData } from "../shared";
 import type { Theme } from "../themes";
 
-// --- Glyph table (v1 placeholders; one-line swap when SVG-derived font ships) ---
+// --- Glyph table ---
 
-// Glyphs intentionally drawn from widely-supported Unicode blocks (U+25xx
-// geometric shapes, U+26xx miscellaneous symbols, basic Greek). Less common
-// codepoints render as tofu boxes in monospace fonts that don't carry them.
-// MesloLGS Nerd Font has these; so do most monospace stacks. Swap in the
-// user's custom SVG-derived font glyphs by editing this table only.
-export const AGENT_GLYPHS: Record<string, string> = {
-  "claude-code": "★",
-  "pi": "π",
-  "codex": "▲",
-  "amp": "♦",
-  "generic": "●",
-};
+// claude-code's glyph is detect-and-fall-back: if Clawd.ttf is installed at
+// the OS-standard user-fonts path, emit U+100CC0 (Plane 16 PUA-B, the Clawd
+// mascot); otherwise fall back to U+2605 (★), available in any monospace
+// stack. Run `just install-clawd` to install the vendored font from
+// `fonts/Clawd.ttf`. The remaining glyphs are drawn from widely-supported
+// Unicode blocks (U+25xx, U+26xx, basic Greek).
+
+/** OS-standard user-fonts path for Clawd.ttf, by platform. */
+function clawdFontPath(): string {
+  if (platform() === "darwin") return join(homedir(), "Library", "Fonts", "Clawd.ttf");
+  return join(homedir(), ".local", "share", "fonts", "Clawd.ttf");
+}
+
+/** Probe whether the Clawd mascot font is installed on this host. Cheap (one
+ *  stat call) — called once at module load. Server restart picks up post-hoc
+ *  installs; live re-detection is overkill for a glyph table. */
+export function isClawdInstalled(): boolean {
+  return existsSync(clawdFontPath());
+}
+
+export function buildAgentGlyphs(opts: { clawdInstalled: boolean }): Record<string, string> {
+  return {
+    "claude-code": opts.clawdInstalled ? "\u{100CC0}" : "★",
+    "pi": "π",
+    "codex": "▲",
+    "amp": "♦",
+    "generic": "●",
+  };
+}
+
+export const AGENT_GLYPHS: Record<string, string> = buildAgentGlyphs({
+  clawdInstalled: isClawdInstalled(),
+});
 
 export const AGENT_PRIORITY: readonly string[] = ["claude-code", "pi", "codex", "amp"];
 
