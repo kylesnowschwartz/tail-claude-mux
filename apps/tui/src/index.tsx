@@ -27,6 +27,8 @@ import {
   SEV_ERROR,
   BRAND_CLAWD,
   BRANCH_GLYPH,
+  WRAP_UP,
+  WRAP_DOWN,
 } from "./vocab";
 import { getScenario, listScenarios } from "./mocks/scenarios";
 
@@ -185,6 +187,33 @@ function getLocalSessionName(): string | null {
   return null;
 }
 
+/**
+ * Rolodex wrap rule — the split horizontal divider with a centred chevron
+ * that marks where the rolodex visually wraps around the focused card.
+ *
+ * Renders as: `─────  ·  ─────` where the centre glyph is
+ * \u{F0143} (chevron-up) above the focused card, \u{F0140} (chevron-down)
+ * below it. See docs/design/04-mockups/02-canonical.md §"Locked decisions" #5.
+ *
+ * The two flex-grown rule segments overflow horizontally; their containing
+ * box clips them to the panel width.
+ */
+function WrapRule(props: { direction: "up" | "down"; palette: ThemePalette }) {
+  const fg = props.palette.surface1;
+  const chevron = props.direction === "up" ? WRAP_UP : WRAP_DOWN;
+  return (
+    <box height={1} flexDirection="row" paddingLeft={1} paddingRight={1}>
+      <box flexGrow={1} flexShrink={1} overflow="hidden">
+        <text style={{ fg }}>{"─".repeat(200)}</text>
+      </box>
+      <text style={{ fg }} flexShrink={0}>{" "}{chevron}{" "}</text>
+      <box flexGrow={1} flexShrink={1} overflow="hidden">
+        <text style={{ fg }}>{"─".repeat(200)}</text>
+      </box>
+    </box>
+  );
+}
+
 function App() {
   const renderer = useRenderer();
 
@@ -240,25 +269,20 @@ function App() {
   // Rolodex: sessions form a continuous wheel around the focused card.
   // The non-focused sessions are ordered clockwise (after→wrap→before),
   // then split in half: first half goes below, second half goes above.
-  // Each half may contain a wrap boundary where natural order meets wrapped.
+  //
+  // The chevron wrap-rule above and below the focused card is now always
+  // visible (a structural separator, not gated on the wrap point), so the
+  // legacy `wrapBefore`/`wrapAfter` indices are no longer needed.
   const rolodex = createMemo(() => {
     const idx = focusedIdx();
     const n = sessions.length;
-    if (idx < 0 || n <= 1) return { before: [] as SessionData[], after: [] as SessionData[], wrapBefore: -1, wrapAfter: -1 };
+    if (idx < 0 || n <= 1) return { before: [] as SessionData[], after: [] as SessionData[] };
 
     const clockwise = [...sessions.slice(idx + 1), ...sessions.slice(0, idx)];
     const half = Math.ceil(clockwise.length / 2);
-    const afterNatural = n - 1 - idx; // count of naturally-after items in clockwise
-
-    const wrapAfter = (afterNatural > 0 && afterNatural < half) ? afterNatural : -1;
-    const wrapBeforeRaw = afterNatural - half;
-    const wrapBefore = (wrapBeforeRaw > 0 && wrapBeforeRaw < clockwise.length - half) ? wrapBeforeRaw : -1;
-
     return {
       after: clockwise.slice(0, half),
       before: clockwise.slice(half),
-      wrapAfter,
-      wrapBefore,
     };
   });
 
@@ -812,9 +836,6 @@ function App() {
           <For each={sessionsBefore()}>
             {(session, i) => (
               <>
-                <Show when={i() === rolodex().wrapBefore}>
-                  <box height={1} paddingLeft={1}><text style={{ fg: P().surface1 }}>{"─".repeat(200)}</text></box>
-                </Show>
                 <SessionCard
                   session={session}
                   isFocused={false}
@@ -855,6 +876,9 @@ function App() {
           </For>
         </box>
 
+        {/* Always-visible chevron wrap-rule above the focused card. */}
+        <WrapRule direction="up" palette={P()} />
+
         {/* Focused session — bordered frame pinned at center */}
         <box border borderStyle="rounded" borderColor={paneFocused() ? P().blue : P().surface2} flexShrink={0} height={maxCardHeight()} overflow="hidden">
           <Show when={focusedData()}>
@@ -894,14 +918,14 @@ function App() {
           </Show>
         </box>
 
+        {/* Always-visible chevron wrap-rule below the focused card. */}
+        <WrapRule direction="down" palette={P()} />
+
         {/* Sessions below focused */}
         <box flexDirection="column" flexGrow={1} flexBasis={0} gap={1} paddingTop={1}>
           <For each={sessionsAfter()}>
             {(session, i) => (
               <>
-                <Show when={i() === rolodex().wrapAfter}>
-                  <box height={1} paddingLeft={1}><text style={{ fg: P().surface1 }}>{"─".repeat(200)}</text></box>
-                </Show>
                 <SessionCard
                   session={session}
                   isFocused={false}
