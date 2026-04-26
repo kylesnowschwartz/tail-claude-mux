@@ -29,7 +29,10 @@ import {
   BRANCH_GLYPH,
   WRAP_UP,
   WRAP_DOWN,
+  ACTIVITY_LEAD,
+  ACTIVITY_HEAD,
 } from "./vocab";
+import { tier, activityDescription } from "./tiers";
 import { getScenario, listScenarios } from "./mocks/scenarios";
 
 // Detect which mux we're running inside
@@ -214,6 +217,110 @@ function WrapRule(props: { direction: "up" | "down"; palette: ThemePalette }) {
   );
 }
 
+/**
+ * Detect a trailing outcome marker in an activity entry's description.
+ *
+ * Per docs/design/03-vocabulary.md §7 "Entry shape", the suffix `(passed)`
+ * renders in green and `(failed)` in red. Everything else stays in the entry's
+ * tier colour. The split lets us colour the suffix without touching the rest
+ * of the description string.
+ */
+function splitOutcome(message: string): { main: string; outcome: { text: string; tone: "success" | "error" } | null } {
+  const m = message.match(/^(.*?)(\s*)(\((passed|failed)\))\s*$/);
+  if (!m) return { main: message, outcome: null };
+  return {
+    main: m[1] + m[2],
+    outcome: { text: m[3]!, tone: m[4] === "passed" ? "success" : "error" },
+  };
+}
+
+/**
+ * Activity zone — fixed-height structural band beneath the rolodex.
+ *
+ * Source of truth: docs/design/04-mockups/02-canonical.md §"Activity zone
+ * behaviour" and docs/design/03-vocabulary.md §7.
+ *
+ * Layout (always visible, never animates):
+ *   ──────────────  ← top zone separator
+ *   <focused-name> →  ← heading (Tier 2 + arrow-right Tier 4)
+ *    cc 1859  editing tmux-header-sync.ts   ← freshest: Tier 2 italic
+ *    cc 1859  ran  bun test (passed)        ← history: Tier 3 italic
+ *    pi 15c8  awaiting input                ← history: Tier 3 italic
+ *
+ * Empty state: heading + `(no recent activity)` (Tier 4 muted placeholder).
+ *
+ * Source ordering: production accumulates logs newest-LAST (push). The mock
+ * scenarios use newest-first for authoring convenience. We sort by `ts` desc
+ * to render newest-at-top either way.
+ */
+function ActivityZone(props: {
+  focusedSession: SessionData | null;
+  palette: ThemePalette;
+  paneFocused: boolean;
+  cap: number;
+}) {
+  const heading = () => props.focusedSession?.name ?? "";
+  const entries = () => {
+    const logs = props.focusedSession?.metadata?.logs ?? [];
+    if (logs.length === 0) return [];
+    return [...logs].sort((a, b) => b.ts - a.ts).slice(0, props.cap);
+  };
+  const sepFg = () => props.paneFocused ? props.palette.overlay0 : props.palette.surface2;
+  const headingStyle = () => tier("secondary", props.palette, props.paneFocused);
+  const headingArrowStyle = () => tier("muted", props.palette, props.paneFocused);
+  const placeholderStyle = () => tier("muted", props.palette, props.paneFocused);
+  const leaderStyle = () => tier("muted", props.palette, props.paneFocused);
+  const sourceStyle = () => tier("secondary", props.palette, props.paneFocused);
+
+  return (
+    <box flexDirection="column" flexShrink={0} paddingLeft={1} paddingRight={1}>
+      {/* Top zone separator */}
+      <box height={1}><text style={{ fg: sepFg() }}>{"─".repeat(200)}</text></box>
+
+      {/* Heading: focused-session name + arrow-right separator */}
+      <text truncate>
+        <span style={headingStyle()}>{heading()}</span>
+        <Show when={heading()}>
+          <span style={headingArrowStyle()}>{" "}{ACTIVITY_HEAD}</span>
+        </Show>
+      </text>
+
+      {/* Body: empty placeholder OR entries */}
+      <Show when={entries().length > 0} fallback={
+        <text truncate>
+          <span style={placeholderStyle()}>{"(no recent activity)"}</span>
+        </text>
+      }>
+        <For each={entries()}>
+          {(entry, i) => {
+            const isFreshest = i() === 0;
+            const descStyle = activityDescription(props.palette, props.paneFocused, isFreshest);
+            const sysSourceTone = (() => {
+              if (!entry.source) return null;
+              if (entry.source.startsWith("[") && entry.source.endsWith("]")) {
+                return entry.tone ?? "info";
+              }
+              return null;
+            })();
+            const sourceCol = (entry.source ?? "").padEnd(10, " ").slice(0, 10);
+            const split = splitOutcome(entry.message);
+            return (
+              <text truncate>
+                <span style={leaderStyle()}>{ACTIVITY_LEAD}</span>
+                <span style={sysSourceTone ? { fg: toneColor(sysSourceTone, props.palette) } : sourceStyle()}>{" "}{sourceCol}</span>
+                <span style={descStyle}>{" "}{split.main}</span>
+                <Show when={split.outcome}>
+                  <span style={{ fg: toneColor(split.outcome!.tone, props.palette), attributes: descStyle.attributes }}>{split.outcome!.text}</span>
+                </Show>
+              </text>
+            );
+          }}
+        </For>
+      </Show>
+    </box>
+  );
+}
+
 function App() {
   const renderer = useRenderer();
 
@@ -326,12 +433,8 @@ function App() {
       }
       // no gap between agents — card border provides visual grouping
 
-      const meta = session.metadata;
-      if (meta) {
-        h++; // spacer
-        if (meta.status || meta.progress) h++;
-        h += Math.min(meta.logs.length, 8);
-      }
+      // Status / progress / logs render in the ActivityZone now, not in the
+      // focused card. No height contribution from metadata.
 
       max = Math.max(max, h);
     }
@@ -972,6 +1075,14 @@ function App() {
         </box>
       </box>
 
+      {/* Activity zone — fixed-height structural band below the rolodex. */}
+      <ActivityZone
+        focusedSession={focusedData()}
+        palette={P()}
+        paneFocused={paneFocused()}
+        cap={renderer.terminalHeight < 30 ? 3 : 5}
+      />
+
       {/* Footer */}
       {(() => {
         const keyFg = () => paneFocused() ? P().subtext0 : P().surface2;
@@ -1518,11 +1629,9 @@ function SessionCard(props: SessionCardProps) {
   const dirMismatch = () => dirParts().project !== props.session.name;
   const agents = () => props.session.agents ?? [];
   const meta = () => props.session.metadata;
-  const visibleLogs = () => {
-    const m = meta();
-    if (!m || m.logs.length === 0) return [];
-    return m.logs.slice(-8);
-  };
+  // Note: status / progress / logs are now rendered in the standalone
+  // ActivityZone component beneath the rolodex (per the canonical mockup).
+  // The focused card body stays lean: name + branch + dir + agents only.
   const portRows = () => {
     const ports = props.session.ports ?? [];
     const maxPerRow = 3;
@@ -1669,48 +1778,8 @@ function SessionCard(props: SessionCardProps) {
             </box>
           </Show>
 
-          {/* Metadata: status, progress, logs */}
-          <Show when={meta()}>
-            {(_) => {
-              const m = meta()!;
-              return (
-                <box flexDirection="column">
-                  <box height={1} />
-                  <Show when={m.status || m.progress}>
-                    <box flexDirection="row" paddingRight={1}>
-                      <Show when={m.status}>
-                        <text truncate flexGrow={1}>
-                          <span style={{ fg: toneColor(m.status!.tone, P()) }}>{TONE_ICONS[m.status!.tone ?? "neutral"]} {m.status!.text}</span>
-                        </text>
-                      </Show>
-                      <Show when={m.progress}>
-                        <text flexShrink={0}>
-                          <span style={{ fg: P().sky }}>
-                            {m.status ? " · " : ""}{progressText()}{m.progress!.label ? ` ${m.progress!.label}` : ""}
-                          </span>
-                        </text>
-                      </Show>
-                    </box>
-                  </Show>
-                  <Show when={visibleLogs().length > 0}>
-                    <For each={visibleLogs()}>
-                      {(entry) => (
-                        <text truncate>
-                          <span style={{ fg: toneColor(entry.tone, P()), attributes: DIM }}>
-                            {TONE_ICONS[entry.tone ?? "neutral"]}
-                          </span>
-                          <Show when={entry.source}>
-                            <span style={{ fg: P().surface2, attributes: DIM }}>{` [${entry.source}]`}</span>
-                          </Show>
-                          <span style={{ fg: P().overlay0 }}>{" "}{entry.message}</span>
-                        </text>
-                      )}
-                    </For>
-                  </Show>
-                </box>
-              );
-            }}
-          </Show>
+          {/* Metadata moved to the ActivityZone component (see App). The
+              focused card no longer renders status / progress / logs inline. */}
         </box>
       </Show>
     </box>
