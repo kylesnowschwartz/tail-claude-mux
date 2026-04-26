@@ -385,6 +385,66 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     return map;
   }
 
+  // ---- Activity log producer ----
+  //
+  // Watchers emit AgentEvents (status / tool / thread name) that are
+  // routed through `watcherCtx.emit` below. We synthesize human-readable
+  // log entries from those events and push them into the metadata store,
+  // which the TUI's activity zone reads from.
+  //
+  // Source of truth: docs/design/03-vocabulary.md §7 “Producers (locked)”.
+  //
+  // Per-thread state lets us diff each new event against the last one we
+  // saw for that thread, so we only emit log entries on real transitions
+  // (avoiding floods on heartbeat-style re-emits).
+  type AgentSnapshot = { tool?: string; thread?: string; status?: string };
+  const lastSeenByThread = new Map<string, AgentSnapshot>();
+
+  function agentCode(agent: string): string {
+    switch (agent) {
+      case "claude-code": return "cc";
+      case "pi": return "pi";
+      case "codex": return "cd";
+      case "amp": return "ap";
+      default: return agent.slice(0, 2);
+    }
+  }
+
+  function shortThreadIdSuffix(id?: string): string {
+    if (!id) return "";
+    return id.length <= 4 ? id : id.slice(-4);
+  }
+
+  function deriveLogEntries(event: AgentEvent): Array<{ message: string; tone?: import("../shared").MetadataTone; source?: string }> {
+    if (!event.threadId) return [];
+    const last = lastSeenByThread.get(event.threadId) ?? {};
+    const source = `${agentCode(event.agent)} ${shortThreadIdSuffix(event.threadId)}`.trim();
+    const out: Array<{ message: string; tone?: import("../shared").MetadataTone; source?: string }> = [];
+
+    // Emit order: thread name (least recent) → tool (mid) → status transition
+    // (most recent), so the freshest visible entry reflects the latest signal.
+    if (event.threadName && event.threadName !== last.thread) {
+      out.push({ source, message: event.threadName, tone: "neutral" });
+    }
+    if (event.toolDescription && event.toolDescription !== last.tool) {
+      out.push({ source, message: event.toolDescription, tone: "info" });
+    }
+    if (event.status !== last.status) {
+      if (event.status === "error") out.push({ source, message: "errored", tone: "error" });
+      else if (event.status === "waiting") out.push({ source, message: "awaiting input", tone: "info" });
+      else if (event.status === "interrupted") out.push({ source, message: "interrupted", tone: "warn" });
+      // running, idle, done are intentionally not surfaced as discrete entries:
+      // running is implied by tool descriptions; idle/done are too noisy.
+    }
+
+    lastSeenByThread.set(event.threadId, {
+      tool: event.toolDescription,
+      thread: event.threadName,
+      status: event.status,
+    });
+    return out;
+  }
+
   const watcherCtx: AgentWatcherContext = {
     resolveSession(projectDir: string): string | null {
       const map = getDirSessionMap();
@@ -408,6 +468,15 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     },
     emit(event: AgentEvent) {
       log("agent-emit", event.agent, { session: event.session, status: event.status, threadId: event.threadId?.slice(0, 8) });
+      // Always update lastSeenByThread (so post-seed diffs are correct), but
+      // only push log entries once initial seeding is complete — otherwise
+      // every cold-start reconstruction would flood the buffer.
+      const entries = deriveLogEntries(event);
+      if (watchersSeeded) {
+        for (const entry of entries) {
+          metadataStore.appendLog(event.session, entry);
+        }
+      }
       tracker.applyEvent(event, { seed: !watchersSeeded });
       debouncedBroadcast();
     },
