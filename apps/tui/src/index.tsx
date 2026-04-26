@@ -26,6 +26,7 @@ import {
   SEV_STOPPED,
   SEV_ERROR,
   BRAND_CLAWD,
+  BRANCH_GLYPH,
 } from "./vocab";
 import { getScenario, listScenarios } from "./mocks/scenarios";
 
@@ -1391,12 +1392,16 @@ function SessionCard(props: SessionCardProps) {
 
   const unseen = () => props.session.unseen;
 
+  // B5 (locked decision): the session-row severity gutter is BLANK when
+  // the session is in a nominal state (ready/stopped). Only attention-
+  // needing states (working/waiting/error) show a glyph. Applies on the
+  // session row whether the card is collapsed or focused; agent-level
+  // severity still appears on each agent row inside the focused card.
+  // See docs/design/04-mockups/02-canonical.md §"Locked decisions" #B5.
   const statusIcon = () => {
     const l = label();
     if (l === "working") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
     if (l === "waiting") return SEV_WAITING;
-    if (l === "ready" && props.session.agentState) return SEV_READY;
-    if (l === "stopped") return SEV_STOPPED;
     if (l === "error") return SEV_ERROR;
     return "";
   };
@@ -1460,10 +1465,14 @@ function SessionCard(props: SessionCardProps) {
       (a.liveness !== "exited" && !["done", "error", "interrupted"].includes(a.status)),
     ).length ?? 0;
 
+  // Locked count format (B1 / Q3): bare numeric, capped at "9+". The legacy
+  // "●N" badge and the "2π" same-type compaction are both retired.
+  // See docs/design/03-vocabulary.md §"Locked count format".
   const agentBadge = () => {
     const n = agentCount();
     if (n === 0) return "";
-    return n === 1 ? "●" : `●${n}`;
+    if (n >= 10) return "9+";
+    return String(n);
   };
 
   const agentBadgeColor = () => {
@@ -1540,7 +1549,7 @@ function SessionCard(props: SessionCardProps) {
               <Show when={props.session.branch}>
                 <text truncate flexGrow={1}>
                   <span style={{ fg: props.isFocused ? P().pink : (props.paneFocused() ? P().overlay0 : P().surface2) }}>
-                    {"⎇ "}{truncBranch()}
+                    {BRANCH_GLYPH}{" "}{truncBranch()}
                   </span>
                 </text>
               </Show>
