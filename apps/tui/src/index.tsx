@@ -25,6 +25,7 @@ import {
   SEV_READY,
   SEV_STOPPED,
   SEV_ERROR,
+  BRAND_CLAWD,
 } from "./vocab";
 import { getScenario, listScenarios } from "./mocks/scenarios";
 
@@ -787,30 +788,19 @@ function App() {
     }
   });
 
-  const runningCount = createMemo(() =>
-    sessions.filter((s) => s.agentState?.status === "running").length,
-  );
-
-  const errorCount = createMemo(() =>
-    sessions.filter((s) => s.agentState?.status === "error").length,
-  );
-
-  const unseenCount = createMemo(() =>
-    sessions.filter((s) => s.unseen).length,
-  );
+  // Header counters (runningCount / errorCount / unseenCount) were retired
+  // in the panel redesign — the rolodex is the summary. See
+  // docs/design/04-mockups/02-canonical.md §"Locked decisions" #4.
 
   return (
     <box flexDirection="column" flexGrow={1} backgroundColor={P().crust}>
       {/* Header */}
       <box flexDirection="column" paddingLeft={1} paddingTop={1} paddingBottom={0} flexShrink={0}>
         <text>
-          <span style={{ fg: paneFocused() ? P().blue : P().overlay1 }}>{"  "}</span>
-          <span style={{ fg: paneFocused() ? P().text : P().overlay1, attributes: BOLD }}>Sessions</span>
-          <span style={{ fg: paneFocused() ? P().subtext0 : P().overlay0 }}>{" "}{String(sessions.length)}</span>
-          {runningCount() > 0 ? <span style={{ fg: P().yellow }}>{" "}{"⚡"}{runningCount()}</span> : ""}
+          <span style={{ fg: paneFocused() ? P().blue : P().overlay1 }}>{BRAND_CLAWD}{" "}</span>
+          <span style={{ fg: paneFocused() ? P().text : P().overlay1, attributes: BOLD }}>opensessions</span>
+          <span style={{ fg: paneFocused() ? P().subtext0 : P().overlay0 }}>{"  "}{String(sessions.length)}{" sessions"}</span>
           <Show when={flashMessage()}><span style={{ fg: P().overlay0, attributes: DIM }}>{" "}{flashMessage()}</span></Show>
-          {errorCount() > 0 ? <span style={{ fg: P().red }}>{" "}{"✗"}{errorCount()}</span> : ""}
-          {unseenCount() > 0 ? <span style={{ fg: P().teal }}>{" "}{"●"}{" "}{unseenCount()}</span> : ""}
         </text>
       </box>
 
