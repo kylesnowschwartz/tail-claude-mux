@@ -1,5 +1,6 @@
 import type { AgentEvent } from "./contracts/agent";
 import type { MuxSessionInfo } from "./contracts/mux";
+import type { PartialTheme } from "./themes";
 
 export const SERVER_PORT = 7391;
 export const SERVER_HOST = "127.0.0.1";
@@ -29,7 +30,14 @@ export interface ServerState {
   sessions: SessionData[];
   focusedSession: string | null;
   currentSession: string | null;
-  theme: string | undefined;
+  /** External theme palette (from ~/.config/opensessions/active-theme.json)
+   *  takes precedence over a builtin name. Clients pass this directly to
+   *  resolveTheme(), which handles both shapes. Without this, the panel
+   *  client's resolveTheme() lookup-by-name would fall through to the default
+   *  builtin (catppuccin-mocha) for any external theme whose name isn't in
+   *  BUILTIN_THEMES — leaving the panel rendering mocha colours regardless of
+   *  the user's actual theme. */
+  theme: string | PartialTheme | undefined;
   sidebarWidth: number;
   ts: number;
 }

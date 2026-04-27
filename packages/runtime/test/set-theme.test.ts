@@ -23,6 +23,30 @@ describe("set-theme command", () => {
     };
     expect(state.theme).toBe("dracula");
   });
+  test("ServerState.theme accepts a PartialTheme so the panel client can", () => {
+    // Regression for the bug where the server only shipped the theme name.
+    // External themes (e.g. the-themer's opensessions adapter) have names
+    // that aren't in BUILTIN_THEMES; resolveTheme(name) would fall through to
+    // catppuccin-mocha, leaving the panel dark under light themes. Shipping
+    // the PartialTheme directly lets resolveTheme() merge the palette over
+    // the default builtin.
+    const state: ServerState = {
+      type: "state",
+      sessions: [],
+      focusedSession: null,
+      currentSession: null,
+      theme: {
+        name: "tekapo-sunset-light",
+        variant: "light",
+        palette: { text: "#1a1e26", base: "#ede3e0", blue: "#416895" },
+      },
+      sidebarWidth: 26,
+      ts: Date.now(),
+    };
+    // Type assertion succeeds at compile time. Runtime check is incidental.
+    expect(typeof state.theme).toBe("object");
+    expect((state.theme as { palette?: { base?: string } }).palette?.base).toBe("#ede3e0");
+  });
 
   test("set-theme persists to config and roundtrips", () => {
     const tmpDir = `/tmp/opensessions-test-theme-${Date.now()}`;

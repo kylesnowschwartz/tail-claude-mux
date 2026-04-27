@@ -266,7 +266,10 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     return externalTheme ?? currentTheme;
   }
 
-  /** Resolve the human-readable theme name sent to clients (state.theme). */
+  /** Resolve the human-readable theme name. Used by the tmux header sync to
+   *  surface the active theme label — the broadcast state ships the full
+   *  PartialTheme via effectiveThemeConfig() so panel clients can resolve a
+   *  palette without a builtin-name lookup. */
   function effectiveThemeName(): string | undefined {
     return externalTheme?.name ?? currentTheme;
   }
@@ -535,7 +538,13 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
       focusedSession = sessions.find((s) => s.name === currentSession)?.name ?? sessions[0]!.name;
     }
 
-    return { type: "state", sessions, focusedSession, currentSession, theme: effectiveThemeName(), sidebarWidth: configuredWidth, ts: Date.now() };
+    // Ship effectiveThemeConfig() (PartialTheme | string) instead of just the
+    // name: clients call resolveTheme() on this, and resolveTheme() merges a
+    // PartialTheme palette over the default builtin. Shipping only the name
+    // would force a name-based BUILTIN_THEMES lookup that fails for any
+    // external theme written by the-themer (e.g. "tekapo-sunset-light"),
+    // falling through to catppuccin-mocha and leaving the panel dark.
+    return { type: "state", sessions, focusedSession, currentSession, theme: effectiveThemeConfig(), sidebarWidth: configuredWidth, ts: Date.now() };
   }
 
   let broadcastPending = false;
