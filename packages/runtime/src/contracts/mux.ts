@@ -12,11 +12,11 @@ export type {
   FullMuxProvider,
   MuxProvider,
   MuxProviderSettings,
-} from "@opensessions/mux";
+} from "@tcm/mux";
 
 export {
   isWindowCapable,
   isSidebarCapable,
   isBatchCapable,
   isFullSidebarCapable,
-} from "@opensessions/mux";
+} from "@tcm/mux";

@@ -6,13 +6,13 @@ import {
   SERVER_PORT,
   loadConfig,
   startServer,
-} from "@opensessions/runtime";
+} from "@tcm/runtime";
 import { join } from "path";
 
 const config = loadConfig();
 const loader = new PluginLoader();
 
-for (const pkg of ["@opensessions/mux-tmux", "@opensessions/mux-zellij"]) {
+for (const pkg of ["@tcm/mux-tmux", "@tcm/mux-zellij"]) {
   try {
     const mod = require(pkg);
     const factory = typeof mod.default === "function" ? mod.default : mod;

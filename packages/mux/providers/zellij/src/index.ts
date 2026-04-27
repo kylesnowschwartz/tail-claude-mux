@@ -5,7 +5,7 @@ import { ZellijProvider, type ZellijProviderSettings } from "./provider";
  *
  * @example
  * ```ts
- * import { createZellij } from "@opensessions/mux-zellij";
+ * import { createZellij } from "@tcm/mux-zellij";
  * const provider = createZellij();
  * ```
  */

@@ -5,7 +5,7 @@ import { TmuxProvider, type TmuxProviderSettings } from "./provider";
  *
  * @example
  * ```ts
- * import { createTmux } from "@opensessions/mux-tmux";
+ * import { createTmux } from "@tcm/mux-tmux";
  * const provider = createTmux();
  * ```
  */

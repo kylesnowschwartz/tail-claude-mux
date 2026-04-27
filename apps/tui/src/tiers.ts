@@ -17,7 +17,7 @@
  */
 
 import { TextAttributes } from "@opentui/core";
-import type { ThemePalette } from "@opensessions/runtime";
+import type { ThemePalette } from "@tcm/runtime";
 
 const BOLD = TextAttributes.BOLD;
 const DIM = TextAttributes.DIM;

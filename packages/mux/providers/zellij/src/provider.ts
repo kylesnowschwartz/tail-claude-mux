@@ -7,7 +7,7 @@ import type {
   WindowCapable,
   SidebarCapable,
   BatchCapable,
-} from "@opensessions/mux";
+} from "@tcm/mux";
 import { appendFileSync } from "fs";
 
 /** Settings for creating a zellij provider (ai-sdk style) */

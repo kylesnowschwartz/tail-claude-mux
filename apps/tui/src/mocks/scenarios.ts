@@ -12,8 +12,8 @@
  * fixture is fed directly into the render store and stays static.
  */
 
-import type { SessionData } from "@opensessions/runtime";
-import type { AgentEvent } from "@opensessions/runtime";
+import type { SessionData } from "@tcm/runtime";
+import type { AgentEvent } from "@tcm/runtime";
 
 export interface MockScenario {
   name: string;

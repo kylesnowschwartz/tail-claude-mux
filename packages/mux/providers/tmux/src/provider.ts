@@ -7,7 +7,7 @@ import type {
   WindowCapable,
   SidebarCapable,
   BatchCapable,
-} from "@opensessions/mux";
+} from "@tcm/mux";
 import { TmuxClient } from "./client";
 import { appendFileSync } from "fs";
 

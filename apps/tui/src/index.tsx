@@ -5,7 +5,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { useKeyboard, useRenderer } from "@opentui/solid";
 import { TextAttributes, type InputRenderable, type KeyEvent } from "@opentui/core";
 
-import { ensureServer } from "@opensessions/runtime";
+import { ensureServer } from "@tcm/runtime";
 import {
   type ServerMessage,
   type SessionData,
@@ -17,8 +17,8 @@ import {
   SERVER_HOST,
   BUILTIN_THEMES,
   resolveTheme,
-} from "@opensessions/runtime";
-import { TmuxClient } from "@opensessions/mux-tmux";
+} from "@tcm/runtime";
+import { TmuxClient } from "@tcm/mux-tmux";
 import {
   SEV_WORKING_SPINNER,
   SEV_WAITING,
