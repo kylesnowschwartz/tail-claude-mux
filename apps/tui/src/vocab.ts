@@ -19,7 +19,7 @@
 export const SEV_WORKING_SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 export const SEV_WAITING = "\u{F0179}";   // nf-md-bell-alert
 export const SEV_READY = "\u{F05E1}";     // nf-md-check-circle-outline
-export const SEV_STOPPED = "\u{F1428}";   // nf-md-circle-small
+export const SEV_STOPPED = "\u{F09DF}";   // nf-md-circle-small
 export const SEV_ERROR = "\u{F0028}";     // nf-md-alert-circle
 
 /** Determinate-progress variant for `working` (8 fill levels).
