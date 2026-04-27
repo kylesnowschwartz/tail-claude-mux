@@ -336,7 +336,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
   // log entries from those events and push them into the metadata store,
   // which the TUI's activity zone reads from.
   //
-  // Source of truth: docs/design/03-vocabulary.md §7 “Producers (locked)”.
+  // Producers locked in the Apr 2026 redesign (docs/explanation/redesign-2026-04.md).
   //
   // Per-thread state lets us diff each new event against the last one we
   // saw for that thread, so we only emit log entries on real transitions

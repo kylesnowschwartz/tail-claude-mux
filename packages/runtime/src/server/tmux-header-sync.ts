@@ -188,12 +188,12 @@ function computeWindowStates(input: PlanInput): SyncedState {
 //
 // Mirrors the panel's status→colour map (apps/tui/src/index.tsx). When/if
 // these diverge, extract a shared resolver into `runtime/themes.ts` per the
-// note in `docs/design/03-vocabulary.md` §6 implementer checklist. Today
+// redesign vocabulary (docs/explanation/redesign-2026-04.md). Today
 // they're small enough that two copies + a vocabulary doc + tests is
 // cheaper than the cross-package coupling.
 
 /** Five-state severity label, derived from agent status + liveness.
- *  Mirrors the panel's resolver; see vocabulary doc §6. */
+ *  Mirrors the panel's resolver; see docs/explanation/redesign-2026-04.md. */
 export type SeverityLabel = "working" | "waiting" | "ready" | "stopped" | "error";
 
 export function severityLabel(status: AgentStatus | null, liveness: AgentLiveness | undefined): SeverityLabel {

@@ -1,7 +1,7 @@
 /**
  * The tail-claude-mux Nerd Font alphabet.
  *
- * Source of truth: docs/design/03-vocabulary.md §10 codepoint cheat-sheet.
+ * Source of truth for codepoints. Design rationale: docs/explanation/redesign-2026-04.md.
  *
  * All glyphs are single column-cell wide. Material Design Icons (`nf-md-*`)
  * are the default family; exceptions are brand letterforms (π/▲/♦),
@@ -15,7 +15,7 @@
 // ── Severity glyphs (left gutter) ──
 // Five states: working / waiting / ready / stopped / error.
 // Working is animated via SEV_WORKING_SPINNER frames (legacy brail spinner,
-// kept for visual continuity per docs/design/03-vocabulary.md §2).
+// kept for visual continuity from the redesign vocabulary).
 export const SEV_WORKING_SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 export const SEV_WAITING = "\u{F009C}";   // nf-md-bell-alert
 export const SEV_READY = "\u{F05E1}";     // nf-md-check-circle-outline
@@ -24,7 +24,7 @@ export const SEV_ERROR = "\u{F0028}";     // nf-md-alert-circle
 
 /** Determinate-progress variant for `working` (8 fill levels).
  *  Used when `metadata.progress.percent` is set; replaces the brail spinner.
- *  See docs/design/03-vocabulary.md §2 "Determinate-progress variant". */
+ *  Determinate-progress variant from the redesign vocabulary. */
 export const PROGRESS_GLYPHS = [
   "\u{F0A9E}", "\u{F0A9F}", "\u{F0AA0}", "\u{F0AA1}",
   "\u{F0AA2}", "\u{F0AA3}", "\u{F0AA4}", "\u{F0AA5}",
@@ -67,7 +67,7 @@ export function identityGlyph(agent: string): string {
 }
 
 /** Two-letter agent code used in activity-zone source columns.
- *  See docs/design/03-vocabulary.md §7 "Source format". */
+ *  Two-letter agent code from the redesign activity-zone vocabulary. */
 export function agentCode(agent: string): string {
   switch (agent) {
     case "claude-code": return "cc";

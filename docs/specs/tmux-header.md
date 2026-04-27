@@ -13,7 +13,7 @@ This spec is the lasting reference for the tcm tmux status line. It defines the 
 ### Goals
 - Replace third-party tmux themes with a status line whose colours and iconography track the active tcm theme (`packages/runtime/src/themes.ts`).
 - Surface an at-a-glance per-window glyph for tmux windows that contain a live agent process (Claude Code, Pi, Codex, …), to aid tab navigation.
-- **Severity-aware glyph colour.** The per-window glyph is painted in the colour of the dominant agent's severity (working / waiting / ready / stopped / error), so the tab strip doubles as a hands-off status board. Mirrors the panel's left-gutter severity colours; see `docs/design/03-vocabulary.md` §6. *(Lifted to v1 in v1.1.)*
+- **Severity-aware glyph colour.** The per-window glyph is painted in the colour of the dominant agent's severity (working / waiting / ready / stopped / error), so the tab strip doubles as a hands-off status board. Mirrors the panel's left-gutter severity colours from the Apr 2026 redesign (`docs/explanation/redesign-2026-04.md`). *(Lifted to v1 in v1.1.)*
 - Keep the integration zero-cost on the tmux status repaint hot path (no `#(...)` shell expansions for agent state).
 
 ### Non-goals (v1.1)
@@ -192,7 +192,7 @@ Sourced from `tcm.tmux` when `@tcm-header == on`. Sets:
 
 **Active-window pill background.** Active tabs render on `theme.surface0` (a subtle bg slightly lighter than `theme.base`); inactive tabs use `bg=default` (terminal background). This adds bg-based differentiation on top of the existing fg+bold, so the active tab is identifiable even when its severity colour also resolves to `theme.blue`. The pill is a single-segment background — no rounded edges, no dividers — to stay zero-cost on the status repaint hot path.
 
-**Active-window vs. severity-colour collision.** When the active window's agent is `working`, both the pill style and `@tcm-agent-fg` resolve to `theme.blue`, so fg alone can't differentiate "this is the active tab" from "this glyph means working." Resolution: the active style carries `bold` and a `bg=surface0` pill; the inline `#[fg=@tcm-agent-fg]` overrides the *fg* only, so an active working glyph renders bold-blue *on the pill* while inactive working glyphs render plain blue on `bg=default`. When severity is anything other than `working`, fg colour *and* weight *and* bg differentiate. No special-case in the format string — tmux's existing attribute inheritance handles it. See `docs/design/03-vocabulary.md` §6 "Active-window vs. severity colour collision".
+**Active-window vs. severity-colour collision.** When the active window's agent is `working`, both the pill style and `@tcm-agent-fg` resolve to `theme.blue`, so fg alone can't differentiate "this is the active tab" from "this glyph means working." Resolution: the active style carries `bold` and a `bg=surface0` pill; the inline `#[fg=@tcm-agent-fg]` overrides the *fg* only, so an active working glyph renders bold-blue *on the pill* while inactive working glyphs render plain blue on `bg=default`. When severity is anything other than `working`, fg colour *and* weight *and* bg differentiate. No special-case in the format string — tmux's existing attribute inheritance handles it. See `docs/explanation/redesign-2026-04.md` for the redesign vocabulary that drives this resolution.
 
 ### 6.1 Glyph slot vocabulary
 

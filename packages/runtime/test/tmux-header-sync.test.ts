@@ -304,7 +304,7 @@ describe("planTmuxHeaderSync", () => {
 //
 // Mirrors the panel's status→colour map. Whenever these tests change, the
 // panel resolver in `apps/tui/src/index.tsx` (search `working/waiting/ready`)
-// must move in lockstep. See docs/design/03-vocabulary.md §6.
+// must move in lockstep. See docs/explanation/redesign-2026-04.md.
 
 describe("severityLabel (resolver)", () => {
   test("running → working", () => {
