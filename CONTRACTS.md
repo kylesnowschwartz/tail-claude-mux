@@ -2,7 +2,7 @@
 
 This document is the reference for extending tcm. It describes the agent event model, watcher interfaces, mux provider capabilities, and the runtime behaviors extension authors need to match.
 
-For end-user setup, start with the docs linked from [README.md](./README.md). For plugin packaging workflow, see [PLUGINS.md](./PLUGINS.md).
+For end-user setup, start with the docs linked from [README.md](./README.md).
 
 ## Built-In Watchers
 
@@ -277,5 +277,4 @@ The current runtime passes `127.0.0.1:7391` here.
 
 - Build a custom watcher: see the `AgentWatcher` section above.
 - Push metadata from scripts: see [docs/reference/programmatic-api.md](./docs/reference/programmatic-api.md).
-- Build a plugin package or local plugin: see [PLUGINS.md](./PLUGINS.md).
 - Understand the end-to-end runtime: see [docs/explanation/architecture.md](./docs/explanation/architecture.md).
