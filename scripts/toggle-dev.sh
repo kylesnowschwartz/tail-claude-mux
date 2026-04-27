@@ -7,12 +7,12 @@
 #
 # Prerequisites:
 #   Your tmux.conf must have both lines (one commented out):
-#     set -g @plugin 'Ataraxy-Labs/opensessions'
-#     # run '<path-to-workspace>/opensessions.tmux'
+#     set -g @plugin 'kylesnowschwartz/tail-claude-mux'
+#     # run '<path-to-workspace>/tcm.tmux'
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEV_LINE="run '${CURRENT_DIR}/opensessions.tmux'"
-TPM_LINE="set -g @plugin 'Ataraxy-Labs/opensessions'"
+DEV_LINE="run '${CURRENT_DIR}/tcm.tmux'"
+TPM_LINE="set -g @plugin 'kylesnowschwartz/tail-claude-mux'"
 
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}/tmux/tmux.conf"
 [ ! -f "$CONF" ] && CONF="$HOME/.tmux.conf"
@@ -25,7 +25,7 @@ fi
 # Detect current mode
 if grep -q "^${TPM_LINE}" "$CONF"; then
   CURRENT="prod"
-elif grep -q "^run '.*opensessions.tmux'" "$CONF"; then
+elif grep -q "^run '.*tcm.tmux'" "$CONF"; then
   CURRENT="dev"
 else
   echo "ERROR: couldn't detect tcm config in $CONF" >&2
@@ -48,7 +48,7 @@ if [ "$TARGET" = "dev" ]; then
   sed -i '' "s|^# *${DEV_LINE}|${DEV_LINE}|" "$CONF"
   echo "✓ Switched to DEV (${CURRENT_DIR})"
 else
-  sed -i '' "s|^run '.*opensessions.tmux'|# ${DEV_LINE}|" "$CONF"
+  sed -i '' "s|^run '.*tcm.tmux'|# ${DEV_LINE}|" "$CONF"
   sed -i '' "s|^# *${TPM_LINE}|${TPM_LINE}|" "$CONF"
   echo "✓ Switched to PROD (TPM)"
 fi

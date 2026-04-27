@@ -1,7 +1,7 @@
 # tcm
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Star History](https://img.shields.io/github/stars/Ataraxy-Labs/opensessions?style=social)](https://github.com/Ataraxy-Labs/opensessions)
+[![Star History](https://img.shields.io/github/stars/kylesnowschwartz/tail-claude-mux?style=social)](https://github.com/kylesnowschwartz/tail-claude-mux)
 
 tmux is all you need. make tmux great again :) 
 
@@ -24,7 +24,7 @@ Requirements:
 Add this to `~/.tmux.conf`:
 
 ```tmux
-set -g @plugin 'Ataraxy-Labs/opensessions'
+set -g @plugin 'kylesnowschwartz/tail-claude-mux'
 ```
 
 Then reload tmux and install plugins:
@@ -41,7 +41,7 @@ TPM clones the repo into `~/.tmux/plugins/tail-claude-mux`. It does not install 
 If you want the same setup as a single shell command:
 
 ```bash
-grep -q "Ataraxy-Labs/opensessions" ~/.tmux.conf 2>/dev/null || printf '\nset -g @plugin '\''Ataraxy-Labs/opensessions'\''\n' >> ~/.tmux.conf && tmux source-file ~/.tmux.conf && ~/.tmux/plugins/tpm/bin/install_plugins
+grep -q "kylesnowschwartz/tail-claude-mux" ~/.tmux.conf 2>/dev/null || printf '\nset -g @plugin '\''kylesnowschwartz/tail-claude-mux'\''\n' >> ~/.tmux.conf && tmux source-file ~/.tmux.conf && ~/.tmux/plugins/tpm/bin/install_plugins
 ```
 
 ## Update
@@ -62,7 +62,7 @@ Run the uninstall script **before** removing the plugin files — it cleans up t
 sh ~/.tmux/plugins/tail-claude-mux/integrations/tmux-plugin/scripts/uninstall.sh
 ```
 
-Then remove the `set -g @plugin 'Ataraxy-Labs/opensessions'` line from `~/.tmux.conf` and run `prefix + alt + u` (TPM uninstall).
+Then remove the `set -g @plugin 'kylesnowschwartz/tail-claude-mux'` line from `~/.tmux.conf` and run `prefix + alt + u` (TPM uninstall).
 
 ## Support Status
 
@@ -112,7 +112,7 @@ Full reference: [docs/reference/programmatic-api.md](./docs/reference/programmat
 Smoke test from a local clone:
 
 ```bash
-git clone https://github.com/Ataraxy-Labs/opensessions.git
+git clone https://github.com/kylesnowschwartz/tail-claude-mux.git
 cd tcm
 bun install
 bun test
@@ -163,7 +163,7 @@ For the full tmux workflow with keybindings, troubleshooting, and configuration 
 
 ### Integrations
 
-- `opensessions.tmux` — root TPM entrypoint for users
+- `tcm.tmux` — root TPM entrypoint for users
 - `integrations/tmux-plugin` — tmux-facing scripts and host integration glue
 - `integrations/pi-extension` — pi extension that pushes lifecycle events to tcm
 
@@ -175,7 +175,7 @@ For the full tmux workflow with keybindings, troubleshooting, and configuration 
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Ataraxy-Labs/opensessions&type=Date)](https://star-history.com/#Ataraxy-Labs/opensessions&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=kylesnowschwartz/tail-claude-mux&type=Date)](https://star-history.com/#kylesnowschwartz/tail-claude-mux&Date)
 
 ## License
 

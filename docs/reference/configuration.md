@@ -100,7 +100,7 @@ Minimal install:
 If you use TPM, this is enough:
 
 ```tmux
-set -g @plugin 'Ataraxy-Labs/opensessions'
+set -g @plugin 'kylesnowschwartz/tail-claude-mux'
 ```
 
 After adding it, reload tmux and ask TPM to install plugins:
@@ -113,7 +113,7 @@ tmux source-file ~/.tmux.conf
 If you run from a local checkout instead, this is enough:
 
 ```tmux
-source-file /absolute/path/to/tcm/opensessions.tmux
+source-file /absolute/path/to/tcm/tcm.tmux
 ```
 
 Optional overrides:

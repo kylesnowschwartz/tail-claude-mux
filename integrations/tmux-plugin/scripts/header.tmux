@@ -3,7 +3,7 @@
 #
 # This file applies status-line variables only. The server is the single
 # writer of theme tokens (@os-thm-*) and per-window agent state (@os-agent*).
-# Sourced by opensessions.tmux when @tcm-header == "on".
+# Sourced by tcm.tmux when @tcm-header == "on".
 
 # Status-line position and justification.
 set -g status-position top

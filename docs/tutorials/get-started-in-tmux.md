@@ -13,10 +13,10 @@ This tutorial gets tcm running as a real tmux sidebar, either through TPM or fro
 If you already use [TPM](https://github.com/tmux-plugins/tpm), run:
 
 ```bash
-grep -q "Ataraxy-Labs/opensessions" ~/.tmux.conf 2>/dev/null || printf '\nset -g @plugin '\''Ataraxy-Labs/opensessions'\''\n' >> ~/.tmux.conf && tmux source-file ~/.tmux.conf && ~/.tmux/plugins/tpm/bin/install_plugins
+grep -q "kylesnowschwartz/tail-claude-mux" ~/.tmux.conf 2>/dev/null || printf '\nset -g @plugin '\''kylesnowschwartz/tail-claude-mux'\''\n' >> ~/.tmux.conf && tmux source-file ~/.tmux.conf && ~/.tmux/plugins/tpm/bin/install_plugins
 ```
 
-Result: TPM clones the GitHub repo for you, installs the plugin, and `opensessions.tmux` bootstraps the Bun workspace from the plugin checkout the first time it loads.
+Result: TPM clones the GitHub repo for you, installs the plugin, and `tcm.tmux` bootstraps the Bun workspace from the plugin checkout the first time it loads.
 
 If you do not use TPM yet, continue with the local-clone flow below.
 
@@ -37,13 +37,13 @@ Open `~/.tmux.conf` and add one of these minimal entries:
 If you use TPM:
 
 ```tmux
-set -g @plugin 'Ataraxy-Labs/opensessions'
+set -g @plugin 'kylesnowschwartz/tail-claude-mux'
 ```
 
 If you run from a local clone instead:
 
 ```tmux
-source-file /absolute/path/to/tcm/opensessions.tmux
+source-file /absolute/path/to/tcm/tcm.tmux
 ```
 
 If you added the TPM plugin line manually instead of using the one-line installer above, reload tmux and install plugins with:

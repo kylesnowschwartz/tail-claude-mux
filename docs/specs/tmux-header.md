@@ -168,7 +168,7 @@ export function syncTmuxHeaderOptions(args: {
 
 ## 6. Read protocol — `header.tmux`
 
-Sourced from `opensessions.tmux` when `@tcm-header == on`. Sets:
+Sourced from `tcm.tmux` when `@tcm-header == on`. Sets:
 
 | tmux variable | Format |
 |---|---|
