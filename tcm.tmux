@@ -108,8 +108,8 @@ bind_global_index_keys
 
 # --- Status-line header (opt-in) ---
 # When @tcm-header == "on", apply the tcm theme + agent
-# glyphs to tmux's status line. The tcm server writes @os-thm-*
-# and @os-agent* options that header.sh reads. See docs/specs/tmux-header.md.
+# glyphs to tmux's status line. The tcm server writes @tcm-thm-*
+# and @tcm-agent* options that header.sh reads. See docs/specs/tmux-header.md.
 HEADER_ENABLED=$(get_option "@tcm-header" "off")
 if [ "$HEADER_ENABLED" = "on" ]; then
   tmux source-file "$SCRIPTS_DIR/header.tmux"

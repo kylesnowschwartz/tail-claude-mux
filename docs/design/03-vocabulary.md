@@ -301,7 +301,7 @@ stay aligned):
   `generic: "\u{F167A}"` (nf-md robot-outline). All other entries
   already match the panel.
 - [x] **Severity-aware glyph colour:** `computeWindowStates()` resolves
-  `@os-agent-fg` per-window from the dominant agent's severity
+  `@tcm-agent-fg` per-window from the dominant agent's severity
   (working=blue, waiting=yellow, ready=green, stopped=surface2,
   error=red) via the local `severityLabel()` + `severityColour()` in
   `tmux-header-sync.ts`. The panel's resolver in `apps/tui/src/index.tsx`
@@ -310,7 +310,7 @@ stay aligned):
   third surface lands.
 - [x] **Active-window collision:** confirmed in
   `integrations/tmux-plugin/scripts/header.tmux`. The format uses
-  inline `#[fg=#{@os-agent-fg}]` (colour-only override); `bold` lives
+  inline `#[fg=#{@tcm-agent-fg}]` (colour-only override); `bold` lives
   on the segment-level `window-status-current-style`. tmux inherits
   `bold` through the inline span, so an active working glyph renders
   bold-blue while inactive working glyphs render plain blue — weight
@@ -324,7 +324,7 @@ stay aligned):
 - [x] **Test coverage:** `packages/runtime/test/tmux-header-sync.test.ts`
   adds 18 new cases covering `severityLabel`, `severityColour`, the
   per-status fg writes, multi-agent precedence (severity follows the
-  picked agent), and a status-flip diff that re-emits `@os-agent-fg`
+  picked agent), and a status-flip diff that re-emits `@tcm-agent-fg`
   without changing the glyph identity.
 
 These can land as their own PR after the panel work; the panel does not

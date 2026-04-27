@@ -140,11 +140,11 @@ describe("planTmuxHeaderSync", () => {
     const paneToWindow = new Map([["%10", "@1"]]);
     const out = planTmuxHeaderSync(emptyInput({ sessions, paneToWindow }));
 
-    const setAgent = out.commands.find((c) => c.includes("@os-agent") && c.includes("@1") && !c.includes("-fg") && !c.includes("-type"));
-    expect(setAgent).toEqual(["set-option", "-w", "-t", "@1", "@os-agent", AGENT_GLYPHS["claude-code"]!]);
-    const setFg = out.commands.find((c) => c.includes("@os-agent-fg") && c.includes("@1"));
+    const setAgent = out.commands.find((c) => c.includes("@tcm-agent") && c.includes("@1") && !c.includes("-fg") && !c.includes("-type"));
+    expect(setAgent).toEqual(["set-option", "-w", "-t", "@1", "@tcm-agent", AGENT_GLYPHS["claude-code"]!]);
+    const setFg = out.commands.find((c) => c.includes("@tcm-agent-fg") && c.includes("@1"));
     expect(setFg?.[5]).toBe(BLUE);
-    const setType = out.commands.find((c) => c.includes("@os-agent-type") && c.includes("@1"));
+    const setType = out.commands.find((c) => c.includes("@tcm-agent-type") && c.includes("@1"));
     expect(setType?.[5]).toBe("claude-code");
 
     expect(out.newWindows.get("@1")).toEqual({ glyph: AGENT_GLYPHS["claude-code"]!, fg: BLUE, agent: "claude-code" });
@@ -186,7 +186,7 @@ describe("planTmuxHeaderSync", () => {
     expect(second.commands).toEqual([]);
   });
 
-  test("S5: theme change re-emits the @os-thm-* palette options", () => {
+  test("S5: theme change re-emits the @tcm-thm-* palette options", () => {
     const sessions: SessionData[] = [];
     const first = planTmuxHeaderSync(emptyInput({ sessions, theme: resolveTheme("catppuccin-mocha"), themeName: "catppuccin-mocha" }));
     const second = planTmuxHeaderSync(emptyInput({
@@ -196,7 +196,7 @@ describe("planTmuxHeaderSync", () => {
       prevWindows: first.newWindows,
       prevPalette: first.newPalette,
     }));
-    const paletteWrites = second.commands.filter((c) => c[2]?.startsWith("@os-thm-"));
+    const paletteWrites = second.commands.filter((c) => c[2]?.startsWith("@tcm-thm-"));
     expect(paletteWrites.length).toBeGreaterThan(0);
     expect(second.newPalette.values.get("base")).toBe(BUILTIN_THEMES["dracula"]!.palette.base);
   });
@@ -221,7 +221,7 @@ describe("planTmuxHeaderSync", () => {
     const prevPalette: PaletteState = { themeName: THEME_NAME, values: new Map([["base", "#000"]]) };
     const out = planTmuxHeaderSync(emptyInput({ sessions: [], paneToWindow: new Map(), prevWindows, prevPalette }));
     const cleanups = out.commands.filter((c) => c[0] === "set-option" && c[1] === "-wu" && c[3] === "@1");
-    expect(cleanups.length).toBe(3); // @os-agent, @os-agent-fg, @os-agent-type
+    expect(cleanups.length).toBe(3); // @tcm-agent, @tcm-agent-fg, @tcm-agent-type
     expect(out.newWindows.size).toBe(0);
   });
 
@@ -358,21 +358,21 @@ describe("severityColour (palette mapping)", () => {
 });
 
 describe("planTmuxHeaderSync severity-aware fg", () => {
-  test("waiting agent emits @os-agent-fg = yellow", () => {
+  test("waiting agent emits @tcm-agent-fg = yellow", () => {
     const sessions = [makeSession("s1", [makeAgent({ agent: "claude-code", session: "s1", paneId: "%10", status: "waiting" })])];
     const paneToWindow = new Map([["%10", "@1"]]);
     const out = planTmuxHeaderSync(emptyInput({ sessions, paneToWindow }));
     expect(out.newWindows.get("@1")?.fg).toBe(YELLOW);
   });
 
-  test("errored agent emits @os-agent-fg = red", () => {
+  test("errored agent emits @tcm-agent-fg = red", () => {
     const sessions = [makeSession("s1", [makeAgent({ agent: "pi", session: "s1", paneId: "%20", status: "error" })])];
     const paneToWindow = new Map([["%20", "@2"]]);
     const out = planTmuxHeaderSync(emptyInput({ sessions, paneToWindow }));
     expect(out.newWindows.get("@2")?.fg).toBe(RED);
   });
 
-  test("alive 'done' agent emits @os-agent-fg = green (ready, at prompt)", () => {
+  test("alive 'done' agent emits @tcm-agent-fg = green (ready, at prompt)", () => {
     const sessions = [makeSession("s1", [makeAgent({ agent: "codex", session: "s1", paneId: "%30", status: "done", liveness: "alive" })])];
     const paneToWindow = new Map([["%30", "@3"]]);
     const out = planTmuxHeaderSync(emptyInput({ sessions, paneToWindow }));
@@ -406,7 +406,7 @@ describe("planTmuxHeaderSync severity-aware fg", () => {
       prevWindows: first.newWindows,
       prevPalette: first.newPalette,
     }));
-    // fg flipped; the diff should write three @os-agent* options for @1.
+    // fg flipped; the diff should write three @tcm-agent* options for @1.
     expect(second.newWindows.get("@1")?.fg).toBe(YELLOW);
     const writes = second.commands.filter((c) => c[1] === "-w" && c[3] === "@1");
     expect(writes.length).toBe(3);
@@ -462,9 +462,9 @@ describe("syncTmuxHeaderOptions (X1)", () => {
     expect(calls.length).toBe(2);
     expect(calls[1]?.[0]).toBe("set-option");
     // Chain contains the agent + fg + type writes for @1.
-    expect(calls[1]).toContain("@os-agent");
-    expect(calls[1]).toContain("@os-agent-fg");
-    expect(calls[1]).toContain("@os-agent-type");
+    expect(calls[1]).toContain("@tcm-agent");
+    expect(calls[1]).toContain("@tcm-agent-fg");
+    expect(calls[1]).toContain("@tcm-agent-type");
   });
 
   test("idempotence: second identical call only runs list-panes", () => {

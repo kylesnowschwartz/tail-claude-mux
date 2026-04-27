@@ -120,7 +120,7 @@ export function planTmuxHeaderSync(input: PlanInput): PlanOutput {
   // Palette: write whenever theme changes or palette has never been written.
   if (!input.prevPalette || input.prevPalette.themeName !== newPalette.themeName) {
     for (const [token, value] of newPalette.values) {
-      commands.push(["set-option", "-g", `@os-thm-${token}`, value]);
+      commands.push(["set-option", "-g", `@tcm-thm-${token}`, value]);
     }
   }
 
@@ -128,17 +128,17 @@ export function planTmuxHeaderSync(input: PlanInput): PlanOutput {
   for (const [windowId, next] of newWindows) {
     const prev = input.prevWindows.get(windowId);
     if (prev && prev.glyph === next.glyph && prev.fg === next.fg && prev.agent === next.agent) continue;
-    commands.push(["set-option", "-w", "-t", windowId, "@os-agent", next.glyph]);
-    commands.push(["set-option", "-w", "-t", windowId, "@os-agent-fg", next.fg]);
-    commands.push(["set-option", "-w", "-t", windowId, "@os-agent-type", next.agent]);
+    commands.push(["set-option", "-w", "-t", windowId, "@tcm-agent", next.glyph]);
+    commands.push(["set-option", "-w", "-t", windowId, "@tcm-agent-fg", next.fg]);
+    commands.push(["set-option", "-w", "-t", windowId, "@tcm-agent-type", next.agent]);
   }
 
   // Cleanup: windows that had a glyph but no longer do.
   for (const windowId of input.prevWindows.keys()) {
     if (newWindows.has(windowId)) continue;
-    commands.push(["set-option", "-wu", "-t", windowId, "@os-agent"]);
-    commands.push(["set-option", "-wu", "-t", windowId, "@os-agent-fg"]);
-    commands.push(["set-option", "-wu", "-t", windowId, "@os-agent-type"]);
+    commands.push(["set-option", "-wu", "-t", windowId, "@tcm-agent"]);
+    commands.push(["set-option", "-wu", "-t", windowId, "@tcm-agent-fg"]);
+    commands.push(["set-option", "-wu", "-t", windowId, "@tcm-agent-type"]);
   }
 
   return { commands, newWindows, newPalette };
@@ -263,7 +263,7 @@ export function syncTmuxHeaderOptions(args: SyncArgs, deps: SyncDeps): void {
       // stale per-window options when the recovery scan re-emitted writes
       // against an empty cache, and (b) clear lastWindows but not
       // lastPalette, leaving the bar on fallback colours after a tmux
-      // server restart that wiped @os-thm-* options.
+      // server restart that wiped @tcm-thm-* options.
       return;
     }
 

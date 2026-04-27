@@ -1,8 +1,8 @@
-# tcm tmux header — passive reader of @os-thm-* and @os-agent* options
+# tcm tmux header — passive reader of @tcm-thm-* and @tcm-agent* options
 # written by the tcm server. See docs/specs/tmux-header.md.
 #
 # This file applies status-line variables only. The server is the single
-# writer of theme tokens (@os-thm-*) and per-window agent state (@os-agent*).
+# writer of theme tokens (@tcm-thm-*) and per-window agent state (@tcm-agent*).
 # Sourced by tcm.tmux when @tcm-header == "on".
 
 # Status-line position and justification.
@@ -16,9 +16,9 @@ set -g status-justify left
 # severity colour also resolves to theme.blue (working state). The
 # `?...,default` chain keeps things sane on first paint before the server
 # writes options.
-set -g status-style "fg=default,bg=#{?@os-thm-base,#{@os-thm-base},default}"
+set -g status-style "fg=default,bg=#{?@tcm-thm-base,#{@tcm-thm-base},default}"
 set -g window-status-style "fg=default"
-set -g window-status-current-style "fg=#{?@os-thm-blue,#{@os-thm-blue},default},bg=#{?@os-thm-surface0,#{@os-thm-surface0},default},bold"
+set -g window-status-current-style "fg=#{?@tcm-thm-blue,#{@tcm-thm-blue},default},bg=#{?@tcm-thm-surface0,#{@tcm-thm-surface0},default},bold"
 
 # Clear legacy oh-my-tmux / tmux-default tab indicators that duplicate our
 # vocabulary. tcm surfaces the same information through:
@@ -51,19 +51,19 @@ set -g window-status-last-style "default"
 # Last-window indicator: yellow `nf-md` U+F054C (undo curl-back) marks the most-recently-visited
 # window so prefix-l navigation has a glance target. Width grows by 2 cells
 # only on the marked tab; harmless given exactly one window carries the flag.
-set -g window-status-format " #{?@os-agent,#[fg=#{@os-agent-fg}]#{@os-agent},#[fg=#{?@os-thm-overlay0,#{@os-thm-overlay0},default}]}#[default] #I #W#{?window_zoomed_flag, Z,}#{?window_last_flag,#[fg=#{?@os-thm-yellow,#{@os-thm-yellow},default}] 󰕌,} "
-set -g window-status-current-format " #{?@os-agent,#[fg=#{@os-agent-fg}]#{@os-agent},}#[default,fg=#{?@os-thm-blue,#{@os-thm-blue},default},bg=#{?@os-thm-surface0,#{@os-thm-surface0},default},bold] #I #W#{?window_zoomed_flag, Z,}#{?window_last_flag,#[fg=#{?@os-thm-yellow,#{@os-thm-yellow},default}] 󰕌,} "
+set -g window-status-format " #{?@tcm-agent,#[fg=#{@tcm-agent-fg}]#{@tcm-agent},#[fg=#{?@tcm-thm-overlay0,#{@tcm-thm-overlay0},default}]}#[default] #I #W#{?window_zoomed_flag, Z,}#{?window_last_flag,#[fg=#{?@tcm-thm-yellow,#{@tcm-thm-yellow},default}] 󰕌,} "
+set -g window-status-current-format " #{?@tcm-agent,#[fg=#{@tcm-agent-fg}]#{@tcm-agent},}#[default,fg=#{?@tcm-thm-blue,#{@tcm-thm-blue},default},bg=#{?@tcm-thm-surface0,#{@tcm-thm-surface0},default},bold] #I #W#{?window_zoomed_flag, Z,}#{?window_last_flag,#[fg=#{?@tcm-thm-yellow,#{@tcm-thm-yellow},default}] 󰕌,} "
 # Single-space separator between windows (paired with the trailing pad above
 # this gives 2 cells of breathing room — visually close to a tab gutter).
 
 # Status-left: session pill on accent. No trailing space outside the pill —
 # the windows carry their own leading pad, so a space here would render with
 # `bg=default` and create a stray cell when default differs from the bar bg.
-set -g status-left "#[fg=#{?@os-thm-base,#{@os-thm-base},default},bg=#{?@os-thm-blue,#{@os-thm-blue},default},bold] #S #[default]"
+set -g status-left "#[fg=#{?@tcm-thm-base,#{@tcm-thm-base},default},bg=#{?@tcm-thm-blue,#{@tcm-thm-blue},default},bold] #S #[default]"
 set -g status-left-length 40
 
 # Status-right: keep oh-my-tmux semantic content (prefix indicator, pairing,
 # sync) but route through palette options. Pairing and sync only render when
 # active.
-set -g status-right " #{?client_prefix,#[fg=#{?@os-thm-base,#{@os-thm-base},default}]#[bg=#{?@os-thm-yellow,#{@os-thm-yellow},default}]#[bold] ^A #[default],} #{?session_many_attached,#[fg=#{?@os-thm-base,#{@os-thm-base},default}]#[bg=#{?@os-thm-yellow,#{@os-thm-yellow},default}]#[bold] 2+ #[default],} #{?pane_synchronized,#[fg=#{?@os-thm-base,#{@os-thm-base},default}]#[bg=#{?@os-thm-red,#{@os-thm-red},default}]#[bold] SY #[default],}"
+set -g status-right " #{?client_prefix,#[fg=#{?@tcm-thm-base,#{@tcm-thm-base},default}]#[bg=#{?@tcm-thm-yellow,#{@tcm-thm-yellow},default}]#[bold] ^A #[default],} #{?session_many_attached,#[fg=#{?@tcm-thm-base,#{@tcm-thm-base},default}]#[bg=#{?@tcm-thm-yellow,#{@tcm-thm-yellow},default}]#[bold] 2+ #[default],} #{?pane_synchronized,#[fg=#{?@tcm-thm-base,#{@tcm-thm-base},default}]#[bg=#{?@tcm-thm-red,#{@tcm-thm-red},default}]#[bold] SY #[default],}"
 set -g status-right-length 40

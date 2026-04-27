@@ -18,7 +18,7 @@ This spec is the lasting reference for the tcm tmux status line. It defines the 
 
 ### Non-goals (v1.1)
 - Per-agent-type colour. The glyph identifies *which* agent; severity colour answers *what state*. They share the same cell.
-- Per-session palette divergence. v1 writes `@os-thm-*` at the global scope.
+- Per-session palette divergence. v1 writes `@tcm-thm-*` at the global scope.
 - Tooltip / hover-reveal of agent metadata.
 - Multi-agent rendering in a single cell (e.g. "two glyphs"). Precedence picks one identity *and* its severity.
 
@@ -37,18 +37,18 @@ This spec is the lasting reference for the tcm tmux status line. It defines the 
                      |     |                     |
                      +-----+---------------------+
                            |
-                           |  tmux set-option -w -t <wid> @os-agent <glyph>
-                           |  tmux set-option -w -t <wid> @os-agent-fg <hex>
-                           |  tmux set-option -w -t <wid> @os-agent-type <agent>
-                           |  tmux set-option -g           @os-thm-<token> <hex>
+                           |  tmux set-option -w -t <wid> @tcm-agent <glyph>
+                           |  tmux set-option -w -t <wid> @tcm-agent-fg <hex>
+                           |  tmux set-option -w -t <wid> @tcm-agent-type <agent>
+                           |  tmux set-option -g           @tcm-thm-<token> <hex>
                            v
                      +---------------------------+
                      |  tmux server              |
                      |                           |
                      |  window-status-format     |
-                     |  reads @os-agent*         |
+                     |  reads @tcm-agent*         |
                      |  status-style reads       |
-                     |  @os-thm-*                |
+                     |  @tcm-thm-*                |
                      +---------------------------+
 ```
 
@@ -62,9 +62,9 @@ The server is the single writer; tmux is a passive reader. Status-line repaint n
 
 | Option | Type | Meaning |
 |---|---|---|
-| `@os-agent` | string (single-cell glyph) | Glyph for the dominant agent type in this window. Unset when no live agent is present. |
-| `@os-agent-fg` | hex string (`#rrggbb`) or `default` | Foreground colour for the glyph. Resolved per-window from the dominant agent's severity: `working`→`palette.blue`, `waiting`→`palette.yellow`, `ready`→`palette.green`, `stopped`→`palette.surface2`, `error`→`palette.red`. The mapping is locked in `severityColour()` in `tmux-header-sync.ts` and mirrors the panel's left-gutter resolver. |
-| `@os-agent-type` | string | Agent name (`claude-code`, `pi`, `codex`, `amp`, …) of the dominant agent. For introspection / future variants. |
+| `@tcm-agent` | string (single-cell glyph) | Glyph for the dominant agent type in this window. Unset when no live agent is present. |
+| `@tcm-agent-fg` | hex string (`#rrggbb`) or `default` | Foreground colour for the glyph. Resolved per-window from the dominant agent's severity: `working`→`palette.blue`, `waiting`→`palette.yellow`, `ready`→`palette.green`, `stopped`→`palette.surface2`, `error`→`palette.red`. The mapping is locked in `severityColour()` in `tmux-header-sync.ts` and mirrors the panel's left-gutter resolver. |
+| `@tcm-agent-type` | string | Agent name (`claude-code`, `pi`, `codex`, `amp`, …) of the dominant agent. For introspection / future variants. |
 
 Lifetime:
 - Set when at least one agent in the window has `liveness === "alive"`.
@@ -74,19 +74,19 @@ Lifetime:
 
 | Option | Maps to `Theme.palette.*` |
 |---|---|
-| `@os-thm-base` | `base` |
-| `@os-thm-text` | `text` |
-| `@os-thm-blue` | `blue` |
-| `@os-thm-surface0` | `surface0` |
-| `@os-thm-surface2` | `surface2` |
-| `@os-thm-overlay0` | `overlay0` |
-| `@os-thm-yellow` | `yellow` |
-| `@os-thm-red` | `red` |
-| `@os-thm-green` | `green` |
+| `@tcm-thm-base` | `base` |
+| `@tcm-thm-text` | `text` |
+| `@tcm-thm-blue` | `blue` |
+| `@tcm-thm-surface0` | `surface0` |
+| `@tcm-thm-surface2` | `surface2` |
+| `@tcm-thm-overlay0` | `overlay0` |
+| `@tcm-thm-yellow` | `yellow` |
+| `@tcm-thm-red` | `red` |
+| `@tcm-thm-green` | `green` |
 
 Lifetime: re-written when the server detects a theme change. Otherwise stable.
 
-**Transparency translation.** Some builtin themes (e.g. `transparent`) store the literal string `"transparent"` for `palette.base`/`mantle`/`crust` to indicate "use the terminal's own background." tmux understands the keyword `default`, not `transparent`. Before writing palette tokens, `tmux-header-sync.ts` runs each value through a `toTmuxColour()` helper that maps `"transparent" → "default"`; all other values pass through unchanged. The format-string fallback chain (`#{?@os-thm-base,#{@os-thm-base},default}`) at §6 still works because `default` is set, not the empty string.
+**Transparency translation.** Some builtin themes (e.g. `transparent`) store the literal string `"transparent"` for `palette.base`/`mantle`/`crust` to indicate "use the terminal's own background." tmux understands the keyword `default`, not `transparent`. Before writing palette tokens, `tmux-header-sync.ts` runs each value through a `toTmuxColour()` helper that maps `"transparent" → "default"`; all other values pass through unchanged. The format-string fallback chain (`#{?@tcm-thm-base,#{@tcm-thm-base},default}`) at §6 still works because `default` is set, not the empty string.
 
 ### 3.3 User options (writer: user, scope: `set -g` in tmux conf)
 
@@ -174,9 +174,9 @@ Sourced from `tcm.tmux` when `@tcm-header == on`. Sets:
 |---|---|
 | `status-position` | `top` |
 | `status-justify` | `left` |
-| `status-style` | `fg=default,bg=#{?@os-thm-base,#{@os-thm-base},default}` |
+| `status-style` | `fg=default,bg=#{?@tcm-thm-base,#{@tcm-thm-base},default}` |
 | `window-status-style` | `fg=default` |
-| `window-status-current-style` | `fg=#{?@os-thm-blue,#{@os-thm-blue},default},bg=#{?@os-thm-surface0,#{@os-thm-surface0},default},bold` |
+| `window-status-current-style` | `fg=#{?@tcm-thm-blue,#{@tcm-thm-blue},default},bg=#{?@tcm-thm-surface0,#{@tcm-thm-surface0},default},bold` |
 | `window-status-activity-style` | `default` (cleared) — see legacy-reset note |
 | `window-status-bell-style` | `default` (cleared) — see legacy-reset note |
 | `window-status-last-style` | `default` (cleared) — see legacy-reset note |
@@ -188,11 +188,11 @@ Sourced from `tcm.tmux` when `@tcm-header == on`. Sets:
 
 **Legacy-reset.** Three tmux-default / oh-my-tmux indicators paint over the tab strip when set: `window-status-activity-style` adds an underscore for windows with the activity flag, `window-status-bell-style` adds blink+bold for windows that triggered a bell, and `window-status-last-style` paints the previously-visited tab cyan. tcm's vocabulary already surfaces the same signals (activity zone in the panel; severity-coloured glyph in the tab strip; yellow last-window arrow in §6.2), so `header.tmux` explicitly resets each to `"default"` to prevent double-rendering. Without the reset the activity underscore reads as a "janky interrupted underline" because it's clipped by the active-tab pill bg.
 
-**Inactive-tab readability.** Inactive windows render with `fg=default` rather than a fixed `@os-thm-overlay0` colour. The tcm theme palette is calibrated for dark terminal backgrounds; users running light terminal palettes (`the-themer` switches both) would see overlay grays as illegible. Letting the terminal palette dictate inactive-tab fg, and using `bold + theme.blue` for the active tab, keeps differentiation regardless of light/dark.
+**Inactive-tab readability.** Inactive windows render with `fg=default` rather than a fixed `@tcm-thm-overlay0` colour. The tcm theme palette is calibrated for dark terminal backgrounds; users running light terminal palettes (`the-themer` switches both) would see overlay grays as illegible. Letting the terminal palette dictate inactive-tab fg, and using `bold + theme.blue` for the active tab, keeps differentiation regardless of light/dark.
 
 **Active-window pill background.** Active tabs render on `theme.surface0` (a subtle bg slightly lighter than `theme.base`); inactive tabs use `bg=default` (terminal background). This adds bg-based differentiation on top of the existing fg+bold, so the active tab is identifiable even when its severity colour also resolves to `theme.blue`. The pill is a single-segment background — no rounded edges, no dividers — to stay zero-cost on the status repaint hot path.
 
-**Active-window vs. severity-colour collision.** When the active window's agent is `working`, both the pill style and `@os-agent-fg` resolve to `theme.blue`, so fg alone can't differentiate "this is the active tab" from "this glyph means working." Resolution: the active style carries `bold` and a `bg=surface0` pill; the inline `#[fg=@os-agent-fg]` overrides the *fg* only, so an active working glyph renders bold-blue *on the pill* while inactive working glyphs render plain blue on `bg=default`. When severity is anything other than `working`, fg colour *and* weight *and* bg differentiate. No special-case in the format string — tmux's existing attribute inheritance handles it. See `docs/design/03-vocabulary.md` §6 "Active-window vs. severity colour collision".
+**Active-window vs. severity-colour collision.** When the active window's agent is `working`, both the pill style and `@tcm-agent-fg` resolve to `theme.blue`, so fg alone can't differentiate "this is the active tab" from "this glyph means working." Resolution: the active style carries `bold` and a `bg=surface0` pill; the inline `#[fg=@tcm-agent-fg]` overrides the *fg* only, so an active working glyph renders bold-blue *on the pill* while inactive working glyphs render plain blue on `bg=default`. When severity is anything other than `working`, fg colour *and* weight *and* bg differentiate. No special-case in the format string — tmux's existing attribute inheritance handles it. See `docs/design/03-vocabulary.md` §6 "Active-window vs. severity colour collision".
 
 ### 6.1 Glyph slot vocabulary
 
@@ -200,8 +200,8 @@ Every tab opens with a single "what's running here" glyph slot. Two cases:
 
 | Condition | Glyph | Codepoint | Colour |
 |---|---|---|---|
-| `@os-agent` is set (live agent) | `#{@os-agent}` | varies (see §4 AGENT_GLYPHS) | `#{@os-agent-fg}` (severity-aware) |
-| `@os-agent` is unset (shell only) | nf-cod-terminal | U+EA85 | `theme.overlay0` |
+| `@tcm-agent` is set (live agent) | `#{@tcm-agent}` | varies (see §4 AGENT_GLYPHS) | `#{@tcm-agent-fg}` (severity-aware) |
+| `@tcm-agent` is unset (shell only) | nf-cod-terminal | U+EA85 | `theme.overlay0` |
 
 The shell-only case mirrors tokyo-night-tmux's leading boxed-terminal glyph. It anchors every tab visually (so empty windows still have a stable left edge) and signals "nothing demanding attention here" via the muted `overlay0` colour. When an agent appears, its severity-coloured identity glyph swaps in; when it exits, the shell glyph returns. Single slot, single meaning.
 
@@ -209,7 +209,7 @@ The shell-only case mirrors tokyo-night-tmux's leading boxed-terminal glyph. It 
 
 The most-recently-visited window (the target of tmux's `prefix l` / `last-window` binding) carries a yellow trailing glyph: nf-md U+F054C (undo, curl-back arrow) in `theme.yellow`. Other tabs render only the standard trailing space. The marked tab is therefore 2 cells wider than its peers — acceptable because exactly one window holds the flag at a time.
 
-The `#{?@os-thm-base,#{@os-thm-base},default}` chain ensures the status line is readable on first paint before the server has written palette options.
+The `#{?@tcm-thm-base,#{@tcm-thm-base},default}` chain ensures the status line is readable on first paint before the server has written palette options.
 
 ---
 
@@ -221,14 +221,14 @@ See `artifacts/03-blueprint.md` Section 3 for the authoritative table. Key entri
 - `@tcm-header` off → no writes; tmux falls back to whatever else is loaded.
 - Glyph wider than one cell → column drift. Constrained at the spec level.
 - Window closed mid-broadcast → write fails harmlessly (`shellStatus()` throws on nonzero exit, the sync's outer try/catch swallows it without advancing the cache, so the next successful broadcast retries).
-- Empty `tmux list-panes` (transient flake or genuinely empty) → sync returns early **without clearing caches**. Cached `lastWindows`/`lastPalette` are preserved so a subsequent successful scan can compute correct cleanup diffs and the bar does not lose its palette colours after a tmux server restart that wiped `@os-thm-*` options.
+- Empty `tmux list-panes` (transient flake or genuinely empty) → sync returns early **without clearing caches**. Cached `lastWindows`/`lastPalette` are preserved so a subsequent successful scan can compute correct cleanup diffs and the bar does not lose its palette colours after a tmux server restart that wiped `@tcm-thm-*` options.
 
 ### 7.1 Disable behaviour (sticky-off)
 
 Setting `@tcm-header` from `on` back to `off` does **not** retroactively tear down options written during the previous active period:
 
 - The server reads the gate **once at startup**, so a runtime flip is invisible until restart.
-- After restart with the gate off, the server short-circuits before any tmux probe — it does not issue cleanup writes for `@os-agent*` per-window options or revert the status-line settings that `header.tmux` applied.
+- After restart with the gate off, the server short-circuits before any tmux probe — it does not issue cleanup writes for `@tcm-agent*` per-window options or revert the status-line settings that `header.tmux` applied.
 
 To fully revert: comment out or remove the `set -g @tcm-header on` line, restart the tmux server, and (optionally) source the user's prior status-line config. v1 does not implement an automated tear-down path; treat the gate as restart-required and forget-on-restart.
 
@@ -249,8 +249,8 @@ Live verification on a real tmux server is recorded in the blueprint as L1–L3 
 
 ## 9. Future work (not in v1.1)
 
-- Per-status glyph swap: extend `@os-agent` lookup to also vary the *glyph* by status (e.g. severity-glyph overlay) when `@tcm-header-status-aware == on`. Today only the colour varies; the glyph is identity-only.
-- Per-agent-type colour: `theme.status[status]` or a separate `@os-agent-type-fg` palette.
-- Tooltip via `@os-agent-tooltip` and tmux `#{T:...}` formats.
+- Per-status glyph swap: extend `@tcm-agent` lookup to also vary the *glyph* by status (e.g. severity-glyph overlay) when `@tcm-header-status-aware == on`. Today only the colour varies; the glyph is identity-only.
+- Per-agent-type colour: `theme.status[status]` or a separate `@tcm-agent-type-fg` palette.
+- Tooltip via `@tcm-agent-tooltip` and tmux `#{T:...}` formats.
 - Per-session palette overrides (different theme per tmux session).
 - Custom Nerd Font glyphs delivered via the user's SVG-derived icon font — only the `AGENT_GLYPHS` table changes.
