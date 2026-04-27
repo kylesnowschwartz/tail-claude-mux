@@ -13,10 +13,5 @@ export function createTmux(settings?: TmuxProviderSettings) {
   return new TmuxProvider(settings);
 }
 
-/** Plugin entry point for tcm plugin loader */
-export default function (api: { registerMux: (p: any) => void }): void {
-  api.registerMux(createTmux());
-}
-
 export { TmuxProvider, type TmuxProviderSettings } from "./provider";
 export { TmuxClient } from "./client";

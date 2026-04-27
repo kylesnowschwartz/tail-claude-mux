@@ -16,12 +16,11 @@ export interface AgentWatcherContext {
  * Interface for agent watchers that detect agent status by watching
  * external data sources (thread files, databases, etc).
  *
- * Built-in: ClaudeCodeHookAdapter receives lifecycle hooks via POST /hook.
- * Community agents use the AgentWatcher plugin interface with file watching.
+ * Built-in: ClaudeCodeHookAdapter and PiHookAdapter receive lifecycle hooks via POST /hook.
  *
  * To add a new watcher:
  *   1. Create a file implementing AgentWatcher
- *   2. Register it via PluginAPI.registerWatcher() or in start.ts
+ *   2. Register it directly in apps/server/src/main.ts
  */
 export interface AgentWatcher {
   /** Unique name for this watcher (e.g. "amp", "claude-code") */

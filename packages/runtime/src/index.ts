@@ -26,8 +26,6 @@ export { ClaudeCodeHookAdapter, toolDescription } from "./agents/watchers/claude
 export { PiHookAdapter, piToolDescription } from "./agents/watchers/pi-hooks";
 export { MuxRegistry } from "./mux/registry";
 export { detectMux } from "./mux/detect";
-export { PluginLoader } from "./plugins/loader";
-export type { PluginAPI, PluginFactory } from "./plugins/loader";
 export { loadConfig, saveConfig } from "./config";
 export type { OpensessionsConfig } from "./config";
 export { resolveTheme, BUILTIN_THEMES, DEFAULT_THEME } from "./themes";

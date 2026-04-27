@@ -56,10 +56,6 @@ Run `bun run scripts/setup-hooks.ts` to register hooks in `~/.claude/settings.js
 
 Run `bun run scripts/setup-pi-extension.ts` to symlink `integrations/pi-extension/` into `~/.pi/agent/extensions/tcm`. The setup is idempotent. See [`integrations/pi-extension/README.md`](./integrations/pi-extension/README.md) for details.
 
-### Adding Other Agents
-
-Other agents (Amp, Codex, OpenCode, etc.) can be added via the `AgentWatcher` plugin interface. See the plugin API below.
-
 ## Agent Model
 
 ### `AgentStatus`
@@ -249,27 +245,12 @@ The server narrows providers with the runtime type guards exported from `@tcm/mu
 - `setupHooks()` should install mux-native hooks if the mux supports them. If it does not, a no-op implementation is acceptable.
 - `createSession()` and `killSession()` power the TUI's new-session and kill-session flows.
 
-## `PluginAPI`
-
-Plugins are loaded as default-exported factory functions that receive this API:
-
-```ts
-interface PluginAPI {
-  registerMux(provider: MuxProvider): void;
-  registerWatcher(watcher: AgentWatcher): void;
-  readonly serverPort: number;
-  readonly serverHost: string;
-}
-```
-
-The current runtime passes `127.0.0.1:7391` here.
-
 ## Built-In Runtime Behaviors To Know About
 
 - The server merges sessions from all registered providers into one state payload.
 - Session ordering is persisted separately from mux ordering.
 - tmux sidebars can be hidden into a stash session instead of being killed.
-- tmux is the only supported built-in mux today. Other providers can still target these contracts, but they are currently outside the support bar unless documented otherwise.
+- tmux is the only supported mux. The contracts are extensible but no other provider is shipped or supported.
 - The TUI expects a WebSocket server on `127.0.0.1:7391`.
 - The server exposes HTTP POST endpoints for programmatic metadata (status, progress, logs, notifications). See [docs/reference/programmatic-api.md](./docs/reference/programmatic-api.md).
 
