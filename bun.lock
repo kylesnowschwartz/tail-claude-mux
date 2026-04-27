@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "opensessions",
+      "name": "tcm",
       "devDependencies": {
         "@types/bun": "latest",
         "turbo": "^2",

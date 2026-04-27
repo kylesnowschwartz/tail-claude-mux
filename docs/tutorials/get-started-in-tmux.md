@@ -1,6 +1,6 @@
 # Get Started In tmux
 
-This tutorial gets opensessions running as a real tmux sidebar, either through TPM or from a local clone. By the end, you will be able to press `prefix o → s` to open the sidebar, toggle it with `prefix o → t`, switch directly with `prefix o → 1` through `prefix o → 9`, and see agent and Git state update live.
+This tutorial gets tcm running as a real tmux sidebar, either through TPM or from a local clone. By the end, you will be able to press `prefix o → s` to open the sidebar, toggle it with `prefix o → t`, switch directly with `prefix o → 1` through `prefix o → 9`, and see agent and Git state update live.
 
 ## Prerequisites
 
@@ -30,7 +30,7 @@ bun install
 
 Result: the workspace packages are installed and the TUI can run.
 
-## 3. Add opensessions to your tmux config
+## 3. Add tcm to your tmux config
 
 Open `~/.tmux.conf` and add one of these minimal entries:
 
@@ -43,7 +43,7 @@ set -g @plugin 'Ataraxy-Labs/opensessions'
 If you run from a local clone instead:
 
 ```tmux
-source-file /absolute/path/to/opensessions/opensessions.tmux
+source-file /absolute/path/to/tcm/opensessions.tmux
 ```
 
 If you added the TPM plugin line manually instead of using the one-line installer above, reload tmux and install plugins with:
@@ -119,7 +119,7 @@ Result: the session row should show a live status marker, and the detail panel s
 
 ## Expected Outcome
 
-You now have opensessions wired into tmux as a toggleable sidebar. From here you can move on to:
+You now have tcm wired into tmux as a toggleable sidebar. From here you can move on to:
 
 - [Configuration reference](../reference/configuration.md)
 - [Features and keybindings reference](../reference/features-and-keybindings.md)

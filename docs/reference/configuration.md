@@ -1,6 +1,6 @@
 # Configuration Reference
 
-This page documents the configuration inputs that opensessions reads today.
+This page documents the configuration inputs that tcm reads today.
 
 ## Config File Location
 
@@ -10,7 +10,7 @@ User config is loaded from:
 ~/.config/tcm/config.json
 ```
 
-If the file does not exist, opensessions falls back to defaults.
+If the file does not exist, tcm falls back to defaults.
 
 ## Recommended Config Shape
 
@@ -82,7 +82,7 @@ The tmux integration reads these tmux options instead of `config.json`:
 
 | tmux option | Default | Used by |
 | --- | --- | --- |
-| `@tcm-prefix-key` | `o` | Key after the tmux prefix that enters the opensessions key table (`prefix <key>`) |
+| `@tcm-prefix-key` | `o` | Key after the tmux prefix that enters the tcm key table (`prefix <key>`) |
 | `@tcm-focus-global-key` | unset | Optional no-prefix tmux keybinding that reveals and focuses the sidebar pane |
 | `@tcm-index-keys` | unset | Optional space-separated no-prefix tmux keys mapped in order to visible sessions `1` through `9` |
 | `@tcm-width` | `26` | exported as `TCM_WIDTH` by the tmux bootstrap script |
@@ -113,14 +113,14 @@ tmux source-file ~/.tmux.conf
 If you run from a local checkout instead, this is enough:
 
 ```tmux
-source-file /absolute/path/to/opensessions/opensessions.tmux
+source-file /absolute/path/to/tcm/opensessions.tmux
 ```
 
 Optional overrides:
 
 ```tmux
 set -g @tcm-width "30"
-set -g @tcm-prefix-key "o"   # default; change to remap the opensessions key table
+set -g @tcm-prefix-key "o"   # default; change to remap the tcm key table
 ```
 
 All other tmux options fall back to the defaults shown in the table above.

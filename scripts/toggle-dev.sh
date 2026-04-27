@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Toggle opensessions between dev (local workspace) and prod (TPM) in tmux.conf
+# Toggle tcm between dev (local workspace) and prod (TPM) in tmux.conf
 # Usage: ./scripts/toggle-dev.sh [dev|prod]
 #   No argument: toggle current mode
 #   dev:  switch to local workspace
@@ -28,7 +28,7 @@ if grep -q "^${TPM_LINE}" "$CONF"; then
 elif grep -q "^run '.*opensessions.tmux'" "$CONF"; then
   CURRENT="dev"
 else
-  echo "ERROR: couldn't detect opensessions config in $CONF" >&2
+  echo "ERROR: couldn't detect tcm config in $CONF" >&2
   exit 1
 fi
 

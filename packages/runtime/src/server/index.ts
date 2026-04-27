@@ -181,7 +181,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
   const tracker = new AgentTracker();
   const metadataStore = new SessionMetadataStore();
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
-  const sessionOrderPath = join(home, ".config", "opensessions", "session-order.json");
+  const sessionOrderPath = join(home, ".config", "tcm", "session-order.json");
   const sessionOrder = new SessionOrder(sessionOrderPath);
 
   // Clear previous log on server start
@@ -192,11 +192,11 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
   const config = loadConfig();
   let currentTheme: string | undefined = typeof config.theme === "string" ? config.theme : undefined;
 
-  // External theme override (typically written by the-themer's opensessions adapter).
+  // External theme override (typically written by the-themer's tcm adapter).
   // When present, takes precedence over `currentTheme` from config.json. The watcher
   // re-reads on filesystem change and triggers a broadcast so the panel + tmux header
   // repaint within a frame of the user swapping their terminal theme.
-  const externalThemePath = join(homedir(), ".config", "opensessions", "active-theme.json");
+  const externalThemePath = join(homedir(), ".config", "tcm", "active-theme.json");
   let externalTheme: PartialTheme | null = null;
   let externalThemeWatcher: FSWatcher | null = null;
   let configuredWidth = clampSidebarWidth(config.sidebarWidth ?? 26);
@@ -249,7 +249,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
   // Watch the directory rather than the file so atomic writes (rename trick used
   // by most editors and `the-themer`'s symlink-then-replace flow) still trigger.
   try {
-    const watchDir = join(homedir(), ".config", "opensessions");
+    const watchDir = join(homedir(), ".config", "tcm");
     if (existsSync(watchDir)) {
       externalThemeWatcher = watch(watchDir, (_event, filename) => {
         if (filename !== "active-theme.json") return;
@@ -1722,7 +1722,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
       }
 
       if (server.upgrade(req)) return;
-      return new Response("opensessions server", { status: 200 });
+      return new Response("tcm server", { status: 200 });
     },
     websocket: {
       open(ws) {
@@ -1844,5 +1844,5 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
   process.on("SIGTERM", () => { cleanup(); process.exit(0); });
 
   const names = allProviders.map((p) => p.name).join(", ");
-  console.log(`opensessions server listening on ${SERVER_HOST}:${SERVER_PORT} (mux: ${names})`);
+  console.log(`tcm server listening on ${SERVER_HOST}:${SERVER_PORT} (mux: ${names})`);
 }

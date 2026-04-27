@@ -14,7 +14,7 @@ describe("Config", () => {
 
   test("loadConfig reads sidebar settings", async () => {
     const tmpDir = `/tmp/tcm-test-${Date.now()}`;
-    const configDir = join(tmpDir, ".config", "opensessions");
+    const configDir = join(tmpDir, ".config", "tcm");
     await Bun.write(
       join(configDir, "config.json"),
       JSON.stringify({ sidebarWidth: 30, sidebarPosition: "right", keybinding: "b" }),
@@ -38,15 +38,15 @@ describe("Config", () => {
 
   test("loadConfig reads from config file", async () => {
     const tmpDir = `/tmp/tcm-test-${Date.now()}`;
-    const configDir = join(tmpDir, ".config", "opensessions");
+    const configDir = join(tmpDir, ".config", "tcm");
     await Bun.write(
       join(configDir, "config.json"),
-      JSON.stringify({ mux: "zellij", plugins: ["opensessions-mux-zellij"] }),
+      JSON.stringify({ mux: "zellij", plugins: ["tcm-mux-zellij"] }),
     );
 
     const config = loadConfig(tmpDir);
     expect(config.mux).toBe("zellij");
-    expect(config.plugins).toEqual(["opensessions-mux-zellij"]);
+    expect(config.plugins).toEqual(["tcm-mux-zellij"]);
 
     const { rmSync } = require("fs");
     rmSync(tmpDir, { recursive: true, force: true });
@@ -54,7 +54,7 @@ describe("Config", () => {
 
   test("loadConfig merges defaults for missing fields", async () => {
     const tmpDir = `/tmp/tcm-test-${Date.now()}`;
-    const configDir = join(tmpDir, ".config", "opensessions");
+    const configDir = join(tmpDir, ".config", "tcm");
     await Bun.write(
       join(configDir, "config.json"),
       JSON.stringify({ mux: "tmux" }),
@@ -70,7 +70,7 @@ describe("Config", () => {
 
   test("loadConfig reads theme as string name", async () => {
     const tmpDir = `/tmp/tcm-test-${Date.now()}`;
-    const configDir = join(tmpDir, ".config", "opensessions");
+    const configDir = join(tmpDir, ".config", "tcm");
     await Bun.write(
       join(configDir, "config.json"),
       JSON.stringify({ theme: "catppuccin-latte" }),
@@ -85,7 +85,7 @@ describe("Config", () => {
 
   test("loadConfig reads theme as inline object", async () => {
     const tmpDir = `/tmp/tcm-test-${Date.now()}`;
-    const configDir = join(tmpDir, ".config", "opensessions");
+    const configDir = join(tmpDir, ".config", "tcm");
     await Bun.write(
       join(configDir, "config.json"),
       JSON.stringify({ theme: { palette: { base: "#000000", text: "#ffffff" } } }),

@@ -1,6 +1,6 @@
 // Tmux header synchroniser.
 //
-// Single-writer translation from opensessions state -> tmux user options
+// Single-writer translation from tcm state -> tmux user options
 // that the status line in `integrations/tmux-plugin/scripts/header.tmux`
 // reads to render per-window agent glyphs and theme-aware colours.
 //
@@ -150,7 +150,7 @@ function buildPaletteState(theme: Theme, themeName: string | undefined): Palette
   return { themeName, values };
 }
 
-/** Translate an opensessions palette value to a tmux-renderable colour.
+/** Translate an tcm palette value to a tmux-renderable colour.
  *  The "transparent" theme stores the literal string "transparent" for base
  *  surfaces; tmux understands "default" but not "transparent". */
 function toTmuxColour(value: string): string {

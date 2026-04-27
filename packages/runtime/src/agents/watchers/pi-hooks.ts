@@ -450,7 +450,7 @@ export class PiHookAdapter implements AgentWatcher, HookReceiver {
  *  and the `cwd` recorded in the SessionHeader.
  *
  *  Using `SessionHeader.cwd` avoids decoding pi's lossy directory-name scheme
- *  (e.g. `--Users-kyle-meta-claude-opensessions--` can't reliably distinguish
+ *  (e.g. `--Users-kyle-meta-claude-tcm--` can't reliably distinguish
  *  `meta/claude` from `meta-claude`). The header is authoritative. */
 export function parseJsonlTrailingStatus(text: string): {
   status: AgentStatus;

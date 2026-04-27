@@ -33,8 +33,8 @@ function rawTmux(args: string[]): string {
   } catch { return ""; }
 }
 
-const STASH_SESSION = "_os_stash";
-const SIDEBAR_PANE_TITLE = "opensessions-sidebar";
+const STASH_SESSION = "_tcm_stash";
+const SIDEBAR_PANE_TITLE = "tcm-sidebar";
 
 export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapable, BatchCapable {
   readonly specificationVersion = "v1" as const;

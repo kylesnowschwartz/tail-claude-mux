@@ -106,7 +106,7 @@ function shortThreadId(id: string): string {
   return id.length <= 4 ? id : id.slice(-4);
 }
 
-/** Build an FZF_DEFAULT_OPTS --color string from an opensessions palette.
+/** Build an FZF_DEFAULT_OPTS --color string from an tcm palette.
  *  fzf doesn't understand the literal string "transparent" — it wants -1 to
  *  mean "use terminal default", which is how we render transparency. */
 function paletteToFzfColors(p: ThemePalette): string {
@@ -140,7 +140,7 @@ function refocusMainPane() {
         { stdout: "pipe", stderr: "pipe" },
       );
       const lines = r.stdout.toString().trim().split("\n");
-      const main = lines.find((l) => !l.includes("opensessions-sidebar"));
+      const main = lines.find((l) => !l.includes("tcm-sidebar"));
       if (main) {
         const paneId = main.split(" ")[0];
         Bun.spawnSync(["tmux", "select-pane", "-t", paneId], { stdout: "pipe", stderr: "pipe" });
@@ -925,7 +925,7 @@ function App() {
       <box flexDirection="column" paddingLeft={1} paddingTop={1} paddingBottom={0} flexShrink={0}>
         <text>
           <span style={{ fg: paneFocused() ? P().blue : P().overlay1 }}>{BRAND_CLAWD}{" "}</span>
-          <span style={{ fg: paneFocused() ? P().text : P().overlay1, attributes: BOLD }}>opensessions</span>
+          <span style={{ fg: paneFocused() ? P().text : P().overlay1, attributes: BOLD }}>tcm</span>
           <span style={{ fg: paneFocused() ? P().subtext0 : P().overlay0 }}>{"  "}{String(sessions.length)}{" sessions"}</span>
           <Show when={flashMessage()}><span style={{ fg: P().overlay0, attributes: DIM }}>{" "}{flashMessage()}</span></Show>
         </text>

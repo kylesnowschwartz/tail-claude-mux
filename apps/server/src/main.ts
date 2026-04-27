@@ -27,7 +27,7 @@ for (const pkg of ["@tcm/mux-tmux", "@tcm/mux-zellij"]) {
 }
 
 const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
-const pluginDir = join(home, ".config", "opensessions", "plugins");
+const pluginDir = join(home, ".config", "tcm", "plugins");
 const localPlugins = loader.loadDir(pluginDir);
 if (localPlugins.length > 0) {
   console.log(`Loaded local plugins: ${localPlugins.join(", ")}`);

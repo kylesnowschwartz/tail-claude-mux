@@ -448,7 +448,7 @@ export class TmuxClient {
     const dirs = new Map<string, string>();
     const { stdout } = this.run([
       "list-panes", "-a",
-      "-f", "#{&&:#{window_active},#{!=:#{pane_title},opensessions-sidebar}}",
+      "-f", "#{&&:#{window_active},#{!=:#{pane_title},tcm-sidebar}}",
       "-F", `#{session_name}${SEP}#{pane_current_path}`,
     ]);
     if (!stdout) return dirs;

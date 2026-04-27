@@ -16,7 +16,7 @@ export interface ZellijProviderSettings {
   name?: string;
 }
 
-const SIDEBAR_PANE_NAME = "opensessions-sidebar";
+const SIDEBAR_PANE_NAME = "tcm-sidebar";
 
 function plog(msg: string, data?: Record<string, unknown>) {
   const ts = new Date().toISOString().slice(11, 23);
@@ -260,7 +260,7 @@ export class ZellijProvider implements MuxProviderV1, WindowCapable, SidebarCapa
     if (!panes) return [];
     const tabWidths = new Map((tabs ?? []).map((tab) => [String(tab.tab_id), tab.viewport_columns]));
     return panes
-      .filter((p) => !p.is_plugin && p.title === "opensessions-sidebar")
+      .filter((p) => !p.is_plugin && p.title === "tcm-sidebar")
       .map((p) => ({
         paneId: `terminal_${p.id}`,
         sessionName: session,

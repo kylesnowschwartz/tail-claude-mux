@@ -6,7 +6,7 @@ import { saveConfig, loadConfig } from "../src/config";
 describe("saveConfig", () => {
   test("writes theme to config.json, preserving existing fields", async () => {
     const tmpDir = `/tmp/tcm-test-save-${Date.now()}`;
-    const configDir = join(tmpDir, ".config", "opensessions");
+    const configDir = join(tmpDir, ".config", "tcm");
     mkdirSync(configDir, { recursive: true });
     await Bun.write(
       join(configDir, "config.json"),
@@ -28,7 +28,7 @@ describe("saveConfig", () => {
 
     saveConfig({ theme: "dracula" }, tmpDir);
 
-    const configPath = join(tmpDir, ".config", "opensessions", "config.json");
+    const configPath = join(tmpDir, ".config", "tcm", "config.json");
     const written = JSON.parse(readFileSync(configPath, "utf-8"));
     expect(written.theme).toBe("dracula");
     expect(written.plugins).toEqual([]);

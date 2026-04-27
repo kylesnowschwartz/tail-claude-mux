@@ -1,7 +1,7 @@
 /**
- * opensessions pi extension.
+ * tcm pi extension.
  *
- * Pushes pi lifecycle events to the local opensessions server so pi sessions
+ * Pushes pi lifecycle events to the local tcm server so pi sessions
  * show up in the sidebar alongside Claude Code. All requests are strictly
  * fire-and-forget: hook failures must never block the agent.
  *
@@ -39,7 +39,7 @@ function endpoint(): string {
   return `http://${host}:${port}/hook`;
 }
 
-/** Fire a hook body at the opensessions server without awaiting. */
+/** Fire a hook body at the tcm server without awaiting. */
 function post(body: PiHookBody): void {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);

@@ -8,7 +8,7 @@ export interface OpensessionsConfig {
   mux?: string;
   /** Custom server port */
   port?: number;
-  /** Community plugin package names to load (e.g. ["opensessions-mux-zellij"]) */
+  /** Community plugin package names to load (e.g. ["tcm-mux-zellij"]) */
   plugins: string[];
   /** Theme: builtin name (e.g. "catppuccin-latte") or partial inline theme object */
   theme?: string | PartialTheme;
@@ -32,7 +32,7 @@ const DEFAULTS: OpensessionsConfig = {
  */
 export function loadConfig(homeDir?: string): OpensessionsConfig {
   const home = homeDir ?? process.env.HOME ?? process.env.USERPROFILE ?? "";
-  const configPath = join(home, ".config", "opensessions", "config.json");
+  const configPath = join(home, ".config", "tcm", "config.json");
 
   if (!existsSync(configPath)) {
     return { ...DEFAULTS };
@@ -59,7 +59,7 @@ export function loadConfig(homeDir?: string): OpensessionsConfig {
  */
 export function saveConfig(updates: Partial<OpensessionsConfig>, homeDir?: string): void {
   const home = homeDir ?? process.env.HOME ?? process.env.USERPROFILE ?? "";
-  const configDir = join(home, ".config", "opensessions");
+  const configDir = join(home, ".config", "tcm");
   const configPath = join(configDir, "config.json");
 
   const existing = loadConfig(homeDir);

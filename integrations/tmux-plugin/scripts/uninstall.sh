@@ -1,13 +1,13 @@
 #!/usr/bin/env sh
-# opensessions uninstall — clean up all tmux hooks, keybindings, sidebar panes, and env vars
+# tcm uninstall — clean up all tmux hooks, keybindings, sidebar panes, and env vars
 # Run this BEFORE removing the plugin files.
 #
 # Usage:
-#   sh /path/to/opensessions/integrations/tmux-plugin/scripts/uninstall.sh
+#   sh /path/to/tcm/integrations/tmux-plugin/scripts/uninstall.sh
 
 set -e
 
-echo "opensessions: uninstalling..."
+echo "tcm: uninstalling..."
 
 # --- Remove global hooks ---
 for hook in \
@@ -23,8 +23,8 @@ done
 echo "  ✓ removed global hooks"
 
 # --- Kill sidebar panes ---
-# Find all panes titled "opensessions-sidebar" and kill them
-sidebar_panes=$(tmux list-panes -a -F '#{pane_id} #{pane_title}' 2>/dev/null | grep 'opensessions-sidebar' | awk '{print $1}') || true
+# Find all panes titled "tcm-sidebar" and kill them
+sidebar_panes=$(tmux list-panes -a -F '#{pane_id} #{pane_title}' 2>/dev/null | grep 'tcm-sidebar' | awk '{print $1}') || true
 if [ -n "$sidebar_panes" ]; then
   for pane in $sidebar_panes; do
     tmux kill-pane -t "$pane" 2>/dev/null || true
@@ -33,7 +33,7 @@ if [ -n "$sidebar_panes" ]; then
 fi
 
 # --- Kill stash session ---
-tmux kill-session -t "_os_stash" 2>/dev/null || true
+tmux kill-session -t "_tcm_stash" 2>/dev/null || true
 echo "  ✓ removed stash session"
 
 # --- Kill the server ---
@@ -71,5 +71,5 @@ tmux set-environment -gu TCM_DIR 2>/dev/null || true
 tmux set-environment -gu TCM_WIDTH 2>/dev/null || true
 echo "  ✓ removed environment variables"
 
-echo "opensessions: uninstall complete. You can now remove the plugin files."
+echo "tcm: uninstall complete. You can now remove the plugin files."
 echo "  If using TPM: remove the line from .tmux.conf and run prefix + alt + u"

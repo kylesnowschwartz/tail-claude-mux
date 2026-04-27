@@ -1,5 +1,5 @@
 [project]
-name = "opensessions"
+name = "tcm"
 version = "0.10.0"
 
 [lifecycle]

@@ -1,5 +1,5 @@
 /**
- * The opensessions Nerd Font alphabet.
+ * The tail-claude-mux Nerd Font alphabet.
  *
  * Source of truth: docs/design/03-vocabulary.md §10 codepoint cheat-sheet.
  *
@@ -17,7 +17,7 @@
 // Working is animated via SEV_WORKING_SPINNER frames (legacy brail spinner,
 // kept for visual continuity per docs/design/03-vocabulary.md §2).
 export const SEV_WORKING_SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
-export const SEV_WAITING = "\u{F0179}";   // nf-md-bell-alert
+export const SEV_WAITING = "\u{F009C}";   // nf-md-bell-alert
 export const SEV_READY = "\u{F05E1}";     // nf-md-check-circle-outline
 export const SEV_STOPPED = "\u{F09DF}";   // nf-md-circle-small
 export const SEV_ERROR = "\u{F0028}";     // nf-md-alert-circle

@@ -36,7 +36,7 @@ describe("PiHookAdapter", () => {
   beforeEach(() => {
     // Point the adapter at a non-existent sessions dir so the cold-start
     // seed is a no-op unless a specific test sets one up.
-    adapter = new PiHookAdapter(join(tmpdir(), "opensessions-pi-test-" + Math.random().toString(36).slice(2)));
+    adapter = new PiHookAdapter(join(tmpdir(), "tcm-pi-test-" + Math.random().toString(36).slice(2)));
     ctx = makeCtx({ "/tmp/myproject": "myproject" });
     adapter.start(ctx);
   });
@@ -304,7 +304,7 @@ describe("PiHookAdapter — JSONL cold-start seed", () => {
   let projectDir: string;
 
   beforeEach(() => {
-    tmpRoot = mkdtempSync(join(tmpdir(), "opensessions-pi-seed-"));
+    tmpRoot = mkdtempSync(join(tmpdir(), "tcm-pi-seed-"));
     sessionsDir = join(tmpRoot, "sessions");
     mkdirSync(sessionsDir, { recursive: true });
     // The project dir has to exist on disk so decodePiProjectDir resolves it.

@@ -1,6 +1,6 @@
-# opensessions pi extension
+# tcm pi extension
 
-Pushes pi lifecycle events to the local opensessions server so pi sessions
+Pushes pi lifecycle events to the local tcm server so pi sessions
 show up in the sidebar HUD alongside Claude Code.
 
 ## Install
@@ -16,7 +16,7 @@ The setup script is idempotent — rerun safely.
 For quick iteration without touching the extensions dir:
 
 ```bash
-pi -e /Users/you/path/to/opensessions/integrations/pi-extension
+pi -e /Users/you/path/to/tcm/integrations/pi-extension
 ```
 
 ## What it does
@@ -38,7 +38,7 @@ can route it to the pi adapter.
 ## Design notes
 
 - **Fire-and-forget.** Every POST is never awaited. All errors are swallowed.
-  If the opensessions server is down the agent is unaffected.
+  If the tcm server is down the agent is unaffected.
 - **Timeout budget.** Requests are bounded by a 2s `AbortController`; a
   missing server drops the event silently rather than stalling the agent.
 - **Session identity.** `threadId` is pi's session UUID

@@ -62,7 +62,7 @@ describe("PluginLoader", () => {
 
   test("loadPackages skips missing npm packages gracefully", () => {
     const loader = new PluginLoader();
-    const loaded = loader.loadPackages(["opensessions-mux-nonexistent-xyz"]);
+    const loaded = loader.loadPackages(["tcm-mux-nonexistent-xyz"]);
     expect(loaded).toEqual([]);
   });
 

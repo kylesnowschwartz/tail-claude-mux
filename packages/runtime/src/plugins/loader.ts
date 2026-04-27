@@ -92,7 +92,7 @@ export class PluginLoader {
   /**
    * Load community plugins from npm package names.
    * Each package should `export default function(api: PluginAPI) { ... }`
-   * or have a package.json "opensessions" field pointing to the entry file.
+   * or have a package.json "tcm" field pointing to the entry file.
    *
    * Returns names of successfully loaded packages.
    */
@@ -137,7 +137,7 @@ export class PluginLoader {
     const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
     return {
       registeredMuxProviders: this.registry.list(),
-      configPath: join(home, ".config", "opensessions", "config.json"),
+      configPath: join(home, ".config", "tcm", "config.json"),
       serverPort: SERVER_PORT,
     };
   }

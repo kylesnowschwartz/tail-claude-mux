@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# opensessions sessionizer — fuzzy directory picker for new tmux sessions
+# tcm sessionizer — fuzzy directory picker for new tmux sessions
 # Requires: fzf, find
 # Supports colon-separated paths in SESSIONIZER_DIR (e.g. "$HOME/Code:$HOME/.config")
 
@@ -9,7 +9,7 @@ if [ -z "$SESSIONIZER_DIR" ] && command -v tmux &>/dev/null; then
 fi
 SEARCH_DIRS="${SESSIONIZER_DIR:-$HOME/Documents}"
 
-# Resolve fzf colors: opensessions theme > the-themer > shell defaults
+# Resolve fzf colors: tcm theme > the-themer > shell defaults
 if [ -n "$TCM_FZF_COLORS" ]; then
   export FZF_DEFAULT_OPTS="$TCM_FZF_COLORS"
 else

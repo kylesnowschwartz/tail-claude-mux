@@ -1,5 +1,5 @@
 /**
- * Idempotent registration of opensessions hooks in Claude Code's settings.json.
+ * Idempotent registration of tcm hooks in Claude Code's settings.json.
  *
  * Patches ~/.claude/settings.json to register lifecycle hooks that invoke
  * scripts/hook.sh for each supported event. Existing hooks with the same
@@ -18,15 +18,15 @@ import { homedir } from "os";
 const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop", "Notification", "SessionEnd"] as const;
 
 /**
- * Register opensessions hooks in Claude Code's settings.json.
+ * Register tcm hooks in Claude Code's settings.json.
  *
- * @param opensessionsDir - Root of the opensessions project (for locating hook.sh)
+ * @param tcmDir - Root of the tcm project (for locating hook.sh)
  * @param overrideSettingsPath - Override settings.json path (for testing)
  * @returns List of newly registered event names, or empty if all already present
  */
-export function registerHooks(opensessionsDir: string, overrideSettingsPath?: string): string[] {
+export function registerHooks(tcmDir: string, overrideSettingsPath?: string): string[] {
   const settingsPath = overrideSettingsPath ?? join(homedir(), ".claude", "settings.json");
-  const hookScript = join(opensessionsDir, "scripts", "hook.sh");
+  const hookScript = join(tcmDir, "scripts", "hook.sh");
 
   // Read existing settings (or start fresh)
   let settings: Record<string, any> = {};

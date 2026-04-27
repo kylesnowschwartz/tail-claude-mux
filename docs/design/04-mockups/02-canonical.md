@@ -31,7 +31,7 @@ dataset.
 | 1 | Detail-level interaction              | Activity zone is **permanently reserved**, always visible. New events populate the freshest entry; older entries scroll up. |
 | 2 | Branch row inside focused card        | Single optional row, only when the session has a branch. Powerline-branch leader (Tier 4 muted).                             |
 | 3 | Same-type count format                | **Numeric-only** — `2`, `3`, `9+`. The earlier `2π` form was reverted (Codex B1/Q3).                                          |
-| 4 | Activity zone heading                 | **Session-name label** — `opensessions ` (focused-session name + nf-md arrow-right separator).                              |
+| 4 | Activity zone heading                 | **Session-name label** — `tcm ` (focused-session name + nf-md arrow-right separator).                              |
 | 5 | Rolodex wrap rules                    | nf-md chevron-up / chevron-down anchored mid-rule, always visible (`──  ──`, `──  ──`).                                     |
 | 6 | Rolodex layout & navigation           | **Linear tape.** Sessions in natural order; focused card pinned at vertical centre; viewport slides over the tape. `j`/`k` wrap modularly (a single press at either end snaps to the opposite end). The earlier wheel/rotation model is retired. |
 | ↑ | What about ports as a feature?        | **Removed entirely.** During implementation, delete the lsof polling loop, the `ports: number[]` field on `SessionData`, the rendering code, the width-sync accounting, and the doc references. |
@@ -79,7 +79,7 @@ swap to that session's buffer. Instantaneous; no animation.
 
 ```
 ┌──────────────────────────────────────┐
-│   opensessions   5 sessions          │   ← HEADER (Clawd brand, Tier 1)
+│   tcm   5 sessions          │   ← HEADER (Clawd brand, Tier 1)
 │  ──────────────────────────────────  │   ← zone separator
 │                                      │
 │   ai-engineering-template       󱙺   │   ← session 1, 1 generic agent, no severity (ready)
@@ -88,7 +88,7 @@ swap to that session's buffer. Instantaneous; no animation.
 │   ──────────────  ───────────────   │   ← rolodex top wrap-rule (nf-md chevron-up)
 │                                      │
 │  ╭────────────────────────────────╮  │   ← FOCUSED card border
-│  │ ▎opensessions               4 │  │   ← session row (working spinner, count 4)
+│  │ ▎tcm               4 │  │   ← session row (working spinner, count 4)
 │  │ ▎ pi  15c8                 π  │  │   ← agent: pi #15c8 working
 │  │ ▎ pi  10bc               󰗡 π  │  │   ← agent: pi #10bc ready
 │  │ ▎ claude-code            󰗡   │  │   ← agent: claude-code ready
@@ -101,7 +101,7 @@ swap to that session's buffer. Instantaneous; no animation.
 │   the-themer                  󰗡 󱙺  │   ← session 5, 1 generic agent ready
 │                                      │
 │  ──────────────────────────────────  │   ← zone separator
-│   opensessions                       │   ← ACTIVITY heading (focused-session name)
+│   tcm                       │   ← ACTIVITY heading (focused-session name)
 │   (no recent activity)               │   ← empty zone, Tier 4 muted placeholder
 │                                      │
 │  ──────────────────────────────────  │   ← zone separator
@@ -130,7 +130,7 @@ events:
 
 ```
 ┌──────────────────────────────────────┐
-│   opensessions   5 sessions          │
+│   tcm   5 sessions          │
 │  ──────────────────────────────────  │
 │                                      │
 │   ai-engineering-template       󱙺   │
@@ -139,7 +139,7 @@ events:
 │   ──────────────  ───────────────   │
 │                                      │
 │  ╭────────────────────────────────╮  │
-│  │ ▎opensessions               4 │  │
+│  │ ▎tcm               4 │  │
 │  │   main                          │  │   ← branch row (Tier 4 muted, MD source-branch)
 │  │ ▎ pi  15c8                 π  │  │
 │  │ ▎ pi  10bc               󰗡 π  │  │
@@ -153,7 +153,7 @@ events:
 │   the-themer                  󰗡 󱙺  │
 │                                      │
 │  ──────────────────────────────────  │
-│   opensessions                       │
+│   tcm                       │
 │   pi 15c8  ask_user                  │   ← FRESHEST: Tier 2 italic
 │   cc 1859  Base directory for        │   ← history: Tier 3 italic, multi-line
 │             this skill: /Users/      │
@@ -174,7 +174,7 @@ Notes:
   continuation. This is permitted in the activity zone — multi-line
   is by design.
 - The branch row inside the focused card is shown here because
-  `opensessions` has a branch (`main`).
+  `tcm` has a branch (`main`).
 - **Layout is identical to the quiet state above** — no zone moved, no
   card resized, no chrome animated. Only the zone's *content* changed.
 
@@ -187,7 +187,7 @@ zone shows the `pi-mono` session's narrative.
 
 ```
 ┌──────────────────────────────────────┐
-│   opensessions   5 sessions          │
+│   tcm   5 sessions          │
 │  ──────────────────────────────────  │
 │                                      │
 │   ai-engineering-template       󱙺   │
@@ -203,7 +203,7 @@ zone shows the `pi-mono` session's narrative.
 │                                      │
 │   ──────────────  ───────────────   │
 │                                      │
-│   opensessions                  4   │   ← collapsed, working spinner left
+│   tcm                  4   │   ← collapsed, working spinner left
 │   claude-code-system…                │
 │ û the-themer                    󱙺   │   ← ERRORED — left severity (red alert-circle), right identity (robot-outline, Tier 3 dim)
 │                                      │
@@ -238,13 +238,13 @@ Notes:
 ## Canonical state — pane unfocused (the panel is not the active pane)
 
 When the user has clicked into a different tmux pane and the
-opensessions panel is *unfocused*, every text tier slides one step
+tcm panel is *unfocused*, every text tier slides one step
 dimmer (per `03-vocabulary.md` §4). Severity colours and identity
 glyphs stay at full strength — they're not tier-controlled.
 
 ```
 ┌──────────────────────────────────────┐
-│   opensessions   5 sessions          │   ← Clawd: Tier 2 (was Tier 1 bold)
+│   tcm   5 sessions          │   ← Clawd: Tier 2 (was Tier 1 bold)
 │  ──────────────────────────────────  │   ← separator: surface1 (unchanged)
 │                                      │
 │   ai-engineering-template       󱙺   │   ← name: subtext0 (was text)
@@ -253,7 +253,7 @@ glyphs stay at full strength — they're not tier-controlled.
 │   ──────────────  ───────────────   │   ← chevrons: unchanged surface1
 │                                      │
 │  ╭────────────────────────────────╮  │   ← border: surface2 (was blue)
-│  │ ▎opensessions               4 │  │   ← bar: overlay0 (was blue); name: subtext0+bold
+│  │ ▎tcm               4 │  │   ← bar: overlay0 (was blue); name: subtext0+bold
 │  │   main                          │  │
 │  │ ▎ pi  15c8                 π  │  │   ← spinner: still blue (severity bypass)
 │  │ ▎ pi  10bc               󰗡 π  │  │   ← 󰗡 still green; identity glyphs Tier 3 dim
@@ -267,7 +267,7 @@ glyphs stay at full strength — they're not tier-controlled.
 │   the-themer                  󰗡 󱙺  │
 │                                      │
 │  ──────────────────────────────────  │
-│   opensessions                       │   ← heading: subtext0 (was text)
+│   tcm                       │   ← heading: subtext0 (was text)
 │   pi 15c8  ask_user                  │   ← freshest: subtext0 italic (was text)
 │   cc 1859  ran  bun test (passed)    │   ← history: subtext0 + faint italic
 │  ──────────────────────────────────  │

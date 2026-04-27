@@ -98,7 +98,7 @@ The resolved style stance lives at the bottom (§7).
   outside it has to earn its presence.
 - **Powerline conventions** — the original "segmented bar" idiom. We
   reject the segment-arrow chrome (`\uE0B0`-style triangles), which fails
-  Tufte's 1+1=3 rule. Earlier opensessions designs cherry-picked the
+  Tufte's 1+1=3 rule. Earlier tcm designs cherry-picked the
   Powerline branch glyph (`\uE0A0`) for the branch row leader; the
   canonical design has since moved that to MD `source-branch`
   (`\uF062C`) for icon-family coherence — one fewer exception to the
@@ -108,7 +108,7 @@ The resolved style stance lives at the bottom (§7).
   per-tool-category icons (pen-nib for edit, wrench for bash, magnifying
   glass for grep) and circle-slice progress glyphs (`\u{F0A9E}` →
   `\u{F0AA5}`). We borrow the discipline; we may borrow specific glyphs.
-- **The opensessions tmux-header spec** (`docs/specs/tmux-header.md` §4) —
+- **The tcm tmux-header spec** (`docs/specs/tmux-header.md` §4) —
   already vendors the Clawd mascot at `fonts/Clawd.ttf` (codepoint
   `\u{100CC0}`). The precedent: when no existing glyph captures what we
   want, we are willing to vendor a custom one.

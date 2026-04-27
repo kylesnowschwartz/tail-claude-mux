@@ -12,7 +12,7 @@ describe("TmuxClient", () => {
       return {
         args: ["tmux", ...args],
         exitCode: 0,
-        stdout: "%9\tdev\t@3\t1\t2\t1\t/dev/ttys001\t123\t/tmp\tbash\topensessions\t26\t80\t0\t25",
+        stdout: "%9\tdev\t@3\t1\t2\t1\t/dev/ttys001\t123\t/tmp\tbash\ttcm\t26\t80\t0\t25",
         stderr: "",
         ok: true,
       };

@@ -13,7 +13,7 @@ export function createZellij(settings?: ZellijProviderSettings) {
   return new ZellijProvider(settings);
 }
 
-/** Plugin entry point for opensessions plugin loader */
+/** Plugin entry point for tcm plugin loader */
 export default function (api: { registerMux: (p: any) => void }): void {
   api.registerMux(createZellij());
 }

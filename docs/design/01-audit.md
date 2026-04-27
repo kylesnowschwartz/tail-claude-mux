@@ -218,7 +218,7 @@ density-by-cramming.
 Per `docs/specs/tmux-header.md` and `header.tmux`:
 
 ```
-  opensessions   1: project   2:★ project   3:π project   4:▲ project   …
+  tcm   1: project   2:★ project   3:π project   4:▲ project   …
   ^^^^^^^^^^^^   ^  ^^^^^^^   ^  ^^^^^^^^   ^  ^^^^^^^^   ^  ^^^^^^^^
   │              │  │         │  │          │  │          │  │
   │              │  │         │  │          │  │          │  └─ window basename

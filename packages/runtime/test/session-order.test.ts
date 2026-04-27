@@ -88,7 +88,7 @@ describe("SessionOrder", () => {
 });
 
 describe("SessionOrder persistence", () => {
-  const testDir = join(tmpdir(), "opensessions-test-" + process.pid);
+  const testDir = join(tmpdir(), "tcm-test-" + process.pid);
   const persistPath = join(testDir, "session-order.json");
 
   afterEach(() => {

@@ -1,4 +1,4 @@
-# opensessions development recipes
+# tcm development recipes
 
 set shell := ["zsh", "-cu"]
 

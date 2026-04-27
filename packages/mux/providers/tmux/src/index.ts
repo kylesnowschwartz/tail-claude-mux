@@ -13,7 +13,7 @@ export function createTmux(settings?: TmuxProviderSettings) {
   return new TmuxProvider(settings);
 }
 
-/** Plugin entry point for opensessions plugin loader */
+/** Plugin entry point for tcm plugin loader */
 export default function (api: { registerMux: (p: any) => void }): void {
   api.registerMux(createTmux());
 }

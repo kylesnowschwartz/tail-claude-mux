@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install the Clawd mascot font (U+100CC0) into the user font directory.
-# Idempotent: safe to re-run. The opensessions tmux header detects the
+# Idempotent: safe to re-run. The tcm tmux header detects the
 # font's presence at server start and lights up the Clawd glyph for
 # claude-code agents; without it, claude-code falls back to U+2605 (★).
 #
@@ -41,5 +41,5 @@ if [[ "$(uname -s)" == "Linux" ]] && command -v fc-cache >/dev/null 2>&1; then
 fi
 
 echo
-echo "Restart the opensessions server to pick up the font:"
+echo "Restart the tcm server to pick up the font:"
 echo "  just restart"

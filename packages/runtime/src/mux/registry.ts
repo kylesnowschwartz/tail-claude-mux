@@ -3,7 +3,7 @@ import type { MuxProvider } from "../contracts/mux";
 /**
  * Registry for MuxProvider implementations.
  *
- * Community packages (opensessions-mux-*) register their provider here.
+ * Community packages (tcm-mux-*) register their provider here.
  * The server resolves which provider to use via:
  *   1. Explicit config override (user picks a mux by name)
  *   2. Auto-detect from env ($TMUX, $ZELLIJ_SESSION_NAME)

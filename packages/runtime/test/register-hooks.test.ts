@@ -7,7 +7,7 @@ import { registerHooks } from "../src/setup/register-hooks";
 describe("registerHooks", () => {
   let tmpDir: string;
   let settingsPath: string;
-  let fakeOpensessionsDir: string;
+  let fakeTcmDir: string;
 
   beforeEach(() => {
     tmpDir = join(tmpdir(), `register-hooks-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -15,9 +15,9 @@ describe("registerHooks", () => {
     mkdirSync(claudeDir, { recursive: true });
     settingsPath = join(claudeDir, "settings.json");
 
-    fakeOpensessionsDir = join(tmpDir, "opensessions");
-    mkdirSync(join(fakeOpensessionsDir, "scripts"), { recursive: true });
-    writeFileSync(join(fakeOpensessionsDir, "scripts", "hook.sh"), "#!/bin/bash\n");
+    fakeTcmDir = join(tmpDir, "tcm");
+    mkdirSync(join(fakeTcmDir, "scripts"), { recursive: true });
+    writeFileSync(join(fakeTcmDir, "scripts", "hook.sh"), "#!/bin/bash\n");
   });
 
   afterEach(() => {
@@ -25,7 +25,7 @@ describe("registerHooks", () => {
   });
 
   test("creates settings.json with all hooks when file does not exist", () => {
-    const added = registerHooks(fakeOpensessionsDir, settingsPath);
+    const added = registerHooks(fakeTcmDir, settingsPath);
 
     expect(added).toEqual(["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop", "Notification", "SessionEnd"]);
     expect(existsSync(settingsPath)).toBe(true);
@@ -34,7 +34,7 @@ describe("registerHooks", () => {
     expect(Object.keys(settings.hooks)).toHaveLength(8);
 
     // Verify structure
-    const hookScript = join(fakeOpensessionsDir, "scripts", "hook.sh");
+    const hookScript = join(fakeTcmDir, "scripts", "hook.sh");
     const entry = settings.hooks.UserPromptSubmit[0];
     expect(entry.hooks[0].type).toBe("command");
     expect(entry.hooks[0].command).toBe(`${hookScript} UserPromptSubmit`);
@@ -49,7 +49,7 @@ describe("registerHooks", () => {
       },
     }));
 
-    const added = registerHooks(fakeOpensessionsDir, settingsPath);
+    const added = registerHooks(fakeTcmDir, settingsPath);
 
     expect(added).toHaveLength(8);
     const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
@@ -59,10 +59,10 @@ describe("registerHooks", () => {
   });
 
   test("is idempotent — running twice registers nothing the second time", () => {
-    const first = registerHooks(fakeOpensessionsDir, settingsPath);
+    const first = registerHooks(fakeTcmDir, settingsPath);
     expect(first).toHaveLength(8);
 
-    const second = registerHooks(fakeOpensessionsDir, settingsPath);
+    const second = registerHooks(fakeTcmDir, settingsPath);
     expect(second).toHaveLength(0);
 
     // Verify no duplicate entries
@@ -73,7 +73,7 @@ describe("registerHooks", () => {
   test("creates backup before writing", () => {
     writeFileSync(settingsPath, JSON.stringify({ original: true }));
 
-    registerHooks(fakeOpensessionsDir, settingsPath);
+    registerHooks(fakeTcmDir, settingsPath);
 
     expect(existsSync(`${settingsPath}.bak`)).toBe(true);
     const backup = JSON.parse(readFileSync(`${settingsPath}.bak`, "utf-8"));

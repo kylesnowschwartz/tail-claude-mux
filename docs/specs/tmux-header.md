@@ -1,17 +1,17 @@
-# Spec: opensessions tmux header
+# Spec: tcm tmux header
 
 **Status:** v1.1 — severity-aware glyph colour, per-agent-type identity
 **Origin ticket:** TMUX-HEADER-001
 **Last updated:** 2026-05 (Stage 5 of side-panel redesign)
 
-This spec is the lasting reference for the opensessions tmux status line. It defines the option contract, the agent glyph table, and the read/write protocol between the opensessions server and tmux. Implementation lives in `packages/runtime/src/server/tmux-header-sync.ts` and `integrations/tmux-plugin/scripts/header.tmux`.
+This spec is the lasting reference for the tcm tmux status line. It defines the option contract, the agent glyph table, and the read/write protocol between the tcm server and tmux. Implementation lives in `packages/runtime/src/server/tmux-header-sync.ts` and `integrations/tmux-plugin/scripts/header.tmux`.
 
 ---
 
 ## 1. Goals and non-goals
 
 ### Goals
-- Replace third-party tmux themes with a status line whose colours and iconography track the active opensessions theme (`packages/runtime/src/themes.ts`).
+- Replace third-party tmux themes with a status line whose colours and iconography track the active tcm theme (`packages/runtime/src/themes.ts`).
 - Surface an at-a-glance per-window glyph for tmux windows that contain a live agent process (Claude Code, Pi, Codex, …), to aid tab navigation.
 - **Severity-aware glyph colour.** The per-window glyph is painted in the colour of the dominant agent's severity (working / waiting / ready / stopped / error), so the tab strip doubles as a hands-off status board. Mirrors the panel's left-gutter severity colours; see `docs/design/03-vocabulary.md` §6. *(Lifted to v1 in v1.1.)*
 - Keep the integration zero-cost on the tmux status repaint hot path (no `#(...)` shell expansions for agent state).
@@ -28,7 +28,7 @@ This spec is the lasting reference for the opensessions tmux status line. It def
 
 ```
                      +---------------------------+
-                     |  opensessions server      |
+                     |  tcm server      |
                      |                           |
                      |  broadcastStateImmediate  |
                      |     |                     |
@@ -186,9 +186,9 @@ Sourced from `opensessions.tmux` when `@tcm-header == on`. Sets:
 | `status-left` | session-name pill in `theme.blue`. Ends with `#[default]` and **no trailing space** — windows carry their own leading pad, so adding one here would render with `bg=default` and produce a stray cell when the terminal default differs from the bar's bg. |
 | `status-right` | preserved oh-my-tmux semantic content (prefix, pairing, sync) |
 
-**Legacy-reset.** Three tmux-default / oh-my-tmux indicators paint over the tab strip when set: `window-status-activity-style` adds an underscore for windows with the activity flag, `window-status-bell-style` adds blink+bold for windows that triggered a bell, and `window-status-last-style` paints the previously-visited tab cyan. opensessions's vocabulary already surfaces the same signals (activity zone in the panel; severity-coloured glyph in the tab strip; yellow last-window arrow in §6.2), so `header.tmux` explicitly resets each to `"default"` to prevent double-rendering. Without the reset the activity underscore reads as a "janky interrupted underline" because it's clipped by the active-tab pill bg.
+**Legacy-reset.** Three tmux-default / oh-my-tmux indicators paint over the tab strip when set: `window-status-activity-style` adds an underscore for windows with the activity flag, `window-status-bell-style` adds blink+bold for windows that triggered a bell, and `window-status-last-style` paints the previously-visited tab cyan. tcm's vocabulary already surfaces the same signals (activity zone in the panel; severity-coloured glyph in the tab strip; yellow last-window arrow in §6.2), so `header.tmux` explicitly resets each to `"default"` to prevent double-rendering. Without the reset the activity underscore reads as a "janky interrupted underline" because it's clipped by the active-tab pill bg.
 
-**Inactive-tab readability.** Inactive windows render with `fg=default` rather than a fixed `@os-thm-overlay0` colour. The opensessions theme palette is calibrated for dark terminal backgrounds; users running light terminal palettes (`the-themer` switches both) would see overlay grays as illegible. Letting the terminal palette dictate inactive-tab fg, and using `bold + theme.blue` for the active tab, keeps differentiation regardless of light/dark.
+**Inactive-tab readability.** Inactive windows render with `fg=default` rather than a fixed `@os-thm-overlay0` colour. The tcm theme palette is calibrated for dark terminal backgrounds; users running light terminal palettes (`the-themer` switches both) would see overlay grays as illegible. Letting the terminal palette dictate inactive-tab fg, and using `bold + theme.blue` for the active tab, keeps differentiation regardless of light/dark.
 
 **Active-window pill background.** Active tabs render on `theme.surface0` (a subtle bg slightly lighter than `theme.base`); inactive tabs use `bg=default` (terminal background). This adds bg-based differentiation on top of the existing fg+bold, so the active tab is identifiable even when its severity colour also resolves to `theme.blue`. The pill is a single-segment background — no rounded edges, no dividers — to stay zero-cost on the status repaint hot path.
 

@@ -44,7 +44,7 @@ WINDOW_ID="$(tmux display-message -p '#{window_id}' 2>/dev/null || true)"
 if [[ -n "$WINDOW_ID" ]]; then
   for i in {1..40}; do
     PANE_ID=$(tmux list-panes -t "$WINDOW_ID" -F '#{pane_id} #{pane_title}' 2>/dev/null |
-      awk '$2 == "opensessions-sidebar" { print $1; exit }')
+      awk '$2 == "tcm-sidebar" { print $1; exit }')
     if [[ -n "$PANE_ID" ]]; then
       tmux select-pane -t "$PANE_ID" >/dev/null 2>&1
       break

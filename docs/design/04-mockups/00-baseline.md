@@ -24,7 +24,7 @@ The actual server state captured in the reference:
 |---|-------------------------------|---------------------|--------------------------------------|--------------------|
 | 1 | `ai-engineering-template`     | `kyle/cc-native…`   | 1 alive (claude-code)                | ready              |
 | 2 | `pi-mono`                     | (no branch shown)   | 2 alive                              | ready              |
-| 3 | `opensessions` *(focused)*    | `main`              | 4 alive — pi #15c8 working, pi #10bc + 2 claude-code ready | mixed |
+| 3 | `tcm` *(focused)*    | `main`              | 4 alive — pi #15c8 working, pi #10bc + 2 claude-code ready | mixed |
 | 4 | `claude-code-syste…`          | `main`              | 0 alive                              | (no agents)        |
 | 5 | `the-themer`                  | `main`              | 1 dim grey badge (likely exited)     | (stopped tail)     |
 
@@ -50,7 +50,7 @@ truncates.
 │                                      │
 │  ╭──────────────────────────────╮    │   ← rolodex top wrap-rule
 │   ╭─────────────────────────────╮    │   ← focused-card border (rounded)
-│   │▎opensessions  ●4         :  │    │   ← session row (working spinner ":" frozen)
+│   │▎tcm  ●4         :  │    │   ← session row (working spinner ":" frozen)
 │   │ ⎇ main                      │    │   ← branch row
 │   │ × pi  #15c8              :  │    │   ← agent: pi #15c8, working spinner
 │   │ · ask_user                  │    │   ← agent's activity (toolDescription)
@@ -83,7 +83,7 @@ truncates.
 | `  ai-engineering-te…           ●  ◇`           | `●` agent-count badge, `◇` status (ready) | `subtext1` (name), `overlay0` (badge), `green` (◇) |
 | `  ⎇ kyle/cc-native…`                           | `⎇` branch glyph     | `overlay0` for both glyph and text |
 | `  pi-mono  ●2                     ◇`           | `●2` agent-count, `◇` status | same as above; `2` follows badge |
-| `▎opensessions  ●4         :`                   | `▎` current-bar, `●4` count, `:` working spinner | `blue` (▎), `subtext0` (name + ●4), `blue` (spinner) |
+| `▎tcm  ●4         :`                   | `▎` current-bar, `●4` count, `:` working spinner | `blue` (▎), `subtext0` (name + ●4), `blue` (spinner) |
 | `× pi  #15c8              :`                    | `×` dismiss, `:` spinner | `overlay0` (×), `subtext1` (pi), `overlay0` (#15c8 dim), `blue` (spinner) |
 | `· ask_user`                                    | `·` activity leader  | `blue` italic (matches working spinner colour) |
 | `× pi  #10bc              ◇`                    | `×` dismiss, `◇` ready | `overlay0` (×), `subtext1` (pi), `overlay0` (#10bc), `green` (◇) |
@@ -127,7 +127,7 @@ solved by moving to nf-md glyphs.
 Five different sessions, three different `●` renderings:
 - `ai-engineering-te…  ●` — single-agent session, dim grey dot
 - `pi-mono  ●2`              — multi-agent session, dim grey dot+digit
-- `opensessions  ●4`         — focused multi-agent, brighter dot+digit
+- `tcm  ●4`         — focused multi-agent, brighter dot+digit
 - `the-themer  ●`            — single-agent (likely stopped), dim grey dot
 - `claude-code-syste…`       — no badge, no agents
 

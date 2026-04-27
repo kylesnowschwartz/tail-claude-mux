@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Called by Claude Code as a lifecycle hook.
-# Reads JSON payload from stdin, merges the event name, and POSTs to opensessions.
+# Reads JSON payload from stdin, merges the event name, and POSTs to tcm.
 # Fails silently — hooks must never block the agent.
 set -o pipefail
 

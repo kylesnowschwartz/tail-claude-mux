@@ -236,7 +236,7 @@ or agent name itself**:
 | Branch row leader |  source-branch | `\u{F062C}` | nf-md | Tier 4 (muted) |
 | Working-dir row leader |  folder-outline | `\u{F0770}` | nf-md | Tier 4 (muted) |
 | Activity zone leader |  chevron-right | `\u{F0142}` | nf-md | Tier 4 (muted) |
-| Activity zone heading separator |  arrow-right | `\u{F0054}` | nf-md | Tier 4 (muted) — used between session name and the entries (`opensessions 䍡`) |
+| Activity zone heading separator |  arrow-right | `\u{F0054}` | nf-md | Tier 4 (muted) — used between session name and the entries (`tcm 䍡`) |
 | Rolodex top separator |  chevron-up | `\u{F0143}` | nf-md | `surface1` (Tier 4 colour) — anchored mid-rule, marks the boundary above the focused card; always visible regardless of viewport position on the tape |
 | Rolodex bottom separator |  chevron-down | `\u{F0140}` | nf-md | `surface1` — anchored mid-rule, marks the boundary below the focused card; always visible |
 | Zone separator (rule between zones) | `─` | `\u{2500}` | box-drawing | `surface1` |
@@ -247,7 +247,7 @@ or agent name itself**:
 ### Header layout (with Clawd)
 
 ```
- opensessions   3 sessions
+ tcm   3 sessions
 ^^                ^^^^^^^^
 │                  Tier 4 muted readout
 └─ Clawd, Tier 1 bold (focused) / Tier 2 (unfocused)
@@ -354,7 +354,7 @@ pop-in/pop-out.**
 ### Heading
 
 ```
- opensessions 䍡
+ tcm 䍡
 ^^^^^^^^^^^^^^ ^
   session name  arrow-right (\u{F0054}), Tier 4 muted
   Tier 2
@@ -457,7 +457,7 @@ Producers POST to the server’s existing `/log` HTTP endpoint
 | `●` (`generic` agent type) | Statusline glyph | nf-md robot-outline  `\u{F167A}` |
 | `⎇` (branch glyph) | Branch row | Powerline branch  `\u{E0A0}` |
 | `⚡` (running counter) | Header right side | Removed; severity gutters in rolodex make this implicit |
-| `Sessions` literal label | Header | Removed; product name `opensessions` carries the same role |
+| `Sessions` literal label | Header | Removed; product name `tcm` carries the same role |
 | `◆` (waiting) | Status gutter | nf-md bell-alert  `\u{F0179}` |
 | `◇` (ready) | Status gutter | nf-md check-circle-outline  `\u{F05E1}` |
 | `✗` (error) | Status gutter | nf-md alert-circle  `\u{F0028}` |

@@ -29,7 +29,7 @@ Width: 38 cells (matching the reference). Pane is **focused**.
 
 ```
 ┌──────────────────────────────────────┐
-│   opensessions   5 sessions          │   ← HEADER zone (Clawd + Tier 1 + Tier 4 muted count)
+│   tcm   5 sessions          │   ← HEADER zone (Clawd + Tier 1 + Tier 4 muted count)
 │  ──────────────────────────────────  │   ← zone separator (Tier 4 muted)
 │                                      │
 │   ai-engineering-template       󱙺   │   ← session 1, collapsed (1 agent → robot-outline)
@@ -38,7 +38,7 @@ Width: 38 cells (matching the reference). Pane is **focused**.
 │   ────────────── ⌃ ───────────────   │   ← rolodex top wrap-rule
 │                                      │
 │  ╭────────────────────────────────╮  │   ← FOCUSED CARD border
-│  │ ▎opensessions               4  │  │   ← session row (working spinner left, count-4 right)
+│  │ ▎tcm               4  │  │   ← session row (working spinner left, count-4 right)
 │  │   main   󰒍 :3000              │  │   ← branch + ports row (Tier 4 muted leaders)
 │  │ ▎ pi  15c8                  π  │  │   ← agent: pi working (spinner severity)
 │  │ ▎ pi  10bc                󰗡  π  │  │   ← agent: pi ready
@@ -84,7 +84,7 @@ Width: 38 cells (matching the reference). Pane is **focused**.
 ### Header zone
 
 ```
-   opensessions   5 sessions
+   tcm   5 sessions
 ^^^   ^^^^^^^^^^^^   ^^^^^^^^^^
 │      │              Tier 4 muted readout
 │      Tier 1 bold (focused)
@@ -126,7 +126,7 @@ Width: 38 cells (matching the reference). Pane is **focused**.
 
 ```
   ╭────────────────────────────────╮
-  │ ▎opensessions               4 │
+  │ ▎tcm               4 │
   │   main   󰒍 :3000              │
   │ ▎ pi  15c8                 π  │
   │ ▎ pi  10bc               󰗡 π  │
@@ -218,7 +218,7 @@ Most aerospace.
 
 ```
 ┌──────────────────────────────────────┐
-│   opensessions   5 sessions          │
+│   tcm   5 sessions          │
 │  ──────────────────────────────────  │
 │                                      │
 │   ai-engineering-template       󱙺  │
@@ -227,7 +227,7 @@ Most aerospace.
 │   ────────────── ⌃ ───────────────   │
 │                                      │
 │  ╭────────────────────────────────╮  │
-│  │ ▎opensessions               4 │  │
+│  │ ▎tcm               4 │  │
 │  │ ▎ pi  15c8                 π  │  │
 │  │ ▎ pi  10bc               󰗡 π  │  │
 │  │ ▎ claude-code            󰗡   │  │
@@ -261,7 +261,7 @@ colour. Two strips, both 80 cells wide.
 ### Strip A: nominal — three windows, mixed agents, one active
 
 ```
-   opensessions   1: VCC   2:  project    3: π utils    4:  docs                       
+   tcm   1: VCC   2:  project    3: π utils    4:  docs                       
                   ^^^      ^^             ^^            ^^
                   active   working         ready         ready
                   bold     blue            green         green
@@ -279,7 +279,7 @@ colour. Two strips, both 80 cells wide.
 ### Strip B: collision case — active window has working claude-code
 
 ```
-   opensessions   1:  vcc    2:  project   3: π utils   4:  docs                       
+   tcm   1:  vcc    2:  project   3: π utils   4:  docs                       
                   ^^^         ^^            ^^           ^^
                   bold        ready         ready        ready
                   no glyph     green         green        green
@@ -303,15 +303,15 @@ For your scan:
 ```
 BEFORE (baseline)                          AFTER (proposal)
 ─────────────────────────────              ─────────────────────────────
-  Sessions  5  ⚡1                            opensessions   5 sessions
+  Sessions  5  ⚡1                            tcm   5 sessions
                                             ──────────────────────────
   ai-engineering-te…           ●  ◇          ai-engineering-template       󱙺
   ⎇ kyle/cc-native…                          pi-mono                       2
                                             ────── ⌃ ──────
   pi-mono  ●2                     ◇         ╭──────────────────────────╮
-                                            │ ▎opensessions          4 │
+                                            │ ▎tcm          4 │
  ╭────────────────────────────╮             │   main   󰒍 :3000        │
- │▎opensessions  ●4         : │             │ ▎ pi 15c8              π│
+ │▎tcm  ●4         : │             │ ▎ pi 15c8              π│
  │ ⎇ main                      │             │ ▎ pi 10bc           󰗡 π│
  │ × pi  #15c8              :  │             │ ▎ claude-code       󰗡  │
  │ · ask_user                  │             │ ▎ claude-code 1859  󰗡  │
@@ -357,7 +357,7 @@ a live OpenTUI mock.
      entries below speak for themselves
    - Replace with a small Clawd-style "live" indicator (e.g. a teal
      dot when new entries are pulsing in)
-   - Use the focused session's name as the label (`opensessions →`)
+   - Use the focused session's name as the label (`tcm →`)
      so the user knows which session's narrative they're reading
 
 4. **Wrap-rule chevrons (`⌃`, `⌄`).** The mockup uses `─── ⌃ ───` and

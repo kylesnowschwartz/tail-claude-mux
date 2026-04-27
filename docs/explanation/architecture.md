@@ -1,6 +1,6 @@
-# How opensessions Works
+# How tcm Works
 
-opensessions is a local coordination layer between your multiplexer, your agent tools, and a terminal sidebar UI.
+tcm is a local coordination layer between your multiplexer, your agent tools, and a terminal sidebar UI.
 
 It is easiest to think about it as four pieces:
 
@@ -11,12 +11,12 @@ It is easiest to think about it as four pieces:
 
 ## Startup Flow
 
-When the TUI starts, it first calls `ensureServer()` from `@opensessions/runtime`.
+When the TUI starts, it first calls `ensureServer()` from `@tcm/runtime`.
 
 If no healthy server is listening on `127.0.0.1:7391`, `ensureServer()` launches `apps/server/src/main.ts` in the background. The server then:
 
 1. loads config from `~/.config/tcm/config.json`
-2. dynamically registers the built-in mux providers from `@opensessions/mux-tmux` and `@opensessions/mux-zellij`
+2. dynamically registers the built-in mux providers from `@tcm/mux-tmux` and `@tcm/mux-zellij`
 3. loads local plugins and configured package plugins
 4. resolves the primary mux provider
 5. registers the built-in Amp, Claude Code, Codex, and OpenCode watchers
@@ -69,7 +69,7 @@ The tmux provider is the more feature-complete reference implementation.
 Notable design choices:
 
 - tmux global hooks notify the server about focus changes, session creation, window changes, and resize events
-- hidden sidebars are moved into a dedicated stash session named `_os_stash` instead of being destroyed
+- hidden sidebars are moved into a dedicated stash session named `_tcm_stash` instead of being destroyed
 - the TUI refocuses the main pane after capability detection to avoid escape-sequence leakage into the main pane
 - a small typed tmux SDK exists under `packages/mux/tmux-sdk` for lower-level command work
 - the tmux integration scripts live under `integrations/tmux-plugin`, while the sidebar launcher itself lives with the TUI app in `apps/tui/scripts/start.sh`

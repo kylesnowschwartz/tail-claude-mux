@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Install the opensessions pi extension by symlinking
+ * Install the tcm pi extension by symlinking
  * `integrations/pi-extension/` into `~/.pi/agent/extensions/tcm`.
  * Idempotent: safe to rerun.
  */
@@ -12,7 +12,7 @@ import { join, resolve } from "path";
 const repoRoot = resolve(import.meta.dir, "..");
 const source = join(repoRoot, "integrations", "pi-extension");
 const extensionsDir = join(homedir(), ".pi", "agent", "extensions");
-const target = join(extensionsDir, "opensessions");
+const target = join(extensionsDir, "tcm");
 
 if (!existsSync(source)) {
   console.error(`Source directory missing: ${source}`);
@@ -45,7 +45,7 @@ symlinkSync(source, target);
 console.log(`Linked: ${target} -> ${source}`);
 console.log(
   `\nNext step: start a new pi session inside a tmux/zellij session that\n` +
-  `opensessions is monitoring. Pi will appear in the sidebar HUD.`,
+  `tcm is monitoring. Pi will appear in the sidebar HUD.`,
 );
 
 function isDanglingSymlink(path: string): boolean {

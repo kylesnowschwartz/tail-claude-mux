@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the opensessions TUI.
+# Start the tcm TUI.
 # Works in both tmux and zellij — detects the mux from environment.
 
 if [ -n "${TMUX:-}" ]; then

@@ -25,7 +25,7 @@ describe("set-theme command", () => {
   });
   test("ServerState.theme accepts a PartialTheme so the panel client can", () => {
     // Regression for the bug where the server only shipped the theme name.
-    // External themes (e.g. the-themer's opensessions adapter) have names
+    // External themes (e.g. the-themer's tcm adapter) have names
     // that aren't in BUILTIN_THEMES; resolveTheme(name) would fall through to
     // catppuccin-mocha, leaving the panel dark under light themes. Shipping
     // the PartialTheme directly lets resolveTheme() merge the palette over

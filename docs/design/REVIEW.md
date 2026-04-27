@@ -1,7 +1,7 @@
 # Reviewer's guide
 
 Welcome. This folder contains a complete design pass for the
-opensessions side panel and tmux statusline redesign. Implementation
+tcm side panel and tmux statusline redesign. Implementation
 hasn't started yet — we deliberately paused for a second pair of eyes.
 
 This guide is for you. It is not a doc to read end-to-end; it tells you
@@ -12,7 +12,7 @@ feedback are most useful, and what's already locked vs. still open.
 
 ## 60-second elevator pitch
 
-The opensessions side panel and statusline are being redesigned in a
+The tcm side panel and statusline are being redesigned in a
 single pass. The current panel has solid bones (rolodex with focused
 pin, 5-state agent vocabulary, theme-aware palette) but suffers from
 glyph reuse (`·` has 4 roles, `●` has 3), wrap-row catastrophes (long

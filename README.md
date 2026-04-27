@@ -1,4 +1,4 @@
-# opensessions
+# tcm
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Star History](https://img.shields.io/github/stars/Ataraxy-Labs/opensessions?style=social)](https://github.com/Ataraxy-Labs/opensessions)
@@ -7,7 +7,7 @@ tmux is all you need. make tmux great again :)
 
 <img width="4180" height="2416" alt="amp-img-e686694168e21738-aesthetic" src="https://github.com/user-attachments/assets/2caaee1a-b3f5-4041-aa3c-5b3668aa1912" />
 
-`opensessions` is a sidebar for `tmux` when your sessions, agents, and localhost tabs start multiplying.
+`tcm` is a sidebar for `tmux` when your sessions, agents, and localhost tabs start multiplying.
 
 It lives inside your existing tmux workflow instead of replacing it: one small pane for session switching, agent state, repo breadcrumbs, and quick jumps back into the right terminal.
 
@@ -36,7 +36,7 @@ tmux source-file ~/.tmux.conf
 
 Open the sidebar with `prefix o → s`.
 
-TPM clones the repo into `~/.tmux/plugins/tail-claude-mux`. It does not install a standalone `opensessions` binary. `opensessions` runs from that checkout with your local `bun` installation.
+TPM clones the repo into `~/.tmux/plugins/tail-claude-mux`. It does not install a standalone `tcm` binary. `tcm` runs from that checkout with your local `bun` installation.
 
 If you want the same setup as a single shell command:
 
@@ -49,7 +49,7 @@ grep -q "Ataraxy-Labs/opensessions" ~/.tmux.conf 2>/dev/null || printf '\nset -g
 Use TPM's built-in update (`prefix + U`) or run:
 
 ```bash
-~/.tmux/plugins/tpm/bin/update_plugins opensessions
+~/.tmux/plugins/tpm/bin/update_plugins tcm
 ```
 
 The plugin automatically restarts the server on update so it picks up the new code. Toggle the sidebar back on with `prefix o → s` if it was open.
@@ -66,8 +66,8 @@ Then remove the `set -g @plugin 'Ataraxy-Labs/opensessions'` line from `~/.tmux.
 
 ## Support Status
 
-- `@opensessions/mux-tmux` and the tmux plugin flow are supported.
-- `@opensessions/mux-zellij` is still experimental.
+- `@tcm/mux-tmux` and the tmux plugin flow are supported.
+- `@tcm/mux-zellij` is still experimental.
 - The repo is organized for contributors around runnable apps, reusable packages, and host integrations.
 
 ## Today
@@ -113,7 +113,7 @@ Smoke test from a local clone:
 
 ```bash
 git clone https://github.com/Ataraxy-Labs/opensessions.git
-cd opensessions
+cd tcm
 bun install
 bun test
 bun run start:tui
@@ -143,7 +143,7 @@ For the full tmux workflow with keybindings, troubleshooting, and configuration 
 - Optional: `just install-clawd` installs the bundled Clawd mascot font. With `@tcm-header on` the tmux header lights up the Clawd glyph for `claude-code` agents; without the font, claude-code renders as `★`.
 - Codex watcher reads transcript JSONL files in `~/.codex/sessions/` or `$CODEX_HOME/sessions/` and resolves sessions from `turn_context.cwd`.
 - OpenCode watcher polls the SQLite database in `~/.local/share/opencode/opencode.db`.
-- Hidden sidebars are stashed in a tmux session named `_os_stash`, so they can come back without restarting the sidebar process.
+- Hidden sidebars are stashed in a tmux session named `_tcm_stash`, so they can come back without restarting the sidebar process.
 - Clicking a detected port opens `http://localhost:<port>`.
 
 ## Repo Layout
@@ -156,16 +156,16 @@ For the full tmux workflow with keybindings, troubleshooting, and configuration 
 ### Packages
 
 - `packages/runtime` — shared runtime logic: tracker, config, plugin loader, server internals, themes, ordering
-- `packages/mux/contract` — mux contracts and capability guards exposed as `@opensessions/mux`
-- `packages/mux/providers/tmux` — tmux provider exposed as `@opensessions/mux-tmux`
-- `packages/mux/providers/zellij` — experimental zellij provider exposed as `@opensessions/mux-zellij`
+- `packages/mux/contract` — mux contracts and capability guards exposed as `@tcm/mux`
+- `packages/mux/providers/tmux` — tmux provider exposed as `@tcm/mux-tmux`
+- `packages/mux/providers/zellij` — experimental zellij provider exposed as `@tcm/mux-zellij`
 - `packages/mux/tmux-sdk` — lower-level typed tmux bindings used by tmux-aware code
 
 ### Integrations
 
 - `opensessions.tmux` — root TPM entrypoint for users
 - `integrations/tmux-plugin` — tmux-facing scripts and host integration glue
-- `integrations/pi-extension` — pi extension that pushes lifecycle events to opensessions
+- `integrations/pi-extension` — pi extension that pushes lifecycle events to tcm
 
 ## Current Caveats
 

@@ -25,7 +25,7 @@ rendered locked design and `REVIEW-NOTES-codex.md` for the review log.
 
 ```
 ┌─────────────────────────────────────┐ ← terminal top
-│ HEADER   sticky · 1 cell            │   "opensessions   N sessions"
+│ HEADER   sticky · 1 cell            │   "tcm   N sessions"
 ├─────────────────────────────────────┤   (rule)
 │                                     │
 │ ROLODEX  flex · grows / shrinks     │   sessions list, focused pinned
@@ -64,11 +64,11 @@ grammar.
 ## 2. HEADER zone
 
 ```
-opensessions   3 sessions
+tcm   3 sessions
 ```
 
 - Single line.
-- Left: the literal `opensessions` in `subtext0` (pane unfocused) or `text`
+- Left: the literal `tcm` in `subtext0` (pane unfocused) or `text`
   (pane focused). It is the only place the product name appears, so it
   doesn't waste data-ink.
 - Centre/right: a session-count readout. No `⚡`, `✗`, `●` counters; the
@@ -221,7 +221,7 @@ Heights:
 
 ```
 ──────────────────────────────────────
- opensessions 䍡                          ← heading: focused-session name + arrow-right
+ tcm 䍡                          ← heading: focused-session name + arrow-right
  cc 1859  editing tmux-header-sync.ts   ← freshest entry: Tier 2 italic
  cc 1859  ran  bun test  (passed)       ← history: Tier 3 italic
  pi 15c8  awaiting input                ← history: Tier 3 italic

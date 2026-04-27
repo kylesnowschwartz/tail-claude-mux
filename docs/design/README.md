@@ -1,4 +1,4 @@
-# opensessions design notes
+# tcm design notes
 
 This folder is the working design log for the side-panel and tmux statusline
 redesign. It is intentionally separate from `docs/explanation/`,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Toggle opensessions sidebar in Zellij via the server.
+# Toggle tcm sidebar in Zellij via the server.
 # Ensures the server is running first, then calls POST /toggle.
 #
 # Designed to be called from a zellij keybinding. Add to ~/.config/zellij/config.kdl:

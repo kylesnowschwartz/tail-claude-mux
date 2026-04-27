@@ -134,25 +134,25 @@ const piMono = makeSession({
   ],
 });
 
-const opensessionsLive = makeSession({
-  name: "opensessions",
+const tcmLive = makeSession({
+  name: "tcm",
   branch: "main",
   agents: [
     workingAgent({
       agent: "pi",
-      session: "opensessions",
+      session: "tcm",
       threadId: "15c80001-aaaa-aaaa-aaaa-000000000000",
       toolDescription: "ask_user",
     }),
     readyAgent({
       agent: "pi",
-      session: "opensessions",
+      session: "tcm",
       threadId: "10bc0001-aaaa-aaaa-aaaa-000000000000",
     }),
-    readyAgent({ agent: "claude-code", session: "opensessions" }),
+    readyAgent({ agent: "claude-code", session: "tcm" }),
     readyAgent({
       agent: "claude-code",
-      session: "opensessions",
+      session: "tcm",
       threadId: "18590001-aaaa-aaaa-aaaa-000000000000",
     }),
   ],
@@ -178,27 +178,27 @@ const theThemerErrored = makeSession({
 export const MOCK_SCENARIOS: Record<string, MockScenario> = {
   quiet: {
     name: "quiet",
-    description: "5 sessions, opensessions focused with 4 ready agents, no recent activity.",
-    sessions: [aiEngineeringTemplate, piMono, opensessionsLive, claudeCodeSystem, theThemerReady],
-    focusedSession: "opensessions",
-    currentSession: "opensessions",
+    description: "5 sessions, tcm focused with 4 ready agents, no recent activity.",
+    sessions: [aiEngineeringTemplate, piMono, tcmLive, claudeCodeSystem, theThemerReady],
+    focusedSession: "tcm",
+    currentSession: "tcm",
     paneFocused: true,
   },
 
   live: {
     name: "live",
-    description: "Same dataset; opensessions has a populated activity buffer including a multi-line skill prompt.",
+    description: "Same dataset; tcm has a populated activity buffer including a multi-line skill prompt.",
     sessions: [
       aiEngineeringTemplate,
       piMono,
       {
-        ...opensessionsLive,
+        ...tcmLive,
         metadata: {
           status: { text: "ask_user", tone: "info", ts: NOW },
           progress: null,
           logs: [
             { message: "ask_user", source: "pi 15c8", tone: "info", ts: NOW - 1000 },
-            { message: "Base directory for this skill: /Users/kyle/.local/share/skills/opensessions-redesign", source: "cc 1859", tone: "neutral", ts: NOW - 5000 },
+            { message: "Base directory for this skill: /Users/kyle/.local/share/skills/tcm-redesign", source: "cc 1859", tone: "neutral", ts: NOW - 5000 },
             { message: "ran  bun test (passed)", source: "cc 1859", tone: "success", ts: NOW - 30000 },
             { message: "awaiting input", source: "pi 10bc", tone: "info", ts: NOW - 60000 },
           ],
@@ -207,8 +207,8 @@ export const MOCK_SCENARIOS: Record<string, MockScenario> = {
       claudeCodeSystem,
       theThemerReady,
     ],
-    focusedSession: "opensessions",
-    currentSession: "opensessions",
+    focusedSession: "tcm",
+    currentSession: "tcm",
     paneFocused: true,
   },
 
@@ -228,7 +228,7 @@ export const MOCK_SCENARIOS: Record<string, MockScenario> = {
           ],
         },
       },
-      opensessionsLive,
+      tcmLive,
       claudeCodeSystem,
       theThemerErrored,
     ],
@@ -240,9 +240,9 @@ export const MOCK_SCENARIOS: Record<string, MockScenario> = {
   unfocused: {
     name: "unfocused",
     description: "Same as quiet but the panel pane is unfocused (sleep state).",
-    sessions: [aiEngineeringTemplate, piMono, opensessionsLive, claudeCodeSystem, theThemerReady],
-    focusedSession: "opensessions",
-    currentSession: "opensessions",
+    sessions: [aiEngineeringTemplate, piMono, tcmLive, claudeCodeSystem, theThemerReady],
+    focusedSession: "tcm",
+    currentSession: "tcm",
     paneFocused: false,
   },
 };

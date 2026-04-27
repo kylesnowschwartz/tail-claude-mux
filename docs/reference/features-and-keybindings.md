@@ -44,7 +44,7 @@ The focused session detail panel can show:
 ### tmux-specific
 
 - Global hooks for session changes, window selection, window creation, resize, and refresh
-- Sidebar stash session named `_os_stash` so hidden sidebars can be restored
+- Sidebar stash session named `_tcm_stash` so hidden sidebars can be restored
 - Session creation popup using the bundled `sessionizer.sh` script
 
 ## Keyboard Shortcuts

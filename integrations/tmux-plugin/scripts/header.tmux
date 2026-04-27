@@ -1,5 +1,5 @@
-# opensessions tmux header — passive reader of @os-thm-* and @os-agent* options
-# written by the opensessions server. See docs/specs/tmux-header.md.
+# tcm tmux header — passive reader of @os-thm-* and @os-agent* options
+# written by the tcm server. See docs/specs/tmux-header.md.
 #
 # This file applies status-line variables only. The server is the single
 # writer of theme tokens (@os-thm-*) and per-window agent state (@os-agent*).
@@ -21,7 +21,7 @@ set -g window-status-style "fg=default"
 set -g window-status-current-style "fg=#{?@os-thm-blue,#{@os-thm-blue},default},bg=#{?@os-thm-surface0,#{@os-thm-surface0},default},bold"
 
 # Clear legacy oh-my-tmux / tmux-default tab indicators that duplicate our
-# vocabulary. opensessions surfaces the same information through:
+# vocabulary. tcm surfaces the same information through:
 #   • activity zone (panel §7)         vs window-status-activity-style underscore
 #   • severity glyph colour (Stage 5)   vs window-status-bell-style blink+bold
 #   • yellow last-window arrow (§6.2)   vs window-status-last-style cyan fg

@@ -1,12 +1,12 @@
 # Contracts And Extension Interfaces
 
-This document is the reference for extending opensessions. It describes the agent event model, watcher interfaces, mux provider capabilities, and the runtime behaviors extension authors need to match.
+This document is the reference for extending tcm. It describes the agent event model, watcher interfaces, mux provider capabilities, and the runtime behaviors extension authors need to match.
 
 For end-user setup, start with the docs linked from [README.md](./README.md). For plugin packaging workflow, see [PLUGINS.md](./PLUGINS.md).
 
 ## Built-In Watchers
 
-opensessions registers two built-in watchers at server startup: Claude Code
+tcm registers two built-in watchers at server startup: Claude Code
 and pi. Both share the single `POST /hook` endpoint and are distinguished
 by an optional `agent` field on the payload.
 
@@ -133,7 +133,7 @@ interface AgentWatcherContext {
 ### Minimal Watcher Example
 
 ```ts
-import type { AgentWatcher, AgentWatcherContext } from "@opensessions/runtime";
+import type { AgentWatcher, AgentWatcherContext } from "@tcm/runtime";
 
 export class MyAgentWatcher implements AgentWatcher {
   readonly name = "my-agent";
@@ -160,7 +160,7 @@ export class MyAgentWatcher implements AgentWatcher {
 
 ## Mux Contracts
 
-opensessions uses the capability model exported from `@opensessions/mux`. A provider must implement the required `MuxProviderV1` contract and may opt into extra capabilities.
+tcm uses the capability model exported from `@tcm/mux`. A provider must implement the required `MuxProviderV1` contract and may opt into extra capabilities.
 
 ### Core Types
 
@@ -235,7 +235,7 @@ interface BatchCapable {
 }
 ```
 
-The server narrows providers with the runtime type guards exported from `@opensessions/mux`:
+The server narrows providers with the runtime type guards exported from `@tcm/mux`:
 
 - `isWindowCapable()`
 - `isSidebarCapable()`

@@ -1,6 +1,6 @@
-# How To Build Plugins For opensessions
+# How To Build Plugins For tcm
 
-opensessions loads extension code as default-exported factory functions. Those factories can register mux providers, agent watchers, or both.
+tcm loads extension code as default-exported factory functions. Those factories can register mux providers, agent watchers, or both.
 
 This guide is intentionally task-oriented. For the exact TypeScript contracts, see [CONTRACTS.md](./CONTRACTS.md).
 
@@ -11,7 +11,7 @@ The easiest way to iterate is with a local plugin in `~/.config/tcm/plugins/`. P
 Every plugin exports a default function:
 
 ```ts
-import type { PluginAPI } from "@opensessions/runtime";
+import type { PluginAPI } from "@tcm/runtime";
 
 export default function (api: PluginAPI) {
 }
@@ -30,7 +30,7 @@ The runtime passes:
 
 The server loads extensions in this order:
 
-1. Built-in mux providers from `@opensessions/mux-tmux` and `@opensessions/mux-zellij`
+1. Built-in mux providers from `@tcm/mux-tmux` and `@tcm/mux-zellij`
 2. Local plugins from `~/.config/tcm/plugins/`
 3. Package names listed in `~/.config/tcm/config.json`
 
@@ -46,7 +46,7 @@ Local plugin discovery supports:
       index.ts
 ```
 
-Package-based plugins are loaded through `require()`, so they must be resolvable from the opensessions runtime environment.
+Package-based plugins are loaded through `require()`, so they must be resolvable from the tcm runtime environment.
 
 ## How To Create A Local Mux Plugin
 
@@ -55,7 +55,7 @@ Package-based plugins are loaded through `require()`, so they must be resolvable
 Create `~/.config/tcm/plugins/my-mux.ts`:
 
 ```ts
-import type { PluginAPI, MuxProvider, MuxSessionInfo } from "@opensessions/runtime";
+import type { PluginAPI, MuxProvider, MuxSessionInfo } from "@tcm/runtime";
 
 class MyMuxProvider implements MuxProvider {
   readonly specificationVersion = "v1" as const;
@@ -113,7 +113,7 @@ If your runtime could detect multiple providers, pin your choice in `~/.config/t
 }
 ```
 
-### 3. Start opensessions and verify registration
+### 3. Start tcm and verify registration
 
 Run the TUI or server. If your provider resolves successfully, it becomes part of the combined session list.
 
@@ -124,7 +124,7 @@ Run the TUI or server. If your provider resolves successfully, it becomes part o
 Create `~/.config/tcm/plugins/my-agent.ts`:
 
 ```ts
-import type { PluginAPI, AgentWatcher, AgentWatcherContext } from "@opensessions/runtime";
+import type { PluginAPI, AgentWatcher, AgentWatcherContext } from "@tcm/runtime";
 import { watch } from "fs";
 
 class MyAgentWatcher implements AgentWatcher {
@@ -174,12 +174,12 @@ Suggested `package.json` shape:
 
 ```json
 {
-  "name": "opensessions-mux-my-mux",
+  "name": "tcm-mux-my-mux",
   "version": "0.1.0",
   "type": "module",
   "main": "index.ts",
   "peerDependencies": {
-    "@opensessions/runtime": ">=0.1.0"
+    "@tcm/runtime": ">=0.1.0"
   }
 }
 ```
@@ -189,7 +189,7 @@ Then add it to config:
 ```json
 {
   "mux": "my-mux",
-  "plugins": ["opensessions-mux-my-mux"]
+  "plugins": ["tcm-mux-my-mux"]
 }
 ```
 
@@ -198,13 +198,13 @@ Then add it to config:
 ### Local file plugin
 
 1. Write the file under `~/.config/tcm/plugins/`.
-2. Start `cd /path/to/opensessions/apps/tui && bun run start` or run `bun run start:tui` from the repo root.
+2. Start `cd /path/to/tcm/apps/tui && bun run start` or run `bun run start:tui` from the repo root.
 3. Confirm your provider or watcher behavior in the sidebar.
 
 ### Linked package plugin
 
 1. Create the package elsewhere.
-2. Link or install it so Bun can resolve it from the opensessions runtime.
+2. Link or install it so Bun can resolve it from the tcm runtime.
 3. Add the package name to `plugins` in config.
 
 ## Naming Conventions
@@ -213,8 +213,8 @@ These are conventions, not runtime requirements:
 
 | Plugin type | Common name pattern |
 | --- | --- |
-| Mux provider | `opensessions-mux-<name>` |
-| Agent watcher | `opensessions-agent-<name>` |
+| Mux provider | `tcm-mux-<name>` |
+| Agent watcher | `tcm-agent-<name>` |
 
 ## Practical Notes
 

@@ -361,7 +361,7 @@ export const BUILTIN_THEMES: Record<string, Theme> = {
 export const DEFAULT_THEME = "catppuccin-mocha";
 
 /** Partial theme for user overrides — any field can be omitted.
- *  When `name` is set (e.g. by the-themer's opensessions adapter), the server
+ *  When `name` is set (e.g. by the-themer's tcm adapter), the server
  *  uses it as the human-readable label propagated to clients; the resolved
  *  palette merges over the default builtin. */
 export type PartialTheme = {
@@ -397,7 +397,7 @@ export function resolveTheme(themeConfig: string | PartialTheme | undefined): Th
 
 /**
  * Load a theme from an external JSON file (typically written by the-themer's
- * opensessions adapter). Returns a `PartialTheme` on success, or `null` on
+ * tcm adapter). Returns a `PartialTheme` on success, or `null` on
  * any failure — missing file, invalid JSON, or schema rejection.
  *
  * Path defaults to `~/.config/tcm/active-theme.json`. The function
