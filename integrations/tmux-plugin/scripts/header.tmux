@@ -36,23 +36,25 @@ set -g window-status-last-style "default"
 # single "what's here" glyph slot followed by index + window-name + zoom +
 # last-window-flag indicator.
 #
-# Glyph slot rules (single source of truth, mirrors panel left gutter):
+# Glyph slot rules (single source of truth: vocab.ts re-exports from
+# `@tcm/runtime`; the runtime emits per-window `@tcm-agent` and server-global
+# `@tcm-shell-glyph` / `@tcm-last-window-glyph` options that this format reads):
 #   • An agent is alive in this window  →  the agent's identity glyph in
 #     its severity colour (Stage 5 vocabulary).
-#   • No agent in this window           →  the boxed-terminal glyph
-#     (nf-cod-terminal, U+EA85) in `theme.overlay0` — "this is just a
-#     shell, nothing demanding attention."
+#   • No agent in this window           →  @tcm-shell-glyph (nf-cod-terminal)
+#     in `theme.overlay0` — "this is just a shell, nothing demanding attention."
 #
 # `#W` is tmux's window name; oh-my-tmux sets it to the basename of the pane's
 # pwd by default but respects manual renames. The previous `#I:#{=12:#{b:...}}`
 # scheme bypassed renames; tokyo-night-tmux popularised `#I #W` and the rename
 # behaviour is what users expect.
 #
-# Last-window indicator: yellow `nf-md` U+F054C (undo curl-back) marks the most-recently-visited
-# window so prefix-l navigation has a glance target. Width grows by 2 cells
-# only on the marked tab; harmless given exactly one window carries the flag.
-set -g window-status-format " #{?@tcm-agent,#[fg=#{@tcm-agent-fg}]#{@tcm-agent},#[fg=#{?@tcm-thm-overlay0,#{@tcm-thm-overlay0},default}]}#[default] #I #W#{?window_zoomed_flag, Z,}#{?window_last_flag,#[fg=#{?@tcm-thm-yellow,#{@tcm-thm-yellow},default}] 󰕌,} "
-set -g window-status-current-format " #{?@tcm-agent,#[fg=#{@tcm-agent-fg}]#{@tcm-agent},}#[default,fg=#{?@tcm-thm-blue,#{@tcm-thm-blue},default},bg=#{?@tcm-thm-surface0,#{@tcm-thm-surface0},default},bold] #I #W#{?window_zoomed_flag, Z,}#{?window_last_flag,#[fg=#{?@tcm-thm-yellow,#{@tcm-thm-yellow},default}] 󰕌,} "
+# Last-window indicator: yellow @tcm-last-window-glyph (nf-md-arrow_u_left_top)
+# marks the most-recently-visited window so prefix-l navigation has a glance
+# target. Width grows by 2 cells only on the marked tab; harmless given
+# exactly one window carries the flag.
+set -g window-status-format " #{?@tcm-agent,#[fg=#{@tcm-agent-fg}]#{@tcm-agent},#[fg=#{?@tcm-thm-overlay0,#{@tcm-thm-overlay0},default}]#{?@tcm-shell-glyph,#{@tcm-shell-glyph},}}#[default] #I #W#{?window_zoomed_flag, Z,}#{?window_last_flag,#[fg=#{?@tcm-thm-yellow,#{@tcm-thm-yellow},default}] #{?@tcm-last-window-glyph,#{@tcm-last-window-glyph},},} "
+set -g window-status-current-format " #{?@tcm-agent,#[fg=#{@tcm-agent-fg}]#{@tcm-agent},#[fg=#{?@tcm-thm-overlay0,#{@tcm-thm-overlay0},default}]#{?@tcm-shell-glyph,#{@tcm-shell-glyph},}}#[default,fg=#{?@tcm-thm-blue,#{@tcm-thm-blue},default},bg=#{?@tcm-thm-surface0,#{@tcm-thm-surface0},default},bold] #I #W#{?window_zoomed_flag, Z,}#{?window_last_flag,#[fg=#{?@tcm-thm-yellow,#{@tcm-thm-yellow},default}] #{?@tcm-last-window-glyph,#{@tcm-last-window-glyph},},} "
 # Single-space separator between windows (paired with the trailing pad above
 # this gives 2 cells of breathing room — visually close to a tab gutter).
 

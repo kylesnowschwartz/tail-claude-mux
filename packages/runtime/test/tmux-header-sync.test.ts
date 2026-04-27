@@ -9,6 +9,8 @@ import {
   syncTmuxHeaderOptions,
   severityLabel,
   severityColour,
+  STATUSLINE_LAST_WINDOW,
+  STATUSLINE_SHELL,
   __resetTmuxHeaderSyncStateForTests,
   type PlanInput,
   type SyncedState,
@@ -199,6 +201,43 @@ describe("planTmuxHeaderSync", () => {
     const paletteWrites = second.commands.filter((c) => c[2]?.startsWith("@tcm-thm-"));
     expect(paletteWrites.length).toBeGreaterThan(0);
     expect(second.newPalette.values.get("base")).toBe(BUILTIN_THEMES["dracula"]!.palette.base);
+  });
+
+  test("S5b: first sync emits @tcm-shell-glyph and @tcm-last-window-glyph as server globals", () => {
+    const sessions: SessionData[] = [];
+    const out = planTmuxHeaderSync(emptyInput({ sessions }));
+    const lastWin = out.commands.find((c) => c[2] === "@tcm-last-window-glyph");
+    const shell = out.commands.find((c) => c[2] === "@tcm-shell-glyph");
+    expect(lastWin).toEqual(["set-option", "-g", "@tcm-last-window-glyph", STATUSLINE_LAST_WINDOW]);
+    expect(shell).toEqual(["set-option", "-g", "@tcm-shell-glyph", STATUSLINE_SHELL]);
+  });
+
+  test("S5c: identical second call does NOT re-emit statusline glyph globals", () => {
+    const sessions: SessionData[] = [];
+    const first = planTmuxHeaderSync(emptyInput({ sessions }));
+    const second = planTmuxHeaderSync(emptyInput({
+      sessions,
+      prevWindows: first.newWindows,
+      prevPalette: first.newPalette,
+    }));
+    const reEmits = second.commands.filter((c) => c[2] === "@tcm-last-window-glyph" || c[2] === "@tcm-shell-glyph");
+    expect(reEmits).toEqual([]);
+  });
+
+  test("S5d: theme change re-emits statusline glyph globals (lumped with palette)", () => {
+    const sessions: SessionData[] = [];
+    const first = planTmuxHeaderSync(emptyInput({ sessions, theme: resolveTheme("catppuccin-mocha"), themeName: "catppuccin-mocha" }));
+    const second = planTmuxHeaderSync(emptyInput({
+      sessions,
+      theme: resolveTheme("dracula"),
+      themeName: "dracula",
+      prevWindows: first.newWindows,
+      prevPalette: first.newPalette,
+    }));
+    const lastWin = second.commands.find((c) => c[2] === "@tcm-last-window-glyph");
+    const shell = second.commands.find((c) => c[2] === "@tcm-shell-glyph");
+    expect(lastWin).toEqual(["set-option", "-g", "@tcm-last-window-glyph", STATUSLINE_LAST_WINDOW]);
+    expect(shell).toEqual(["set-option", "-g", "@tcm-shell-glyph", STATUSLINE_SHELL]);
   });
 
   test("S6: enabled === false produces zero commands and resets state", () => {

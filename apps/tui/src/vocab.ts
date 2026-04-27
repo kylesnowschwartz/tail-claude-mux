@@ -48,12 +48,13 @@ export const ID_AMP = "\u{2666}";            // ♦
 export const ID_GENERIC = "\u{F167A}";       // nf-md-robot-outline
 
 // ── Statusline-only glyphs (tmux header) ──
-// These never appear in the panel — the panel uses agent identity glyphs
-// or severity glyphs in those positions. They're declared here so the
-// vocabulary doc has a single source of truth across surfaces.
-// See `integrations/tmux-plugin/scripts/header.tmux` for usage.
-export const STATUSLINE_SHELL = "\u{EA85}";    // nf-cod-terminal (boxed >_)
-export const STATUSLINE_LAST_WINDOW = "\u{F17B3}"; // nf-md-arrow_u_left — last-visited-window marker (curl-back)
+// Re-exported from `@tcm/runtime` (where they're declared next to the
+// per-window AGENT_GLYPHS table). The runtime emits them as server-global
+// tmux user-options that `integrations/tmux-plugin/scripts/header.tmux`
+// reads via `#{@tcm-last-window-glyph}` / `#{@tcm-shell-glyph}`. These never
+// appear in the panel — they live here so vocab.ts stays the single
+// reader-facing entry-point for every glyph in the codebase.
+export { STATUSLINE_LAST_WINDOW, STATUSLINE_SHELL } from "@tcm/runtime";
 
 /** Resolve an identity glyph for a known agent type, falling back to generic. */
 export function identityGlyph(agent: string): string {

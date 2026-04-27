@@ -51,6 +51,17 @@ export const AGENT_GLYPHS: Record<string, string> = buildAgentGlyphs({
 
 export const AGENT_PRIORITY: readonly string[] = ["claude-code", "pi", "codex", "amp"];
 
+// --- Statusline-only glyphs (server-global tmux user options) ---
+//
+// These are not per-window state — they're constants the statusline format
+// references in fixed slots. Emitted once per palette-write cycle as
+// `set-option -g @tcm-<name>-glyph` so `header.tmux` can resolve them with
+// `#{@tcm-<name>-glyph}`. Re-exported from the runtime barrel so
+// `apps/tui/src/vocab.ts` can re-export and remain the single reader-facing
+// vocabulary surface, even though the panel itself never renders them.
+export const STATUSLINE_LAST_WINDOW = "\u{F17B3}"; // nf-md-arrow_u_left_top — last-visited-window marker
+export const STATUSLINE_SHELL = "\u{EA85}";        // nf-cod-terminal — no-agent-in-window marker
+
 export function pickAgentForWindow(agents: string[]): string {
   for (const candidate of AGENT_PRIORITY) {
     if (agents.includes(candidate)) return candidate;
@@ -117,11 +128,17 @@ export function planTmuxHeaderSync(input: PlanInput): PlanOutput {
   const newWindows = computeWindowStates(input);
   const commands: string[][] = [];
 
-  // Palette: write whenever theme changes or palette has never been written.
+  // Palette + statusline glyphs: write whenever theme changes or palette has
+  // never been written. The statusline glyphs (`@tcm-last-window-glyph`,
+  // `@tcm-shell-glyph`) don't actually vary with theme, but lumping them in
+  // here costs nothing — these writes are idempotent and the palette block is
+  // already the "global server options" cycle.
   if (!input.prevPalette || input.prevPalette.themeName !== newPalette.themeName) {
     for (const [token, value] of newPalette.values) {
       commands.push(["set-option", "-g", `@tcm-thm-${token}`, value]);
     }
+    commands.push(["set-option", "-g", "@tcm-last-window-glyph", STATUSLINE_LAST_WINDOW]);
+    commands.push(["set-option", "-g", "@tcm-shell-glyph", STATUSLINE_SHELL]);
   }
 
   // Per-window diffs.
