@@ -10,6 +10,10 @@ set -e
 echo "tcm: uninstalling..."
 
 # --- Remove global hooks ---
+# Keep this list in lockstep with packages/mux/providers/tmux/src/provider.ts
+# -> setupHooks(): every hook installed there must be unset here, with the
+# matching scope (-gu vs -guw). The runtime's verifyTmuxHooksInstalled()
+# helper expects the same set on the install side.
 for hook in \
   client-session-changed \
   session-created \
@@ -17,8 +21,13 @@ for hook in \
   client-resized \
   after-select-window \
   after-new-window \
-  after-resize-pane; do
+  after-kill-pane; do
   tmux set-hook -gu "$hook" 2>/dev/null || true
+done
+for whook in \
+  pane-exited \
+  pane-focus-in; do
+  tmux set-hook -guw "$whook" 2>/dev/null || true
 done
 echo "  ✓ removed global hooks"
 

@@ -81,6 +81,17 @@ if [ ! -d "$CURRENT_DIR/node_modules" ]; then
   fi
 fi
 
+# --- Bootstrap: spawn the server in the background ---
+# Without this, the TCM server only starts when the user presses prefix+o,
+# s/t — meaning a fresh tmux-server attach has no agent watcher and no tmux
+# hooks installed (the server installs them via setupHooks() at boot).
+# Result: agents would not appear in the sidebar until the first keypress,
+# and switching sessions would not auto-spawn the sidebar in new windows.
+#
+# Fire-and-forget: ensure_server() inside server-common.sh bails fast if the
+# server is already alive, and exits silently if bun is unavailable.
+( . "$SCRIPTS_DIR/server-common.sh" && ensure_server ) >/dev/null 2>&1 &
+
 # --- Bind tmux shortcuts ---
 
 # Command table for manual use: prefix o → s/t/1-9

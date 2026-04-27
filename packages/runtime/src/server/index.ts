@@ -51,6 +51,52 @@ function shell(cmd: string[]): string {
   }
 }
 
+// --- Tmux hook install verifier ---
+//
+// setupHooks() is fire-and-forget today: each tmux command silently swallows
+// errors. After install we ask tmux directly which hooks are populated and
+// log any expected hook that came back empty. This catches both genuine
+// install failures and "a previous uninstall.sh forgot to clear me" drift.
+const EXPECTED_TMUX_GLOBAL_HOOKS = [
+  "client-session-changed",
+  "session-created",
+  "session-closed",
+  "after-select-window",
+  "after-new-window",
+  "client-resized",
+  "after-kill-pane",
+] as const;
+const EXPECTED_TMUX_WINDOW_HOOKS = ["pane-exited", "pane-focus-in"] as const;
+
+function verifyTmuxHooksInstalled(): void {
+  // Hooks installed by us all run our own server URL via curl, so a simple
+  // substring search on /127\.0\.0\.1:<PORT>/ is a robust uniqueness check.
+  const port = String(SERVER_PORT);
+  const installed = new Set<string>();
+  const scan = (flags: string[]) => {
+    const out = shell(["tmux", "show-hooks", ...flags]);
+    for (const line of out.split("\n")) {
+      // Format: "<hook-name>[<idx>] <command>" when populated, bare "<hook-name>" when empty.
+      const m = line.match(/^([a-z-]+)\[\d+\]\s+(.*)$/);
+      if (!m) continue;
+      const [, name, body] = m;
+      if (name && body && body.includes(`:${port}/`)) installed.add(name);
+    }
+  };
+  scan(["-g"]);
+  scan(["-gw"]);
+
+  const missing: string[] = [];
+  for (const h of EXPECTED_TMUX_GLOBAL_HOOKS) if (!installed.has(h)) missing.push(h);
+  for (const h of EXPECTED_TMUX_WINDOW_HOOKS) if (!installed.has(h)) missing.push(`${h} (-gw)`);
+
+  if (missing.length === 0) {
+    log("bootstrap", "tmux hooks verified", { count: installed.size });
+  } else {
+    log("bootstrap", "tmux hooks MISSING", { missing, installed: [...installed] });
+  }
+}
+
 /** Match a comm string against a pattern as a whole word.
  *  "claude" matches "claude", "/usr/bin/claude", "claude-code"
  *  but NOT "tail-claude", "pip" (vs "pi"), or "claude.fork".
@@ -1715,7 +1761,21 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
 
   // --- Bootstrap ---
 
-  for (const p of allProviders) p.setupHooks(SERVER_HOST, SERVER_PORT);
+  // Install per-provider tmux hooks. We log around the call (and verify
+  // installation for the tmux provider) because setupHooks() is fire-and-
+  // forget today: a silent tmux failure here is the difference between
+  // "agents update live" and "sidebar feels frozen". See docs in
+  // packages/mux/providers/tmux/src/provider.ts -> setupHooks().
+  for (const p of allProviders) {
+    log("bootstrap", "installing hooks", { provider: p.name });
+    try {
+      p.setupHooks(SERVER_HOST, SERVER_PORT);
+    } catch (err) {
+      log("bootstrap", "setupHooks threw", { provider: p.name, error: err instanceof Error ? err.message : String(err) });
+      continue;
+    }
+    if (p.name === "tmux") verifyTmuxHooksInstalled();
+  }
 
   // Detect pre-existing sidebar panes (e.g. after a server restart while
   // TUI sidebars are still running and reconnecting)
