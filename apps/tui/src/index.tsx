@@ -38,19 +38,11 @@ import { getScenario, listScenarios } from "./mocks/scenarios";
 // Detect which mux we're running inside
 type MuxContext =
   | { type: "tmux"; sdk: TmuxClient; paneId: string }
-  | { type: "zellij"; sessionName: string; paneId: string }
   | { type: "none" };
 
 function detectMuxContext(): MuxContext {
   if (process.env.TMUX_PANE && process.env.TMUX) {
     return { type: "tmux", sdk: new TmuxClient(), paneId: process.env.TMUX_PANE };
-  }
-  if (process.env.ZELLIJ_SESSION_NAME) {
-    return {
-      type: "zellij",
-      sessionName: process.env.ZELLIJ_SESSION_NAME,
-      paneId: process.env.ZELLIJ_PANE_ID ?? "",
-    };
   }
   return { type: "none" };
 }
@@ -146,11 +138,6 @@ function refocusMainPane() {
         Bun.spawnSync(["tmux", "select-pane", "-t", paneId], { stdout: "pipe", stderr: "pipe" });
       }
     } catch {}
-  } else if (muxCtx.type === "zellij") {
-    // Zellij: move focus to the right (away from the sidebar on the left)
-    try {
-      Bun.spawnSync(["zellij", "action", "move-focus", "right"], { stdout: "pipe", stderr: "pipe" });
-    } catch {}
   }
 }
 
@@ -165,7 +152,6 @@ function getClientTty(): string {
     }
     return sdk.getClientTty();
   }
-  // Zellij doesn't expose client TTY
   return "";
 }
 
@@ -181,10 +167,6 @@ function getLocalSessionName(): string | null {
   if (muxCtx.type === "tmux") {
     const sessionName = muxCtx.sdk.display("#{session_name}", { target: muxCtx.paneId });
     return sessionName || null;
-  }
-
-  if (muxCtx.type === "zellij") {
-    return muxCtx.sessionName || null;
   }
 
   return null;
@@ -457,8 +439,6 @@ function App() {
     if (!sessionName) return;
 
     if (muxCtx.type === "tmux") {
-      send({ type: "identify-pane", paneId: muxCtx.paneId, sessionName });
-    } else if (muxCtx.type === "zellij") {
       send({ type: "identify-pane", paneId: muxCtx.paneId, sessionName });
     }
   }

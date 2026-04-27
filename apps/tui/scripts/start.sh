@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Start the tcm TUI.
-# Works in both tmux and zellij — detects the mux from environment.
+# Run from inside a tmux pane (auto-detects via $TMUX).
 
 if [ -n "${TMUX:-}" ]; then
     TCM_DIR="$(tmux show-environment -g TCM_DIR 2>/dev/null | cut -d= -f2)"
