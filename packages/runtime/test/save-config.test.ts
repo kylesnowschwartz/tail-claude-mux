@@ -10,7 +10,7 @@ describe("saveConfig", () => {
     mkdirSync(configDir, { recursive: true });
     await Bun.write(
       join(configDir, "config.json"),
-      JSON.stringify({ mux: "tmux", plugins: ["some-plugin"] }),
+      JSON.stringify({ mux: "tmux", port: 9090 }),
     );
 
     saveConfig({ theme: "tokyo-night" }, tmpDir);
@@ -18,7 +18,7 @@ describe("saveConfig", () => {
     const written = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
     expect(written.theme).toBe("tokyo-night");
     expect(written.mux).toBe("tmux");
-    expect(written.plugins).toEqual(["some-plugin"]);
+    expect(written.port).toBe(9090);
 
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -31,7 +31,7 @@ describe("saveConfig", () => {
     const configPath = join(tmpDir, ".config", "tcm", "config.json");
     const written = JSON.parse(readFileSync(configPath, "utf-8"));
     expect(written.theme).toBe("dracula");
-    expect(written.plugins).toEqual([]);
+    expect(written.mux).toBeUndefined();
 
     rmSync(tmpDir, { recursive: true, force: true });
   });

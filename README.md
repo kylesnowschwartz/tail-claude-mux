@@ -2,7 +2,7 @@
 
 A tmux sidebar I built for myself. **Personal tool — fork at your own risk.**
 
-Shows the session list, agent state for Claude Code and pi, git branch, and detected localhost ports — in one small pane that lives inside your existing tmux workflow.
+Shows the session list, agent state for Claude Code and pi, and the git branch for each session — in one small pane that lives inside your existing tmux workflow.
 
 <img width="4180" height="2416" alt="tcm sidebar screenshot" src="https://github.com/user-attachments/assets/2caaee1a-b3f5-4041-aa3c-5b3668aa1912" />
 

@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { loadConfig, type OpensessionsConfig } from "../src/config";
+import { loadConfig } from "../src/config";
 import { resolveTheme, BUILTIN_THEMES, type Theme } from "../src/themes";
 import { resolve, join } from "path";
 
@@ -8,7 +8,6 @@ describe("Config", () => {
     const config = loadConfig("/tmp/nonexistent-dir-" + Date.now());
     expect(config.mux).toBeUndefined();
     expect(config.port).toBeUndefined();
-    expect(config.plugins).toEqual([]);
     expect(config.theme).toBeUndefined();
   });
 
@@ -41,12 +40,12 @@ describe("Config", () => {
     const configDir = join(tmpDir, ".config", "tcm");
     await Bun.write(
       join(configDir, "config.json"),
-      JSON.stringify({ mux: "tmux", plugins: ["tcm-mux-experimental"] }),
+      JSON.stringify({ mux: "tmux", port: 9999 }),
     );
 
     const config = loadConfig(tmpDir);
     expect(config.mux).toBe("tmux");
-    expect(config.plugins).toEqual(["tcm-mux-experimental"]);
+    expect(config.port).toBe(9999);
 
     const { rmSync } = require("fs");
     rmSync(tmpDir, { recursive: true, force: true });
@@ -62,7 +61,7 @@ describe("Config", () => {
 
     const config = loadConfig(tmpDir);
     expect(config.mux).toBe("tmux");
-    expect(config.plugins).toEqual([]);
+    expect(config.port).toBeUndefined();
 
     const { rmSync } = require("fs");
     rmSync(tmpDir, { recursive: true, force: true });
