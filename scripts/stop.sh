@@ -14,9 +14,9 @@ if curl -s -o /dev/null -m 0.3 "${BASE}/" 2>/dev/null; then
 fi
 
 # Clean up anything the graceful quit missed
-if [[ -f /tmp/opensessions.pid ]]; then
-  kill "$(cat /tmp/opensessions.pid)" 2>/dev/null || true
-  rm -f /tmp/opensessions.pid
+if [[ -f /tmp/tcm.pid ]]; then
+  kill "$(cat /tmp/tcm.pid)" 2>/dev/null || true
+  rm -f /tmp/tcm.pid
 fi
 pkill -f "bun.*apps/server/src/main.ts" 2>/dev/null || true
 

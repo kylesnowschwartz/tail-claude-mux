@@ -22,7 +22,7 @@ const tmux = new TmuxClient();
 function plog(msg: string, data?: Record<string, unknown>) {
   const ts = new Date().toISOString().slice(11, 23);
   const extra = data ? " " + JSON.stringify(data) : "";
-  try { appendFileSync("/tmp/opensessions-debug.log", `[${ts}] [provider] ${msg}${extra}\n`); } catch {}
+  try { appendFileSync("/tmp/tcm-debug.log", `[${ts}] [provider] ${msg}${extra}\n`); } catch {}
 }
 
 /** Direct tmux call bypassing SDK (SDK has \x1f parsing issues) */

@@ -102,7 +102,7 @@ The focused session detail panel can show:
 - `~/.local/share/amp/session.json`
 - `~/.claude/projects/`
 - `~/.local/share/opencode/opencode.db`
-- `~/.config/opensessions/config.json`
+- `~/.config/tcm/config.json`
 
 ## Related Docs
 

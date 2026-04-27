@@ -36,7 +36,7 @@ tmux source-file ~/.tmux.conf
 
 Open the sidebar with `prefix o → s`.
 
-TPM clones the repo into `~/.tmux/plugins/opensessions`. It does not install a standalone `opensessions` binary. `opensessions` runs from that checkout with your local `bun` installation.
+TPM clones the repo into `~/.tmux/plugins/tail-claude-mux`. It does not install a standalone `opensessions` binary. `opensessions` runs from that checkout with your local `bun` installation.
 
 If you want the same setup as a single shell command:
 
@@ -59,7 +59,7 @@ The plugin automatically restarts the server on update so it picks up the new co
 Run the uninstall script **before** removing the plugin files — it cleans up tmux hooks, keybindings, sidebar panes, and environment variables that would otherwise persist and cause glitching:
 
 ```bash
-sh ~/.tmux/plugins/opensessions/integrations/tmux-plugin/scripts/uninstall.sh
+sh ~/.tmux/plugins/tail-claude-mux/integrations/tmux-plugin/scripts/uninstall.sh
 ```
 
 Then remove the `set -g @plugin 'Ataraxy-Labs/opensessions'` line from `~/.tmux.conf` and run `prefix + alt + u` (TPM uninstall).
@@ -136,7 +136,7 @@ For the full tmux workflow with keybindings, troubleshooting, and configuration 
 
 ## A Few Concrete Bits
 
-- Session ordering is persisted in `~/.config/opensessions/session-order.json`.
+- Session ordering is persisted in `~/.config/tcm/session-order.json`.
 - Amp watcher reads `~/.local/share/amp/threads/*.json` and clears unseen state from Amp's `session.json` when a thread becomes seen there.
 - Claude Code watcher reads JSONL transcripts in `~/.claude/projects/`.
 - pi watcher receives lifecycle events from a pi extension (`integrations/pi-extension/`); install with `bun run scripts/setup-pi-extension.ts`.

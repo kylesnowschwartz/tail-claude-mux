@@ -6,7 +6,7 @@ This guide is intentionally task-oriented. For the exact TypeScript contracts, s
 
 ## Before You Start
 
-The easiest way to iterate is with a local plugin in `~/.config/opensessions/plugins/`. Package-based plugins are supported too, but local files remove package resolution friction while you are developing. Amp, Claude Code, Codex, and OpenCode already ship as built-in watchers, so plugins are only needed for additional agents or mux providers.
+The easiest way to iterate is with a local plugin in `~/.config/tcm/plugins/`. Package-based plugins are supported too, but local files remove package resolution friction while you are developing. Amp, Claude Code, Codex, and OpenCode already ship as built-in watchers, so plugins are only needed for additional agents or mux providers.
 
 Every plugin exports a default function:
 
@@ -31,13 +31,13 @@ The runtime passes:
 The server loads extensions in this order:
 
 1. Built-in mux providers from `@opensessions/mux-tmux` and `@opensessions/mux-zellij`
-2. Local plugins from `~/.config/opensessions/plugins/`
-3. Package names listed in `~/.config/opensessions/config.json`
+2. Local plugins from `~/.config/tcm/plugins/`
+3. Package names listed in `~/.config/tcm/config.json`
 
 Local plugin discovery supports:
 
 ```text
-~/.config/opensessions/
+~/.config/tcm/
   config.json
   plugins/
     my-plugin.ts
@@ -52,7 +52,7 @@ Package-based plugins are loaded through `require()`, so they must be resolvable
 
 ### 1. Create the plugin file
 
-Create `~/.config/opensessions/plugins/my-mux.ts`:
+Create `~/.config/tcm/plugins/my-mux.ts`:
 
 ```ts
 import type { PluginAPI, MuxProvider, MuxSessionInfo } from "@opensessions/runtime";
@@ -104,7 +104,7 @@ export default function (api: PluginAPI) {
 
 ### 2. Select it in config if needed
 
-If your runtime could detect multiple providers, pin your choice in `~/.config/opensessions/config.json`:
+If your runtime could detect multiple providers, pin your choice in `~/.config/tcm/config.json`:
 
 ```json
 {
@@ -121,7 +121,7 @@ Run the TUI or server. If your provider resolves successfully, it becomes part o
 
 ### 1. Create the watcher file
 
-Create `~/.config/opensessions/plugins/my-agent.ts`:
+Create `~/.config/tcm/plugins/my-agent.ts`:
 
 ```ts
 import type { PluginAPI, AgentWatcher, AgentWatcherContext } from "@opensessions/runtime";
@@ -197,7 +197,7 @@ Then add it to config:
 
 ### Local file plugin
 
-1. Write the file under `~/.config/opensessions/plugins/`.
+1. Write the file under `~/.config/tcm/plugins/`.
 2. Start `cd /path/to/opensessions/apps/tui && bun run start` or run `bun run start:tui` from the repo root.
 3. Confirm your provider or watcher behavior in the sidebar.
 

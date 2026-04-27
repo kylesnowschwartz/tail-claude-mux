@@ -27,7 +27,7 @@ const DEFAULTS: OpensessionsConfig = {
 };
 
 /**
- * Load config from ~/.config/opensessions/config.json
+ * Load config from ~/.config/tcm/config.json
  * @param homeDir — override home directory (for testing)
  */
 export function loadConfig(homeDir?: string): OpensessionsConfig {
@@ -52,7 +52,7 @@ export function loadConfig(homeDir?: string): OpensessionsConfig {
 }
 
 /**
- * Save partial config updates to ~/.config/opensessions/config.json
+ * Save partial config updates to ~/.config/tcm/config.json
  * Merges with existing config on disk to preserve fields.
  * @param updates — partial config fields to write
  * @param homeDir — override home directory (for testing)

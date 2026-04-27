@@ -400,7 +400,7 @@ export function resolveTheme(themeConfig: string | PartialTheme | undefined): Th
  * opensessions adapter). Returns a `PartialTheme` on success, or `null` on
  * any failure — missing file, invalid JSON, or schema rejection.
  *
- * Path defaults to `~/.config/opensessions/active-theme.json`. The function
+ * Path defaults to `~/.config/tcm/active-theme.json`. The function
  * never throws so the server's startup path stays unconditional.
  *
  * Schema (all fields optional, but `palette.*` should be valid colour

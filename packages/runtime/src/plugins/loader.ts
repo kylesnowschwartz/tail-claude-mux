@@ -53,7 +53,7 @@ export class PluginLoader {
   }
 
   /**
-   * Load plugins from a directory (like ~/.config/opensessions/plugins/).
+   * Load plugins from a directory (like ~/.config/tcm/plugins/).
    * Scans one level deep:
    *   - *.ts / *.js files → loaded directly
    *   - subdirs with index.ts / index.js → loaded as entry point

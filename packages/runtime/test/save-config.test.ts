@@ -5,7 +5,7 @@ import { saveConfig, loadConfig } from "../src/config";
 
 describe("saveConfig", () => {
   test("writes theme to config.json, preserving existing fields", async () => {
-    const tmpDir = `/tmp/opensessions-test-save-${Date.now()}`;
+    const tmpDir = `/tmp/tcm-test-save-${Date.now()}`;
     const configDir = join(tmpDir, ".config", "opensessions");
     mkdirSync(configDir, { recursive: true });
     await Bun.write(
@@ -24,7 +24,7 @@ describe("saveConfig", () => {
   });
 
   test("creates config.json if it does not exist", () => {
-    const tmpDir = `/tmp/opensessions-test-save-${Date.now()}`;
+    const tmpDir = `/tmp/tcm-test-save-${Date.now()}`;
 
     saveConfig({ theme: "dracula" }, tmpDir);
 
@@ -37,7 +37,7 @@ describe("saveConfig", () => {
   });
 
   test("saveConfig then loadConfig roundtrips correctly", () => {
-    const tmpDir = `/tmp/opensessions-test-save-${Date.now()}`;
+    const tmpDir = `/tmp/tcm-test-save-${Date.now()}`;
 
     saveConfig({ theme: "nord" }, tmpDir);
     const config = loadConfig(tmpDir);
@@ -48,7 +48,7 @@ describe("saveConfig", () => {
   });
 
   test("preserves per-session detail panel heights across saves", () => {
-    const tmpDir = `/tmp/opensessions-test-save-${Date.now()}`;
+    const tmpDir = `/tmp/tcm-test-save-${Date.now()}`;
 
     saveConfig({ detailPanelHeights: { alpha: 12 } }, tmpDir);
     saveConfig({ theme: "nord" }, tmpDir);

@@ -49,7 +49,7 @@ describe("set-theme command", () => {
   });
 
   test("set-theme persists to config and roundtrips", () => {
-    const tmpDir = `/tmp/opensessions-test-theme-${Date.now()}`;
+    const tmpDir = `/tmp/tcm-test-theme-${Date.now()}`;
     saveConfig({ theme: "nord" }, tmpDir);
     const config = loadConfig(tmpDir);
     expect(config.theme).toBe("nord");

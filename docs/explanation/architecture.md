@@ -15,7 +15,7 @@ When the TUI starts, it first calls `ensureServer()` from `@opensessions/runtime
 
 If no healthy server is listening on `127.0.0.1:7391`, `ensureServer()` launches `apps/server/src/main.ts` in the background. The server then:
 
-1. loads config from `~/.config/opensessions/config.json`
+1. loads config from `~/.config/tcm/config.json`
 2. dynamically registers the built-in mux providers from `@opensessions/mux-tmux` and `@opensessions/mux-zellij`
 3. loads local plugins and configured package plugins
 4. resolves the primary mux provider
@@ -94,10 +94,10 @@ That centralization matters for three reasons:
 
 The runtime keeps a small set of operational files:
 
-- `/tmp/opensessions.pid` for server bootstrap health checks
-- `/tmp/opensessions-debug.log` for best-effort debug logging
-- `~/.config/opensessions/session-order.json` for user-controlled session ordering
-- `~/.config/opensessions/config.json` for user configuration
+- `/tmp/tcm.pid` for server bootstrap health checks
+- `/tmp/tcm-debug.log` for best-effort debug logging
+- `~/.config/tcm/session-order.json` for user-controlled session ordering
+- `~/.config/tcm/config.json` for user configuration
 
 ## Current Constraints
 

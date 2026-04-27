@@ -498,7 +498,7 @@ function App() {
     const agents = data?.agents ?? [];
     const agent = agents[focusedAgentIdx()];
     if (!agent || !data) return;
-    appendFileSync("/tmp/opensessions-tui-agent-click.log",
+    appendFileSync("/tmp/tcm-tui-agent-click.log",
       `[${new Date().toISOString()}] keyboard focus-agent-pane session=${data.name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`);
     send({
       type: "focus-agent-pane",
@@ -962,7 +962,7 @@ function App() {
                     });
                   }}
                   onAgentFocus={(agent) => {
-                    appendFileSync("/tmp/opensessions-tui-agent-click.log",
+                    appendFileSync("/tmp/tcm-tui-agent-click.log",
                       `[${new Date().toISOString()}] sending focus-agent-pane session=${session.name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`);
                     send({
                       type: "focus-agent-pane",
@@ -1005,7 +1005,7 @@ function App() {
                   });
                 }}
                 onAgentFocus={(agent) => {
-                  appendFileSync("/tmp/opensessions-tui-agent-click.log",
+                  appendFileSync("/tmp/tcm-tui-agent-click.log",
                     `[${new Date().toISOString()}] sending focus-agent-pane session=${data().name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`);
                   send({
                     type: "focus-agent-pane",
@@ -1052,7 +1052,7 @@ function App() {
                     });
                   }}
                   onAgentFocus={(agent) => {
-                    appendFileSync("/tmp/opensessions-tui-agent-click.log",
+                    appendFileSync("/tmp/tcm-tui-agent-click.log",
                       `[${new Date().toISOString()}] sending focus-agent-pane session=${session.name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`);
                     send({
                       type: "focus-agent-pane",
@@ -1431,7 +1431,7 @@ function AgentListItem(props: AgentListItemProps) {
 
   return (
     <box flexDirection="column" flexShrink={0} onMouseDown={() => {
-      appendFileSync("/tmp/opensessions-tui-agent-click.log",
+      appendFileSync("/tmp/tcm-tui-agent-click.log",
         `[${new Date().toISOString()}] clicked agent=${props.agent.agent} thread=${props.agent.threadName ?? "?"}\n`);
       triggerFlash();
       props.onFocusPane();

@@ -13,7 +13,7 @@ describe("Config", () => {
   });
 
   test("loadConfig reads sidebar settings", async () => {
-    const tmpDir = `/tmp/opensessions-test-${Date.now()}`;
+    const tmpDir = `/tmp/tcm-test-${Date.now()}`;
     const configDir = join(tmpDir, ".config", "opensessions");
     await Bun.write(
       join(configDir, "config.json"),
@@ -37,7 +37,7 @@ describe("Config", () => {
   });
 
   test("loadConfig reads from config file", async () => {
-    const tmpDir = `/tmp/opensessions-test-${Date.now()}`;
+    const tmpDir = `/tmp/tcm-test-${Date.now()}`;
     const configDir = join(tmpDir, ".config", "opensessions");
     await Bun.write(
       join(configDir, "config.json"),
@@ -53,7 +53,7 @@ describe("Config", () => {
   });
 
   test("loadConfig merges defaults for missing fields", async () => {
-    const tmpDir = `/tmp/opensessions-test-${Date.now()}`;
+    const tmpDir = `/tmp/tcm-test-${Date.now()}`;
     const configDir = join(tmpDir, ".config", "opensessions");
     await Bun.write(
       join(configDir, "config.json"),
@@ -69,7 +69,7 @@ describe("Config", () => {
   });
 
   test("loadConfig reads theme as string name", async () => {
-    const tmpDir = `/tmp/opensessions-test-${Date.now()}`;
+    const tmpDir = `/tmp/tcm-test-${Date.now()}`;
     const configDir = join(tmpDir, ".config", "opensessions");
     await Bun.write(
       join(configDir, "config.json"),
@@ -84,7 +84,7 @@ describe("Config", () => {
   });
 
   test("loadConfig reads theme as inline object", async () => {
-    const tmpDir = `/tmp/opensessions-test-${Date.now()}`;
+    const tmpDir = `/tmp/tcm-test-${Date.now()}`;
     const configDir = join(tmpDir, ".config", "opensessions");
     await Bun.write(
       join(configDir, "config.json"),

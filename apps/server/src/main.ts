@@ -46,7 +46,7 @@ if (!mux) {
     "No terminal multiplexer detected.\n" +
     `Registered providers: ${loader.registry.list().join(", ") || "(none)"}\n` +
     "Are you running inside tmux or zellij?\n" +
-    "Set 'mux' in ~/.config/opensessions/config.json to override.",
+    "Set 'mux' in ~/.config/tcm/config.json to override.",
   );
   process.exit(1);
 }

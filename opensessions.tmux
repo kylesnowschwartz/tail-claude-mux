@@ -62,14 +62,14 @@ tmux set-environment -g TCM_DIR "$CURRENT_DIR"
 tmux set-environment -g TCM_WIDTH "$WIDTH"
 
 # --- Bootstrap: kill stale server if version or install path changed ---
-VERSION_FILE="/tmp/opensessions.version"
+VERSION_FILE="/tmp/tcm.version"
 CURRENT_VERSION="${CURRENT_DIR}:$(grep -o '"version": *"[^"]*"' "$CURRENT_DIR/package.json" 2>/dev/null | head -1 | cut -d'"' -f4)"
 RUNNING_VERSION=""
 [ -f "$VERSION_FILE" ] && RUNNING_VERSION=$(cat "$VERSION_FILE" 2>/dev/null)
 
-if [ "$CURRENT_VERSION" != "$RUNNING_VERSION" ] && [ -f /tmp/opensessions.pid ]; then
-  kill "$(cat /tmp/opensessions.pid)" 2>/dev/null || true
-  rm -f /tmp/opensessions.pid
+if [ "$CURRENT_VERSION" != "$RUNNING_VERSION" ] && [ -f /tmp/tcm.pid ]; then
+  kill "$(cat /tmp/tcm.pid)" 2>/dev/null || true
+  rm -f /tmp/tcm.pid
 fi
 echo -n "$CURRENT_VERSION" > "$VERSION_FILE"
 
@@ -77,7 +77,7 @@ echo -n "$CURRENT_VERSION" > "$VERSION_FILE"
 if [ ! -d "$CURRENT_DIR/node_modules" ]; then
   BUN_PATH="$(command -v bun 2>/dev/null || echo "$HOME/.bun/bin/bun")"
   if [ -x "$BUN_PATH" ]; then
-    (cd "$CURRENT_DIR" && "$BUN_PATH" install --frozen-lockfile 2>/tmp/opensessions-install.log) &
+    (cd "$CURRENT_DIR" && "$BUN_PATH" install --frozen-lockfile 2>/tmp/tcm-install.log) &
   fi
 fi
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Install the opensessions pi extension by symlinking
- * `integrations/pi-extension/` into `~/.pi/agent/extensions/opensessions`.
+ * `integrations/pi-extension/` into `~/.pi/agent/extensions/tcm`.
  * Idempotent: safe to rerun.
  */
 

@@ -93,7 +93,7 @@ describe("PluginLoader", () => {
 });
 
 describe("PluginLoader — factory loading from directory", () => {
-  const tmpDir = `/tmp/opensessions-plugin-test-${Date.now()}`;
+  const tmpDir = `/tmp/tcm-plugin-test-${Date.now()}`;
   const pluginDir = join(tmpDir, "plugins");
 
   beforeEach(() => {

@@ -28,7 +28,7 @@ test:
 # Tail server debug log
 [group('dev')]
 log:
-    tail -f /tmp/opensessions-debug.log
+    tail -f /tmp/tcm-debug.log
 
 # Install the Clawd mascot font for the tmux header (idempotent)
 [group('dev')]

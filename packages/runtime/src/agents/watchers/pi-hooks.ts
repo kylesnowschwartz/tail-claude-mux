@@ -34,7 +34,7 @@ import type { AgentWatcher, AgentWatcherContext, HookPayload, HookReceiver } fro
 function dbg(tag: string, msg: string, data?: Record<string, unknown>) {
   const ts = new Date().toISOString().slice(11, 23);
   const suffix = data ? " " + JSON.stringify(data) : "";
-  try { appendFileSync("/tmp/opensessions-debug.log", `[${ts}] [pi-hooks:${tag}] ${msg}${suffix}\n`); } catch {}
+  try { appendFileSync("/tmp/tcm-debug.log", `[${ts}] [pi-hooks:${tag}] ${msg}${suffix}\n`); } catch {}
 }
 
 // --- JSONL parsing types (shared between seed + thread name resolution) ---

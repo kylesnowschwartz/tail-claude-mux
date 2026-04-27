@@ -21,7 +21,7 @@ const SIDEBAR_PANE_NAME = "opensessions-sidebar";
 function plog(msg: string, data?: Record<string, unknown>) {
   const ts = new Date().toISOString().slice(11, 23);
   const extra = data ? " " + JSON.stringify(data) : "";
-  try { appendFileSync("/tmp/opensessions-debug.log", `[${ts}] [zellij] ${msg}${extra}\n`); } catch {}
+  try { appendFileSync("/tmp/tcm-debug.log", `[${ts}] [zellij] ${msg}${extra}\n`); } catch {}
 }
 
 function run(cmd: string[]): string {
@@ -147,13 +147,13 @@ export class ZellijProvider implements MuxProviderV1, WindowCapable, SidebarCapa
     } else if (process.env.TMUX) {
       // Inside tmux — detach the client and replace it with zellij attach.
       // Wrap in bash so that when zellij detaches, the user auto-reattaches to tmux
-      // (using the session name written to /tmp/opensessions-reattach by cross-mux switch).
+      // (using the session name written to /tmp/tcm-reattach by cross-mux switch).
       const zellijBin = "/opt/homebrew/bin/zellij";
       const tmuxBin = "/opt/homebrew/bin/tmux";
       const tty = _clientTty;
       const args = ["detach-client"];
       if (tty) args.push("-t", tty);
-      const reattachCmd = `bash -c 'export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"; ${zellijBin} attach ${name}; ${tmuxBin} attach -t "$(cat /tmp/opensessions-reattach 2>/dev/null || echo :)"'`;
+      const reattachCmd = `bash -c 'export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"; ${zellijBin} attach ${name}; ${tmuxBin} attach -t "$(cat /tmp/tcm-reattach 2>/dev/null || echo :)"'`;
       args.push("-E", reattachCmd);
       Bun.spawnSync(["tmux", ...args], {
         stdout: "pipe",

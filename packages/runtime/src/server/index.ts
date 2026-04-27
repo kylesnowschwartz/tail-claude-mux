@@ -32,7 +32,7 @@ import {
 
 // --- Debug logger ---
 
-const DEBUG_LOG = "/tmp/opensessions-debug.log";
+const DEBUG_LOG = "/tmp/tcm-debug.log";
 function log(category: string, msg: string, data?: Record<string, unknown>) {
   const ts = new Date().toISOString().slice(11, 23);
   const extra = data ? " " + JSON.stringify(data) : "";
@@ -1276,7 +1276,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
           });
           if (sourceProvider.name === "zellij" && p.name === "tmux") {
             // Write reattach target for the bash wrapper
-            writeFileSync("/tmp/opensessions-reattach", cmd.name);
+            writeFileSync("/tmp/tcm-reattach", cmd.name);
             // Detach from zellij — the wrapper script will auto-attach to tmux
             Bun.spawnSync(["zellij", "--session", clientSess!, "action", "detach"], {
               stdout: "pipe", stderr: "pipe",

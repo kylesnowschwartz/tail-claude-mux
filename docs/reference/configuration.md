@@ -7,7 +7,7 @@ This page documents the configuration inputs that opensessions reads today.
 User config is loaded from:
 
 ```text
-~/.config/opensessions/config.json
+~/.config/tcm/config.json
 ```
 
 If the file does not exist, opensessions falls back to defaults.
@@ -142,9 +142,9 @@ All other tmux options fall back to the defaults shown in the table above.
 
 | Path | Purpose |
 | --- | --- |
-| `~/.config/opensessions/session-order.json` | Persisted custom session ordering |
-| `/tmp/opensessions.pid` | PID file used by server bootstrap logic |
-| `/tmp/opensessions-debug.log` | Best-effort debug log written by the server and providers |
+| `~/.config/tcm/session-order.json` | Persisted custom session ordering |
+| `/tmp/tcm.pid` | PID file used by server bootstrap logic |
+| `/tmp/tcm-debug.log` | Best-effort debug log written by the server and providers |
 
 ## Mux Detection Rules
 

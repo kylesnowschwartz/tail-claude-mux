@@ -4,7 +4,7 @@ import type { PartialTheme } from "./themes";
 
 export const SERVER_PORT = 7391;
 export const SERVER_HOST = "127.0.0.1";
-export const PID_FILE = "/tmp/opensessions.pid";
+export const PID_FILE = "/tmp/tcm.pid";
 export const SERVER_IDLE_TIMEOUT_MS = 30_000;
 export const STUCK_RUNNING_TIMEOUT_MS = 3 * 60 * 1000;
 
@@ -30,7 +30,7 @@ export interface ServerState {
   sessions: SessionData[];
   focusedSession: string | null;
   currentSession: string | null;
-  /** External theme palette (from ~/.config/opensessions/active-theme.json)
+  /** External theme palette (from ~/.config/tcm/active-theme.json)
    *  takes precedence over a builtin name. Clients pass this directly to
    *  resolveTheme(), which handles both shapes. Without this, the panel
    *  client's resolveTheme() lookup-by-name would fall through to the default

@@ -54,7 +54,7 @@ Run `bun run scripts/setup-hooks.ts` to register hooks in `~/.claude/settings.js
 
 #### Pi Extension Setup
 
-Run `bun run scripts/setup-pi-extension.ts` to symlink `integrations/pi-extension/` into `~/.pi/agent/extensions/opensessions`. The setup is idempotent. See [`integrations/pi-extension/README.md`](./integrations/pi-extension/README.md) for details.
+Run `bun run scripts/setup-pi-extension.ts` to symlink `integrations/pi-extension/` into `~/.pi/agent/extensions/tcm`. The setup is idempotent. See [`integrations/pi-extension/README.md`](./integrations/pi-extension/README.md) for details.
 
 ### Adding Other Agents
 
