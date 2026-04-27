@@ -20,6 +20,18 @@ set -g status-style "fg=default,bg=#{?@os-thm-base,#{@os-thm-base},default}"
 set -g window-status-style "fg=default"
 set -g window-status-current-style "fg=#{?@os-thm-blue,#{@os-thm-blue},default},bg=#{?@os-thm-surface0,#{@os-thm-surface0},default},bold"
 
+# Clear legacy oh-my-tmux / tmux-default tab indicators that duplicate our
+# vocabulary. opensessions surfaces the same information through:
+#   • activity zone (panel §7)         vs window-status-activity-style underscore
+#   • severity glyph colour (Stage 5)   vs window-status-bell-style blink+bold
+#   • yellow last-window arrow (§6.2)   vs window-status-last-style cyan fg
+# Without these resets the legacy underscore (etc.) renders alongside our own
+# indicators — visually noisy, and the underscore in particular reads as a
+# "janky interrupted underline" because it's clipped by the active-tab pill.
+set -g window-status-activity-style "default"
+set -g window-status-bell-style "default"
+set -g window-status-last-style "default"
+
 # Window-status-format: leading + trailing space for breathing room, then a
 # single "what's here" glyph slot followed by index + window-name + zoom +
 # last-window-flag indicator.

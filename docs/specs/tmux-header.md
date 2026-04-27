@@ -177,11 +177,16 @@ Sourced from `opensessions.tmux` when `@opensessions-header == on`. Sets:
 | `status-style` | `fg=default,bg=#{?@os-thm-base,#{@os-thm-base},default}` |
 | `window-status-style` | `fg=default` |
 | `window-status-current-style` | `fg=#{?@os-thm-blue,#{@os-thm-blue},default},bg=#{?@os-thm-surface0,#{@os-thm-surface0},default},bold` |
+| `window-status-activity-style` | `default` (cleared) — see legacy-reset note |
+| `window-status-bell-style` | `default` (cleared) — see legacy-reset note |
+| `window-status-last-style` | `default` (cleared) — see legacy-reset note |
 | `window-status-format` | `<space>{glyph-slot}<space>#I<space>#W{zoom?}{last-flag?}<space>` — see vocabulary below |
 | `window-status-current-format` | structurally identical to `window-status-format`. Differs only in the post-glyph reset: inactive falls back to `#[default]` (segment style = no bg); active falls back to the pill style (`bg=surface0,fg=blue,bold`). |
 | `window-status-separator` | single space — paired with the trailing pad above gives 2 cells between tabs |
 | `status-left` | session-name pill in `theme.blue`. Ends with `#[default]` and **no trailing space** — windows carry their own leading pad, so adding one here would render with `bg=default` and produce a stray cell when the terminal default differs from the bar's bg. |
 | `status-right` | preserved oh-my-tmux semantic content (prefix, pairing, sync) |
+
+**Legacy-reset.** Three tmux-default / oh-my-tmux indicators paint over the tab strip when set: `window-status-activity-style` adds an underscore for windows with the activity flag, `window-status-bell-style` adds blink+bold for windows that triggered a bell, and `window-status-last-style` paints the previously-visited tab cyan. opensessions's vocabulary already surfaces the same signals (activity zone in the panel; severity-coloured glyph in the tab strip; yellow last-window arrow in §6.2), so `header.tmux` explicitly resets each to `"default"` to prevent double-rendering. Without the reset the activity underscore reads as a "janky interrupted underline" because it's clipped by the active-tab pill bg.
 
 **Inactive-tab readability.** Inactive windows render with `fg=default` rather than a fixed `@os-thm-overlay0` colour. The opensessions theme palette is calibrated for dark terminal backgrounds; users running light terminal palettes (`the-themer` switches both) would see overlay grays as illegible. Letting the terminal palette dictate inactive-tab fg, and using `bold + theme.blue` for the active tab, keeps differentiation regardless of light/dark.
 
