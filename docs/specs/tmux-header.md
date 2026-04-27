@@ -104,7 +104,7 @@ Lifetime: re-written when the server detects a theme change. Otherwise stable.
 | `pi` | `π` | U+03C0 GREEK SMALL LETTER PI | |
 | `codex` | `▲` | U+25B2 BLACK UP-POINTING TRIANGLE | |
 | `amp` | `♦` | U+2666 BLACK DIAMOND SUIT | |
-| `generic` |  | U+F167A nf-md-robot-outline | Fallback when no specific entry exists. Aligns with the panel's right-gutter `ID_GENERIC`. |
+| `generic` |  | U+F167A nf-md-robot-outline | Fallback when no specific entry exists. |
 
 ### 4.1. Clawd auto-detect
 

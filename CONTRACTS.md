@@ -246,7 +246,7 @@ The server narrows providers with the runtime type guards exported from `@tcm/mu
 
 ## Built-In Runtime Behaviors To Know About
 
-- The server merges sessions from all registered providers into one state payload.
+- The server exposes sessions from the registered mux provider as one state payload.
 - Session ordering is persisted separately from mux ordering.
 - tmux sidebars can be hidden into a stash session instead of being killed.
 - tmux is the only supported mux. The contracts are extensible but no other provider is shipped or supported.

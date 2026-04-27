@@ -522,17 +522,13 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     const sessionByName = new Map(allMuxSessions.map((s) => [s.name, s]));
     const orderedMuxSessions = orderedNames.map((n) => sessionByName.get(n)!);
 
-    // Batch pane counts per provider (uses BatchCapable type guard)
-    const paneCountMaps = new Map<MuxProvider, Map<string, number>>();
-    if (isBatchCapable(mux)) {
-      paneCountMaps.set(mux, mux.getAllPaneCounts());
-    }
+    // Batch pane counts (uses BatchCapable type guard)
+    const paneCounts: Map<string, number> | null = isBatchCapable(mux) ? mux.getAllPaneCounts() : null;
 
     const sessions: SessionData[] = orderedMuxSessions.map(({ name, createdAt, windows, dir, provider }) => {
       sessionProviders.set(name, provider);
       const git = getGitInfo(dir);
-      const providerPaneCounts = paneCountMaps.get(provider);
-      const panes = providerPaneCounts?.get(name) ?? provider.getPaneCount(name);
+      const panes = paneCounts?.get(name) ?? provider.getPaneCount(name);
 
       let uptime = "";
       const diff = Math.floor(Date.now() / 1000) - createdAt;
