@@ -53,10 +53,10 @@ tmux source-file ~/.tmux.conf
 ~/.tmux/plugins/tpm/bin/install_plugins
 ```
 
-All `@opensessions-*` tmux options already have defaults. Add overrides only when you want different width or global keys, for example:
+All `@tcm-*` tmux options already have defaults. Add overrides only when you want different width or global keys, for example:
 
 ```tmux
-set -g @opensessions-width "30"
+set -g @tcm-width "30"
 ```
 
 Result: tmux registers direct prefix bindings for sidebar toggle, focus, and session switching.
@@ -83,7 +83,7 @@ Recommended shortcut scheme:
 - `prefix o → t` toggles the sidebar.
 - `prefix o → 1` through `prefix o → 9` switch directly to the visible session indices.
 
-If you use a terminal or window manager setup where no-prefix bindings are safe, you can also set `@opensessions-focus-global-key` and `@opensessions-index-keys`, but they are left unset by default to avoid conflicts.
+If you use a terminal or window manager setup where no-prefix bindings are safe, you can also set `@tcm-focus-global-key` and `@tcm-index-keys`, but they are left unset by default to avoid conflicts.
 
 ## 5. Open the sidebar
 

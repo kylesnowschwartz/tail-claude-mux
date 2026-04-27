@@ -140,7 +140,7 @@ For the full tmux workflow with keybindings, troubleshooting, and configuration 
 - Amp watcher reads `~/.local/share/amp/threads/*.json` and clears unseen state from Amp's `session.json` when a thread becomes seen there.
 - Claude Code watcher reads JSONL transcripts in `~/.claude/projects/`.
 - pi watcher receives lifecycle events from a pi extension (`integrations/pi-extension/`); install with `bun run scripts/setup-pi-extension.ts`.
-- Optional: `just install-clawd` installs the bundled Clawd mascot font. With `@opensessions-header on` the tmux header lights up the Clawd glyph for `claude-code` agents; without the font, claude-code renders as `★`.
+- Optional: `just install-clawd` installs the bundled Clawd mascot font. With `@tcm-header on` the tmux header lights up the Clawd glyph for `claude-code` agents; without the font, claude-code renders as `★`.
 - Codex watcher reads transcript JSONL files in `~/.codex/sessions/` or `$CODEX_HOME/sessions/` and resolves sessions from `turn_context.cwd`.
 - OpenCode watcher polls the SQLite database in `~/.local/share/opencode/opencode.db`.
 - Hidden sidebars are stashed in a tmux session named `_os_stash`, so they can come back without restarting the sidebar process.

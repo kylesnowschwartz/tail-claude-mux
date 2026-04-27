@@ -44,7 +44,7 @@ echo "  ✓ stopped server (if running)"
 
 # --- Remove keybindings ---
 # Command table bindings
-PREFIX_KEY=$(tmux show-option -gqv "@opensessions-prefix-key" 2>/dev/null)
+PREFIX_KEY=$(tmux show-option -gqv "@tcm-prefix-key" 2>/dev/null)
 PREFIX_KEY="${PREFIX_KEY:-o}"
 tmux unbind-key "$PREFIX_KEY" 2>/dev/null || true
 
@@ -56,11 +56,11 @@ for i in 1 2 3 4 5 6 7 8 9; do
 done
 
 # Global keys (if configured)
-FOCUS_GLOBAL_KEY=$(tmux show-option -gqv "@opensessions-focus-global-key" 2>/dev/null)
+FOCUS_GLOBAL_KEY=$(tmux show-option -gqv "@tcm-focus-global-key" 2>/dev/null)
 if [ -n "$FOCUS_GLOBAL_KEY" ]; then
   tmux unbind-key -n "$FOCUS_GLOBAL_KEY" 2>/dev/null || true
 fi
-INDEX_KEYS=$(tmux show-option -gqv "@opensessions-index-keys" 2>/dev/null)
+INDEX_KEYS=$(tmux show-option -gqv "@tcm-index-keys" 2>/dev/null)
 for key in $INDEX_KEYS; do
   tmux unbind-key -n "$key" 2>/dev/null || true
 done

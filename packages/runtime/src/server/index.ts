@@ -274,10 +274,10 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     return externalTheme?.name ?? currentTheme;
   }
 
-  // Read @opensessions-header gate once. Toggling at runtime requires a server
-  // restart — same cost shape as other @opensessions-* options read at TPM init.
+  // Read @tcm-header gate once. Toggling at runtime requires a server
+  // restart — same cost shape as other @tcm-* options read at TPM init.
   const headerEnabled = (() => {
-    const raw = shell(["tmux", "show-option", "-gqv", "@opensessions-header"]);
+    const raw = shell(["tmux", "show-option", "-gqv", "@tcm-header"]);
     return raw.trim() === "on";
   })();
   log("server", "tmux header", { enabled: headerEnabled });

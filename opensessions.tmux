@@ -13,11 +13,11 @@
 #   prefix + o → 1-9 — switch to visible session by index
 #
 # Options (set before TPM init):
-#   @opensessions-prefix-key        "o"  — prefix + key to enter opensessions command table
-#   @opensessions-focus-global-key  ""   — optional no-prefix key to reveal and focus sidebar
-#   @opensessions-index-keys        ""   — optional no-prefix keys mapped to visible sessions 1..9
-#   @opensessions-width             "26" — sidebar width in columns
-#   @opensessions-header            "off" — set to "on" to apply the opensessions
+#   @tcm-prefix-key        "o"  — prefix + key to enter opensessions command table
+#   @tcm-focus-global-key  ""   — optional no-prefix key to reveal and focus sidebar
+#   @tcm-index-keys        ""   — optional no-prefix keys mapped to visible sessions 1..9
+#   @tcm-width             "26" — sidebar width in columns
+#   @tcm-header            "off" — set to "on" to apply the opensessions
 #                                            theme + per-window agent glyphs to the
 #                                            tmux status line (see docs/specs/tmux-header.md)
 
@@ -34,10 +34,10 @@ get_option() {
   echo "${value:-$default}"
 }
 
-PREFIX_KEY=$(get_option "@opensessions-prefix-key" "o")
-FOCUS_GLOBAL_KEY=$(get_option "@opensessions-focus-global-key" "")
-INDEX_KEYS=$(get_option "@opensessions-index-keys" "")
-WIDTH=$(get_option "@opensessions-width" "26")
+PREFIX_KEY=$(get_option "@tcm-prefix-key" "o")
+FOCUS_GLOBAL_KEY=$(get_option "@tcm-focus-global-key" "")
+INDEX_KEYS=$(get_option "@tcm-index-keys" "")
+WIDTH=$(get_option "@tcm-width" "26")
 COMMAND_TABLE="opensessions"
 
 bind_global_key() {
@@ -107,10 +107,10 @@ bind_global_key "$FOCUS_GLOBAL_KEY" "sh '$SCRIPTS_DIR/focus.sh'"
 bind_global_index_keys
 
 # --- Status-line header (opt-in) ---
-# When @opensessions-header == "on", apply the opensessions theme + agent
+# When @tcm-header == "on", apply the opensessions theme + agent
 # glyphs to tmux's status line. The opensessions server writes @os-thm-*
 # and @os-agent* options that header.sh reads. See docs/specs/tmux-header.md.
-HEADER_ENABLED=$(get_option "@opensessions-header" "off")
+HEADER_ENABLED=$(get_option "@tcm-header" "off")
 if [ "$HEADER_ENABLED" = "on" ]; then
   tmux source-file "$SCRIPTS_DIR/header.tmux"
 fi

@@ -92,7 +92,7 @@ Lifetime: re-written when the server detects a theme change. Otherwise stable.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `@opensessions-header` | unset (= `off`) | Set to `on` to opt in. The server reads this once at startup and gates `syncTmuxHeaderOptions`. The tmux conf also reads it to decide whether to source `header.tmux`. |
+| `@tcm-header` | unset (= `off`) | Set to `on` to opt in. The server reads this once at startup and gates `syncTmuxHeaderOptions`. The tmux conf also reads it to decide whether to source `header.tmux`. |
 
 ---
 
@@ -168,7 +168,7 @@ export function syncTmuxHeaderOptions(args: {
 
 ## 6. Read protocol — `header.tmux`
 
-Sourced from `opensessions.tmux` when `@opensessions-header == on`. Sets:
+Sourced from `opensessions.tmux` when `@tcm-header == on`. Sets:
 
 | tmux variable | Format |
 |---|---|
@@ -218,19 +218,19 @@ The `#{?@os-thm-base,#{@os-thm-base},default}` chain ensures the status line is 
 See `artifacts/03-blueprint.md` Section 3 for the authoritative table. Key entries:
 
 - Server not running inside tmux → sync no-ops, header stays unstyled.
-- `@opensessions-header` off → no writes; tmux falls back to whatever else is loaded.
+- `@tcm-header` off → no writes; tmux falls back to whatever else is loaded.
 - Glyph wider than one cell → column drift. Constrained at the spec level.
 - Window closed mid-broadcast → write fails harmlessly (`shellStatus()` throws on nonzero exit, the sync's outer try/catch swallows it without advancing the cache, so the next successful broadcast retries).
 - Empty `tmux list-panes` (transient flake or genuinely empty) → sync returns early **without clearing caches**. Cached `lastWindows`/`lastPalette` are preserved so a subsequent successful scan can compute correct cleanup diffs and the bar does not lose its palette colours after a tmux server restart that wiped `@os-thm-*` options.
 
 ### 7.1 Disable behaviour (sticky-off)
 
-Setting `@opensessions-header` from `on` back to `off` does **not** retroactively tear down options written during the previous active period:
+Setting `@tcm-header` from `on` back to `off` does **not** retroactively tear down options written during the previous active period:
 
 - The server reads the gate **once at startup**, so a runtime flip is invisible until restart.
 - After restart with the gate off, the server short-circuits before any tmux probe — it does not issue cleanup writes for `@os-agent*` per-window options or revert the status-line settings that `header.tmux` applied.
 
-To fully revert: comment out or remove the `set -g @opensessions-header on` line, restart the tmux server, and (optionally) source the user's prior status-line config. v1 does not implement an automated tear-down path; treat the gate as restart-required and forget-on-restart.
+To fully revert: comment out or remove the `set -g @tcm-header on` line, restart the tmux server, and (optionally) source the user's prior status-line config. v1 does not implement an automated tear-down path; treat the gate as restart-required and forget-on-restart.
 
 ---
 
@@ -249,7 +249,7 @@ Live verification on a real tmux server is recorded in the blueprint as L1–L3 
 
 ## 9. Future work (not in v1.1)
 
-- Per-status glyph swap: extend `@os-agent` lookup to also vary the *glyph* by status (e.g. severity-glyph overlay) when `@opensessions-header-status-aware == on`. Today only the colour varies; the glyph is identity-only.
+- Per-status glyph swap: extend `@os-agent` lookup to also vary the *glyph* by status (e.g. severity-glyph overlay) when `@tcm-header-status-aware == on`. Today only the colour varies; the glyph is identity-only.
 - Per-agent-type colour: `theme.status[status]` or a separate `@os-agent-type-fg` palette.
 - Tooltip via `@os-agent-tooltip` and tmux `#{T:...}` formats.
 - Per-session palette overrides (different theme per tmux session).
