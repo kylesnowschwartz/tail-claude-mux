@@ -1,7 +1,7 @@
 /**
  * The tail-claude-mux Nerd Font alphabet.
  *
- * Source of truth for codepoints. Design rationale: docs/explanation/redesign-2026-04.md.
+ * Source of truth for codepoints.
  *
  * All glyphs are single column-cell wide. Material Design Icons (`nf-md-*`)
  * are the default family; exceptions are brand letterforms (π/▲/♦),

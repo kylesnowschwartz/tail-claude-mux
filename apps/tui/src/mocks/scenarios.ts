@@ -1,9 +1,6 @@
 /**
  * Canonical mock scenarios.
  *
- * Datasets reflect the canonical sidebar mockup from the Apr 2026 redesign
- * (docs/explanation/redesign-2026-04.md).
- *
  * These datasets are used by the `--mock <scenario>` flag to render the
  * panel without a running server. Useful for design iteration, screenshot
  * generation, and OpenTUI integration smoke tests.

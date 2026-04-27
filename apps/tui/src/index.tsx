@@ -196,7 +196,7 @@ function getLocalSessionName(): string | null {
  *
  * Renders as: `─────  ·  ─────` where the centre glyph is
  * \u{F0143} (chevron-up) above the focused card, \u{F0140} (chevron-down)
- * below it. See docs/design/04-mockups/02-canonical.md §"Locked decisions" #5.
+ * below it.
  *
  * The two flex-grown rule segments overflow horizontally; their containing
  * box clips them to the panel width.
@@ -220,10 +220,9 @@ function WrapRule(props: { direction: "up" | "down"; palette: ThemePalette }) {
 /**
  * Detect a trailing outcome marker in an activity entry's description.
  *
- * Per docs/design/03-vocabulary.md §7 "Entry shape", the suffix `(passed)`
- * renders in green and `(failed)` in red. Everything else stays in the entry's
- * tier colour. The split lets us colour the suffix without touching the rest
- * of the description string.
+ * Detects the trailing `(passed)` or `(failed)` suffix so we can render it
+ * in the success/error tone while leaving the rest of the description in
+ * the entry's normal tier colour.
  */
 function splitOutcome(message: string): { main: string; outcome: { text: string; tone: "success" | "error" } | null } {
   const m = message.match(/^(.*?)(\s*)(\((passed|failed)\))\s*$/);
@@ -236,9 +235,6 @@ function splitOutcome(message: string): { main: string; outcome: { text: string;
 
 /**
  * Activity zone — fixed-height structural band beneath the rolodex.
- *
- * Source of truth: docs/design/04-mockups/02-canonical.md §"Activity zone
- * behaviour" and docs/design/03-vocabulary.md §7.
  *
  * Layout (always visible, never animates):
  *   ──────────────  ← top zone separator
@@ -385,10 +381,8 @@ function App() {
   // boundaries the `before` / `after` halves shrink, leaving empty space
   // above or below the focused card. The chevron separators above and below
   // the focused card stay always-visible regardless.
-  //
-  // See docs/design/04-mockups/02-canonical.md locked decision #6 and the
-  // 2026-04-28 dated update note for the design rationale (the earlier
-  // wheel/rotation model disoriented users in live QA).
+  // (The earlier wheel/rotation model disoriented users in live QA, hence
+  // this slide-up/down approach.)
   const rolodex = createMemo(() => {
     const idx = focusedIdx();
     if (idx < 0) return { before: [] as SessionData[], after: [] as SessionData[] };
@@ -916,8 +910,7 @@ function App() {
   });
 
   // Header counters (runningCount / errorCount / unseenCount) were retired
-  // in the panel redesign — the rolodex is the summary. See
-  // docs/design/04-mockups/02-canonical.md §"Locked decisions" #4.
+  // in the panel redesign — the rolodex is the summary.
 
   return (
     <box flexDirection="column" flexGrow={1} backgroundColor={P().crust}>
@@ -1473,7 +1466,7 @@ function AgentListItem(props: AgentListItemProps) {
 
         {/* Row 2 (tool description / thread name) retired — now surfaced
             in the standalone ActivityZone, persistently and across focus
-            changes. See docs/design/03-vocabulary.md §7. */}
+            changes. */}
       </box>
     </box>
   );
@@ -1518,7 +1511,6 @@ function SessionCard(props: SessionCardProps) {
   // needing states (working/waiting/error) show a glyph. Applies on the
   // session row whether the card is collapsed or focused; agent-level
   // severity still appears on each agent row inside the focused card.
-  // See docs/design/04-mockups/02-canonical.md §"Locked decisions" #B5.
   const statusIcon = () => {
     const l = label();
     if (l === "working") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
@@ -1540,7 +1532,7 @@ function SessionCard(props: SessionCardProps) {
   const nameColor = () => {
     const focused = props.paneFocused();
     // Unseen sessions get the teal colour shift (color-only marker, replaces
-    // the retired ● glyph). See docs/design/03-vocabulary.md §4 "Unseen state".
+    // the retired ● glyph).
     if (unseen()) return P().teal;
     if (props.isCurrent) return focused ? P().text : P().subtext0;
     return focused ? P().subtext1 : P().overlay1;
@@ -1581,7 +1573,6 @@ function SessionCard(props: SessionCardProps) {
 
   // Locked count format (B1 / Q3): bare numeric, capped at "9+". The legacy
   // "●N" badge and the "2π" same-type compaction are both retired.
-  // See docs/design/03-vocabulary.md §"Locked count format".
   const agentBadge = () => {
     const n = agentCount();
     if (n === 0) return "";
@@ -1615,9 +1606,7 @@ function SessionCard(props: SessionCardProps) {
   };
 
   // ▎ current-session left bar retired in render: bold name + row position
-  // already signal current state. Design docs (docs/design/03-vocabulary.md,
-  // /01-audit.md, /04-mockups/02-canonical.md) still reference the bar; that
-  // drift is intentional pending a follow-up doc update.
+  // already signal current state.
 
   return (
     <box id={`session-${props.session.name}`} flexDirection="column" flexShrink={0}>

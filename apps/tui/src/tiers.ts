@@ -1,8 +1,6 @@
 /**
  * Four-tier text hierarchy helpers.
  *
- * Source of truth: docs/explanation/redesign-2026-04.md (four-tier hierarchy).
- *
  *   Tier 1 (Primary)   = bold + text colour     — dynamic, urgent
  *   Tier 2 (Secondary) = text colour            — stable context
  *   Tier 3 (Dim)       = faint + text colour    — supporting detail
