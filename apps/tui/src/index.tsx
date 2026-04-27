@@ -954,8 +954,14 @@ function App() {
         {/* Always-visible chevron wrap-rule above the focused card. */}
         <WrapRule direction="up" palette={P()} />
 
-        {/* Focused session — bordered frame pinned at center */}
-        <box border borderStyle="rounded" borderColor={paneFocused() ? P().blue : P().surface2} flexShrink={0} height={maxCardHeight()} overflow="hidden">
+        {/* Focused session — bordered frame pinned at center.
+            +2 on height: maxCardHeight() returns inner content rows (name +
+            branch + agents + ...); the rounded border eats 1 row top + 1 row
+            bottom, and overflow="hidden" clips anything that doesn't fit.
+            Without the +2, agent rows get silently truncated whenever the
+            card has both a branch and any agents (regression visible since
+            commit e1bf37d shrank agent rows from 2 lines to 1). */}
+        <box border borderStyle="rounded" borderColor={paneFocused() ? P().blue : P().surface2} flexShrink={0} height={maxCardHeight() + 2} overflow="hidden">
           <Show when={focusedData()}>
             {(data: Accessor<SessionData>) => (
               <SessionCard
