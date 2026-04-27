@@ -9,6 +9,11 @@ export interface AgentEvent {
   session: string;
   status: AgentStatus;
   ts: number;
+  /** Timestamp of the first event ever recorded for this instance.
+   *  Set once by the tracker on insert and preserved across status updates,
+   *  so consumers can sort by arrival order without the list reshuffling
+   *  every time an agent fires a fresh status. */
+  firstSeenTs?: number;
   threadId?: string;
   threadName?: string;
   /** Set by tracker when serializing for the TUI — true if user hasn't seen this terminal state */

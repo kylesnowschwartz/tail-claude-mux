@@ -255,13 +255,27 @@ describe("AgentTracker", () => {
 
   // --- getAgents ordering ---
 
-  test("getAgents returns newest items first", () => {
-    tracker.applyEvent(event({ session: "sess-1", status: "done", threadId: "t1", ts: 100 }));
+  test("getAgents returns oldest items first by first-seen", () => {
+    tracker.applyEvent(event({ session: "sess-1", status: "running", threadId: "t1", ts: 100 }));
     tracker.applyEvent(event({ session: "sess-1", status: "running", threadId: "t2", ts: 200 }));
 
     const agents = tracker.getAgents("sess-1");
 
-    expect(agents.map((agent) => agent.threadId)).toEqual(["t2", "t1"]);
+    expect(agents.map((agent) => agent.threadId)).toEqual(["t1", "t2"]);
+  });
+
+  test("getAgents order is stable across status updates on existing instances", () => {
+    // Two agents arrive in order t1, t2.
+    tracker.applyEvent(event({ session: "sess-1", status: "running", threadId: "t1", ts: 100 }));
+    tracker.applyEvent(event({ session: "sess-1", status: "running", threadId: "t2", ts: 200 }));
+
+    // t1 then fires a fresher status update — its ts is now newer than t2's.
+    tracker.applyEvent(event({ session: "sess-1", status: "running", threadId: "t1", ts: 300 }));
+
+    // Sort is by first-seen, so t1 must stay above t2; the focused-panel
+    // list must not reshuffle when an existing instance pings.
+    const agents = tracker.getAgents("sess-1");
+    expect(agents.map((agent) => agent.threadId)).toEqual(["t1", "t2"]);
   });
 
   // --- pruneTerminal ---

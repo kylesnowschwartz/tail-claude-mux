@@ -82,6 +82,9 @@ export class AgentTracker {
       event.paneId = event.paneId ?? prev.paneId;
       event.liveness = event.liveness ?? prev.liveness;
     }
+    // Stamp first-seen timestamp once per instance so getAgents() sort is
+    // stable across subsequent status updates.
+    event.firstSeenTs = prev?.firstSeenTs ?? event.ts;
     sessionInstances.set(key, event);
 
     // Clean up any synthetic pane-keyed entries for this agent
@@ -150,7 +153,7 @@ export class AgentTracker {
         const isUnseen = this.unseenInstances.has(this.unseenKey(session, key));
         return isUnseen ? { ...event, unseen: true } : event;
       })
-      .sort((a, b) => b.ts - a.ts);
+      .sort((a, b) => (a.firstSeenTs ?? a.ts) - (b.firstSeenTs ?? b.ts));
   }
 
   /** Returns recent event timestamps for sparkline rendering */
