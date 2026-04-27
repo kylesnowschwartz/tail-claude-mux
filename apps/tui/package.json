@@ -1,5 +1,5 @@
 {
-  "name": "@opensessions/tui",
+  "name": "@tcm/tui",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,8 +10,8 @@
     "build": "bun run build.ts"
   },
   "dependencies": {
-    "@opensessions/runtime": "workspace:*",
-    "@opensessions/mux-tmux": "workspace:*",
+    "@tcm/runtime": "workspace:*",
+    "@tcm/mux-tmux": "workspace:*",
     "@opentui/core": "^0.1.88",
     "@opentui/solid": "^0.1.88",
     "solid-js": "^1.9.11"

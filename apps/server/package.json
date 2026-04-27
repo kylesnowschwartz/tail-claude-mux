@@ -1,5 +1,5 @@
 {
-  "name": "@opensessions/server",
+  "name": "@tcm/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,9 +10,9 @@
     "dev": "bun --watch run src/main.ts"
   },
   "dependencies": {
-    "@opensessions/runtime": "workspace:*",
-    "@opensessions/mux-tmux": "workspace:*",
-    "@opensessions/mux-zellij": "workspace:*"
+    "@tcm/runtime": "workspace:*",
+    "@tcm/mux-tmux": "workspace:*",
+    "@tcm/mux-zellij": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

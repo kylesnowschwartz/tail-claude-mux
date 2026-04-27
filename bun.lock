@@ -11,12 +11,12 @@
       },
     },
     "apps/server": {
-      "name": "@opensessions/server",
+      "name": "@tcm/server",
       "version": "0.1.0",
       "dependencies": {
-        "@opensessions/mux-tmux": "workspace:*",
-        "@opensessions/mux-zellij": "workspace:*",
-        "@opensessions/runtime": "workspace:*",
+        "@tcm/mux-tmux": "workspace:*",
+        "@tcm/mux-zellij": "workspace:*",
+        "@tcm/runtime": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -24,13 +24,13 @@
       },
     },
     "apps/tui": {
-      "name": "@opensessions/tui",
+      "name": "@tcm/tui",
       "version": "0.1.0",
       "dependencies": {
-        "@opensessions/mux-tmux": "workspace:*",
-        "@opensessions/runtime": "workspace:*",
         "@opentui/core": "^0.1.88",
         "@opentui/solid": "^0.1.88",
+        "@tcm/mux-tmux": "workspace:*",
+        "@tcm/runtime": "workspace:*",
         "solid-js": "^1.9.11",
       },
       "devDependencies": {
@@ -39,7 +39,7 @@
       },
     },
     "packages/mux/contract": {
-      "name": "@opensessions/mux",
+      "name": "@tcm/mux",
       "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "latest",
@@ -47,10 +47,10 @@
       },
     },
     "packages/mux/providers/tmux": {
-      "name": "@opensessions/mux-tmux",
+      "name": "@tcm/mux-tmux",
       "version": "0.1.0",
       "dependencies": {
-        "@opensessions/mux": "workspace:*",
+        "@tcm/mux": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -58,10 +58,10 @@
       },
     },
     "packages/mux/providers/zellij": {
-      "name": "@opensessions/mux-zellij",
+      "name": "@tcm/mux-zellij",
       "version": "0.1.0",
       "dependencies": {
-        "@opensessions/mux": "workspace:*",
+        "@tcm/mux": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -69,7 +69,7 @@
       },
     },
     "packages/mux/tmux-sdk": {
-      "name": "@opensessions/tmux-sdk",
+      "name": "@tcm/tmux-sdk",
       "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "latest",
@@ -77,10 +77,10 @@
       },
     },
     "packages/runtime": {
-      "name": "@opensessions/runtime",
+      "name": "@tcm/runtime",
       "version": "0.1.0",
       "dependencies": {
-        "@opensessions/mux": "workspace:*",
+        "@tcm/mux": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -213,20 +213,6 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@opensessions/mux": ["@opensessions/mux@workspace:packages/mux/contract"],
-
-    "@opensessions/mux-tmux": ["@opensessions/mux-tmux@workspace:packages/mux/providers/tmux"],
-
-    "@opensessions/mux-zellij": ["@opensessions/mux-zellij@workspace:packages/mux/providers/zellij"],
-
-    "@opensessions/runtime": ["@opensessions/runtime@workspace:packages/runtime"],
-
-    "@opensessions/server": ["@opensessions/server@workspace:apps/server"],
-
-    "@opensessions/tmux-sdk": ["@opensessions/tmux-sdk@workspace:packages/mux/tmux-sdk"],
-
-    "@opensessions/tui": ["@opensessions/tui@workspace:apps/tui"],
-
     "@opentui/core": ["@opentui/core@0.1.90", "", { "dependencies": { "bun-ffi-structs": "0.1.2", "diff": "8.0.2", "jimp": "1.6.0", "marked": "17.0.1", "yoga-layout": "3.2.1" }, "optionalDependencies": { "@dimforge/rapier2d-simd-compat": "^0.17.3", "@opentui/core-darwin-arm64": "0.1.90", "@opentui/core-darwin-x64": "0.1.90", "@opentui/core-linux-arm64": "0.1.90", "@opentui/core-linux-x64": "0.1.90", "@opentui/core-win32-arm64": "0.1.90", "@opentui/core-win32-x64": "0.1.90", "bun-webgpu": "0.1.5", "planck": "^1.4.2", "three": "0.177.0" }, "peerDependencies": { "web-tree-sitter": "0.25.10" } }, "sha512-Os2dviqWVETU3kaK36lbSvdcI93GAWhw0xb9ng/d0DWYuM9scRmAhLHiOayp61saWv/BR8OJXeuQYHvrp5rd6A=="],
 
     "@opentui/core-darwin-arm64": ["@opentui/core-darwin-arm64@0.1.90", "", { "os": "darwin", "cpu": "arm64" }, "sha512-XFrm2zCg1SlHPQ5A2HX/I4dCrmTjYaCJIIpo3QuPIvZBGH3aBMdWDJh2tXw7AB5Mmh8X1K4hDkP5nlK9x0Ewow=="],
@@ -242,6 +228,20 @@
     "@opentui/core-win32-x64": ["@opentui/core-win32-x64@0.1.90", "", { "os": "win32", "cpu": "x64" }, "sha512-aVFyErckWp4oW9NJ/ZDKBUAlTlfVUiRXGP63JXFOoeqI7EYaM8uBt6rgZAJuUdFWCN2Q66WRS8Y2mk+0BJwVBg=="],
 
     "@opentui/solid": ["@opentui/solid@0.1.90", "", { "dependencies": { "@babel/core": "7.28.0", "@babel/preset-typescript": "7.27.1", "@opentui/core": "0.1.90", "babel-plugin-module-resolver": "5.0.2", "babel-preset-solid": "1.9.10", "entities": "7.0.1", "s-js": "^0.4.9" }, "peerDependencies": { "solid-js": "1.9.11" } }, "sha512-zEHDpJOTGS707ts5j4diqoWuFLSqV6yARKl1H0FJkwWOotu+rxCyksL+C0gX0jJUonAw2cjlZ2NNtZY8g78zkg=="],
+
+    "@tcm/mux": ["@tcm/mux@workspace:packages/mux/contract"],
+
+    "@tcm/mux-tmux": ["@tcm/mux-tmux@workspace:packages/mux/providers/tmux"],
+
+    "@tcm/mux-zellij": ["@tcm/mux-zellij@workspace:packages/mux/providers/zellij"],
+
+    "@tcm/runtime": ["@tcm/runtime@workspace:packages/runtime"],
+
+    "@tcm/server": ["@tcm/server@workspace:apps/server"],
+
+    "@tcm/tmux-sdk": ["@tcm/tmux-sdk@workspace:packages/mux/tmux-sdk"],
+
+    "@tcm/tui": ["@tcm/tui@workspace:apps/tui"],
 
     "@tokenizer/token": ["@tokenizer/token@0.3.0", "", {}, "sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A=="],
 
@@ -477,6 +477,20 @@
 
     "zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 
+    "@tcm/mux/@types/bun": ["@types/bun@1.3.13", "", { "dependencies": { "bun-types": "1.3.13" } }, "sha512-9fqXWk5YIHGGnUau9TEi+qdlTYDAnOj+xLCmSTwXfAIqXr2x4tytJb43E9uCvt09zJURKXwAtkoH4nLQfzeTXw=="],
+
+    "@tcm/mux-tmux/@types/bun": ["@types/bun@1.3.13", "", { "dependencies": { "bun-types": "1.3.13" } }, "sha512-9fqXWk5YIHGGnUau9TEi+qdlTYDAnOj+xLCmSTwXfAIqXr2x4tytJb43E9uCvt09zJURKXwAtkoH4nLQfzeTXw=="],
+
+    "@tcm/mux-zellij/@types/bun": ["@types/bun@1.3.13", "", { "dependencies": { "bun-types": "1.3.13" } }, "sha512-9fqXWk5YIHGGnUau9TEi+qdlTYDAnOj+xLCmSTwXfAIqXr2x4tytJb43E9uCvt09zJURKXwAtkoH4nLQfzeTXw=="],
+
+    "@tcm/runtime/@types/bun": ["@types/bun@1.3.13", "", { "dependencies": { "bun-types": "1.3.13" } }, "sha512-9fqXWk5YIHGGnUau9TEi+qdlTYDAnOj+xLCmSTwXfAIqXr2x4tytJb43E9uCvt09zJURKXwAtkoH4nLQfzeTXw=="],
+
+    "@tcm/server/@types/bun": ["@types/bun@1.3.13", "", { "dependencies": { "bun-types": "1.3.13" } }, "sha512-9fqXWk5YIHGGnUau9TEi+qdlTYDAnOj+xLCmSTwXfAIqXr2x4tytJb43E9uCvt09zJURKXwAtkoH4nLQfzeTXw=="],
+
+    "@tcm/tmux-sdk/@types/bun": ["@types/bun@1.3.13", "", { "dependencies": { "bun-types": "1.3.13" } }, "sha512-9fqXWk5YIHGGnUau9TEi+qdlTYDAnOj+xLCmSTwXfAIqXr2x4tytJb43E9uCvt09zJURKXwAtkoH4nLQfzeTXw=="],
+
+    "@tcm/tui/@types/bun": ["@types/bun@1.3.13", "", { "dependencies": { "bun-types": "1.3.13" } }, "sha512-9fqXWk5YIHGGnUau9TEi+qdlTYDAnOj+xLCmSTwXfAIqXr2x4tytJb43E9uCvt09zJURKXwAtkoH4nLQfzeTXw=="],
+
     "babel-plugin-jsx-dom-expressions/@babel/helper-module-imports": ["@babel/helper-module-imports@7.18.6", "", { "dependencies": { "@babel/types": "^7.18.6" } }, "sha512-0NFvs3VkuSYbFi1x2Vd6tKrywq+z/cLeYC/RJNFrIX/30Bf5aiGYbtvGXolEktzJH8o5E5KJ3tT+nkxuuZFVlA=="],
 
     "image-q/@types/node": ["@types/node@16.9.1", "", {}, "sha512-QpLcX9ZSsq3YYUUnD3nFDY8H7wctAhQj/TFKL8Ya8v5fMm3CFXxo8zStsLAl780ltoYoo1WvKUVGBQK+1ifr7g=="],
@@ -488,5 +502,19 @@
     "path-scurry/minipass": ["minipass@7.1.3", "", {}, "sha512-tEBHqDnIoM/1rXME1zgka9g6Q2lcoCkxHLuc7ODJ5BxbP5d4c2Z5cGgtXAku59200Cx7diuHTOYfSBD8n6mm8A=="],
 
     "pixelmatch/pngjs": ["pngjs@6.0.0", "", {}, "sha512-TRzzuFRRmEoSW/p1KVAmiOgPco2Irlah+bGFCeNfJXxxYGwSw7YwAOAcd7X28K/m5bjBWKsC29KyoMfHbypayg=="],
+
+    "@tcm/mux-tmux/@types/bun/bun-types": ["bun-types@1.3.13", "", { "dependencies": { "@types/node": "*" } }, "sha512-QXKeHLlOLqQX9LgYaHJfzdBaV21T63HhFJnvuRCcjZiaUDpbs5ED1MgxbMra71CsryN/1dAoXuJJJwIv/2drVA=="],
+
+    "@tcm/mux-zellij/@types/bun/bun-types": ["bun-types@1.3.13", "", { "dependencies": { "@types/node": "*" } }, "sha512-QXKeHLlOLqQX9LgYaHJfzdBaV21T63HhFJnvuRCcjZiaUDpbs5ED1MgxbMra71CsryN/1dAoXuJJJwIv/2drVA=="],
+
+    "@tcm/mux/@types/bun/bun-types": ["bun-types@1.3.13", "", { "dependencies": { "@types/node": "*" } }, "sha512-QXKeHLlOLqQX9LgYaHJfzdBaV21T63HhFJnvuRCcjZiaUDpbs5ED1MgxbMra71CsryN/1dAoXuJJJwIv/2drVA=="],
+
+    "@tcm/runtime/@types/bun/bun-types": ["bun-types@1.3.13", "", { "dependencies": { "@types/node": "*" } }, "sha512-QXKeHLlOLqQX9LgYaHJfzdBaV21T63HhFJnvuRCcjZiaUDpbs5ED1MgxbMra71CsryN/1dAoXuJJJwIv/2drVA=="],
+
+    "@tcm/server/@types/bun/bun-types": ["bun-types@1.3.13", "", { "dependencies": { "@types/node": "*" } }, "sha512-QXKeHLlOLqQX9LgYaHJfzdBaV21T63HhFJnvuRCcjZiaUDpbs5ED1MgxbMra71CsryN/1dAoXuJJJwIv/2drVA=="],
+
+    "@tcm/tmux-sdk/@types/bun/bun-types": ["bun-types@1.3.13", "", { "dependencies": { "@types/node": "*" } }, "sha512-QXKeHLlOLqQX9LgYaHJfzdBaV21T63HhFJnvuRCcjZiaUDpbs5ED1MgxbMra71CsryN/1dAoXuJJJwIv/2drVA=="],
+
+    "@tcm/tui/@types/bun/bun-types": ["bun-types@1.3.13", "", { "dependencies": { "@types/node": "*" } }, "sha512-QXKeHLlOLqQX9LgYaHJfzdBaV21T63HhFJnvuRCcjZiaUDpbs5ED1MgxbMra71CsryN/1dAoXuJJJwIv/2drVA=="],
   }
 }

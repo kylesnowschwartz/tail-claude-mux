@@ -1,11 +1,11 @@
 {
-  "name": "@opensessions/mux-zellij",
+  "name": "@tcm/mux-zellij",
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "dependencies": {
-    "@opensessions/mux": "workspace:*"
+    "@tcm/mux": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",
