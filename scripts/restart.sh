@@ -52,4 +52,20 @@ if [[ -n "$WINDOW_ID" ]]; then
     sleep 0.05
   done
 fi
+
+# 5. Re-source the tmux header so on-disk format-string and theme-token edits
+#    take effect immediately. The plugin entry sources header.tmux once at TPM
+#    load; without this step `just restart` would leave the live tmux session
+#    holding the previous format strings until prefix+r. Gated on the user's
+#    @opensessions-header opt-in so we never write status-line options when
+#    the header is disabled. Tolerant of "not in tmux" — show-option then
+#    returns empty and we skip.
+HEADER_ENABLED="$(tmux show-option -gv '@opensessions-header' 2>/dev/null || true)"
+if [[ "$HEADER_ENABLED" == "on" ]]; then
+  HEADER_FILE="$ROOT/integrations/tmux-plugin/scripts/header.tmux"
+  if [[ -f "$HEADER_FILE" ]] && tmux source-file "$HEADER_FILE" 2>/dev/null; then
+    echo "==> Re-sourced tmux header."
+  fi
+fi
+
 echo "==> Ready."
