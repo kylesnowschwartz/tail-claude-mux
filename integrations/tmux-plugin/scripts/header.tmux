@@ -48,11 +48,11 @@ set -g window-status-last-style "default"
 # scheme bypassed renames; tokyo-night-tmux popularised `#I #W` and the rename
 # behaviour is what users expect.
 #
-# Last-window indicator: yellow `nf-md` U+F08C0 marks the most-recently-visited
+# Last-window indicator: yellow `nf-md` U+F054C (undo curl-back) marks the most-recently-visited
 # window so prefix-l navigation has a glance target. Width grows by 2 cells
 # only on the marked tab; harmless given exactly one window carries the flag.
-set -g window-status-format " #{?@os-agent,#[fg=#{@os-agent-fg}]#{@os-agent},#[fg=#{?@os-thm-overlay0,#{@os-thm-overlay0},default}]}#[default] #I #W#{?window_zoomed_flag, Z,}#{?window_last_flag,#[fg=#{?@os-thm-yellow,#{@os-thm-yellow},default}] 󰣀,} "
-set -g window-status-current-format " #{?@os-agent,#[fg=#{@os-agent-fg}]#{@os-agent},}#[default,fg=#{?@os-thm-blue,#{@os-thm-blue},default},bg=#{?@os-thm-surface0,#{@os-thm-surface0},default},bold] #I #W#{?window_zoomed_flag, Z,}#{?window_last_flag,#[fg=#{?@os-thm-yellow,#{@os-thm-yellow},default}] 󰣀,} "
+set -g window-status-format " #{?@os-agent,#[fg=#{@os-agent-fg}]#{@os-agent},#[fg=#{?@os-thm-overlay0,#{@os-thm-overlay0},default}]}#[default] #I #W#{?window_zoomed_flag, Z,}#{?window_last_flag,#[fg=#{?@os-thm-yellow,#{@os-thm-yellow},default}] 󰕌,} "
+set -g window-status-current-format " #{?@os-agent,#[fg=#{@os-agent-fg}]#{@os-agent},}#[default,fg=#{?@os-thm-blue,#{@os-thm-blue},default},bg=#{?@os-thm-surface0,#{@os-thm-surface0},default},bold] #I #W#{?window_zoomed_flag, Z,}#{?window_last_flag,#[fg=#{?@os-thm-yellow,#{@os-thm-yellow},default}] 󰕌,} "
 # Single-space separator between windows (paired with the trailing pad above
 # this gives 2 cells of breathing room — visually close to a tab gutter).
 

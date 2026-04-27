@@ -207,7 +207,7 @@ The shell-only case mirrors tokyo-night-tmux's leading boxed-terminal glyph. It 
 
 ### 6.2 Last-window-flag indicator
 
-The most-recently-visited window (the target of tmux's `prefix l` / `last-window` binding) carries a yellow trailing glyph: nf-md U+F08C0 in `theme.yellow`. Other tabs render only the standard trailing space. The marked tab is therefore 2 cells wider than its peers — acceptable because exactly one window holds the flag at a time.
+The most-recently-visited window (the target of tmux's `prefix l` / `last-window` binding) carries a yellow trailing glyph: nf-md U+F054C (undo, curl-back arrow) in `theme.yellow`. Other tabs render only the standard trailing space. The marked tab is therefore 2 cells wider than its peers — acceptable because exactly one window holds the flag at a time.
 
 The `#{?@os-thm-base,#{@os-thm-base},default}` chain ensures the status line is readable on first paint before the server has written palette options.
 

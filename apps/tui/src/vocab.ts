@@ -52,7 +52,7 @@ export const ID_GENERIC = "\u{F167A}";       // nf-md-robot-outline
 // vocabulary doc has a single source of truth across surfaces.
 // See `integrations/tmux-plugin/scripts/header.tmux` for usage.
 export const STATUSLINE_SHELL = "\u{EA85}";    // nf-cod-terminal (boxed >_)
-export const STATUSLINE_LAST_WINDOW = "\u{F08C0}"; // last-visited-window marker
+export const STATUSLINE_LAST_WINDOW = "\u{F054C}"; // nf-md-undo — last-visited-window marker (curl-back)
 
 /** Resolve an identity glyph for a known agent type, falling back to generic. */
 export function identityGlyph(agent: string): string {
