@@ -277,4 +277,3 @@ The current runtime passes `127.0.0.1:7391` here.
 
 - Build a custom watcher: see the `AgentWatcher` section above.
 - Push metadata from scripts: see [docs/reference/programmatic-api.md](./docs/reference/programmatic-api.md).
-- Understand the end-to-end runtime: see [docs/explanation/architecture.md](./docs/explanation/architecture.md).

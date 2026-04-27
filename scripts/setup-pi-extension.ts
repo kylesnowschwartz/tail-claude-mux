@@ -44,7 +44,7 @@ if (existsSync(target) || isDanglingSymlink(target)) {
 symlinkSync(source, target);
 console.log(`Linked: ${target} -> ${source}`);
 console.log(
-  `\nNext step: start a new pi session inside a tmux/zellij session that\n` +
+  `\nNext step: start a new pi session inside a tmux session that\n` +
   `tcm is monitoring. Pi will appear in the sidebar HUD.`,
 );
 

@@ -662,16 +662,6 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     const name = lastState.sessions[idx]!.name;
     const p = sessionProviders.get(name) ?? mux;
     p.switchSession(name, clientTty);
-
-    if (sidebarVisible && isFullSidebarCapable(p) && p.name === "zellij") {
-      const activeWindows = p.listActiveWindows();
-      const targetWindow = activeWindows.find((w) => w.sessionName === name);
-      if (targetWindow) {
-        setTimeout(() => {
-          ensureSidebarInWindow(p, { session: name, windowId: targetWindow.id });
-        }, 500);
-      }
-    }
   }
 
   // --- Sidebar management ---
@@ -1267,24 +1257,6 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
           ?? cmd.clientTty ?? clientTtys.get(ws);
         log("switch-session", "switching", { target: cmd.name, tty, clientSess });
         const p = sessionProviders.get(cmd.name) ?? mux;
-
-        // Detect cross-mux switch (e.g., zellij→tmux or tmux→zellij)
-        const sourceProvider = clientSess ? sessionProviders.get(clientSess) : null;
-        if (sourceProvider && sourceProvider.name !== p.name) {
-          log("switch-session", "cross-mux detected", {
-            source: sourceProvider.name, target: p.name, sourceSession: clientSess,
-          });
-          if (sourceProvider.name === "zellij" && p.name === "tmux") {
-            // Write reattach target for the bash wrapper
-            writeFileSync("/tmp/tcm-reattach", cmd.name);
-            // Detach from zellij — the wrapper script will auto-attach to tmux
-            Bun.spawnSync(["zellij", "--session", clientSess!, "action", "detach"], {
-              stdout: "pipe", stderr: "pipe",
-            });
-            break; // Don't call p.switchSession — the wrapper handles it
-          }
-        }
-
         p.switchSession(cmd.name, tty);
 
         // Optimistic server-side focus update — so other TUI instances see the
@@ -1298,25 +1270,6 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
           broadcastState();
         } else {
           broadcastFocusOnly();
-        }
-
-        // Auto-ensure sidebar in the target session if sidebar is visible.
-        // In tmux, hooks handle this — but zellij has no hooks, so we do it here.
-        // Use listActiveWindows() to find the target session's active tab
-        // (getCurrentWindowId() won't work from the server since ZELLIJ_SESSION_NAME isn't set).
-        if (sidebarVisible && isFullSidebarCapable(p) && p.name === "zellij") {
-          const activeWindows = p.listActiveWindows();
-          const targetWindow = activeWindows.find((w) => w.sessionName === cmd.name);
-          log("switch-session", "auto-ensure sidebar", {
-            target: cmd.name, provider: p.name,
-            activeWindows: activeWindows.length, targetWindow: targetWindow?.id ?? null,
-          });
-          if (targetWindow) {
-            // 1.5s delay — zellij needs time to attach the client before we can spawn panes
-            setTimeout(() => {
-              ensureSidebarInWindow(p, { session: cmd.name, windowId: targetWindow.id });
-            }, 1500);
-          }
         }
         break;
       }

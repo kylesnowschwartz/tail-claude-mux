@@ -35,8 +35,8 @@ describe("MuxRegistry", () => {
 
   test("register multiple providers", () => {
     registry.register(fakeMux("tmux"));
-    registry.register(fakeMux("zellij"));
-    expect(registry.list()).toEqual(["tmux", "zellij"]);
+    registry.register(fakeMux("screen"));
+    expect(registry.list()).toEqual(["tmux", "screen"]);
   });
 
   test("register overwrites provider with same name", () => {
@@ -57,7 +57,7 @@ describe("MuxRegistry", () => {
   });
 
   test("get returns null for unknown provider", () => {
-    expect(registry.get("zellij")).toBeNull();
+    expect(registry.get("screen")).toBeNull();
   });
 
   // --- resolve (auto-detect + config override) ---
@@ -71,7 +71,7 @@ describe("MuxRegistry", () => {
 
   test("resolve returns null when requested provider not registered", () => {
     registry.register(fakeMux("tmux"));
-    expect(registry.resolve("zellij")).toBeNull();
+    expect(registry.resolve("screen")).toBeNull();
   });
 
   test("resolve with no preference auto-detects from env", () => {

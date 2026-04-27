@@ -41,12 +41,12 @@ describe("Config", () => {
     const configDir = join(tmpDir, ".config", "tcm");
     await Bun.write(
       join(configDir, "config.json"),
-      JSON.stringify({ mux: "zellij", plugins: ["tcm-mux-zellij"] }),
+      JSON.stringify({ mux: "tmux", plugins: ["tcm-mux-experimental"] }),
     );
 
     const config = loadConfig(tmpDir);
-    expect(config.mux).toBe("zellij");
-    expect(config.plugins).toEqual(["tcm-mux-zellij"]);
+    expect(config.mux).toBe("tmux");
+    expect(config.plugins).toEqual(["tcm-mux-experimental"]);
 
     const { rmSync } = require("fs");
     rmSync(tmpDir, { recursive: true, force: true });

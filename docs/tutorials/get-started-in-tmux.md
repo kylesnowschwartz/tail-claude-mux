@@ -123,4 +123,3 @@ You now have tcm wired into tmux as a toggleable sidebar. From here you can move
 
 - [Configuration reference](../reference/configuration.md)
 - [Features and keybindings reference](../reference/features-and-keybindings.md)
-- [Architecture explanation](../explanation/architecture.md)

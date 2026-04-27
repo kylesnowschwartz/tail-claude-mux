@@ -29,10 +29,10 @@ describe("PluginLoader", () => {
     expect(loader.registry.list()).toContain("tmux");
   });
 
-  test("registerMux adds a community provider", () => {
+  test("registerMux adds a second provider", () => {
     const loader = new PluginLoader();
-    loader.registerMux(fakeMux("zellij"));
-    expect(loader.registry.list()).toContain("zellij");
+    loader.registerMux(fakeMux("screen"));
+    expect(loader.registry.list()).toContain("screen");
   });
 
   test("resolve with no config uses auto-detect", () => {
@@ -49,9 +49,9 @@ describe("PluginLoader", () => {
   test("resolve with explicit mux override", () => {
     const loader = new PluginLoader();
     loader.registerMux(fakeMux("tmux"));
-    loader.registerMux(fakeMux("zellij"));
-    const mux = loader.resolve("zellij");
-    expect(mux?.name).toBe("zellij");
+    loader.registerMux(fakeMux("screen"));
+    const mux = loader.resolve("screen");
+    expect(mux?.name).toBe("screen");
   });
 
   test("resolve returns null for unregistered override", () => {

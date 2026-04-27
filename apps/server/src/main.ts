@@ -12,7 +12,7 @@ import { join } from "path";
 const config = loadConfig();
 const loader = new PluginLoader();
 
-for (const pkg of ["@tcm/mux-tmux", "@tcm/mux-zellij"]) {
+for (const pkg of ["@tcm/mux-tmux"]) {
   try {
     const mod = require(pkg);
     const factory = typeof mod.default === "function" ? mod.default : mod;
@@ -45,7 +45,7 @@ if (!mux) {
   console.error(
     "No terminal multiplexer detected.\n" +
     `Registered providers: ${loader.registry.list().join(", ") || "(none)"}\n` +
-    "Are you running inside tmux or zellij?\n" +
+    "Are you running inside tmux?\n" +
     "Set 'mux' in ~/.config/tcm/config.json to override.",
   );
   process.exit(1);

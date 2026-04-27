@@ -8,7 +8,7 @@ export interface OpensessionsConfig {
   mux?: string;
   /** Custom server port */
   port?: number;
-  /** Community plugin package names to load (e.g. ["tcm-mux-zellij"]) */
+  /** Plugin package names to load (legacy field; the loader is being retired) */
   plugins: string[];
   /** Theme: builtin name (e.g. "catppuccin-latte") or partial inline theme object */
   theme?: string | PartialTheme;

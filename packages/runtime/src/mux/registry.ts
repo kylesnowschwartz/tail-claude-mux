@@ -3,10 +3,9 @@ import type { MuxProvider } from "../contracts/mux";
 /**
  * Registry for MuxProvider implementations.
  *
- * Community packages (tcm-mux-*) register their provider here.
  * The server resolves which provider to use via:
  *   1. Explicit config override (user picks a mux by name)
- *   2. Auto-detect from env ($TMUX, $ZELLIJ_SESSION_NAME)
+ *   2. Auto-detect from env ($TMUX)
  *   3. First registered provider as fallback
  */
 export class MuxRegistry {
@@ -38,9 +37,6 @@ export class MuxRegistry {
     // 2. Auto-detect from environment
     if (process.env.TMUX && this.providers.has("tmux")) {
       return this.providers.get("tmux")!;
-    }
-    if (process.env.ZELLIJ_SESSION_NAME && this.providers.has("zellij")) {
-      return this.providers.get("zellij")!;
     }
 
     // 3. No match

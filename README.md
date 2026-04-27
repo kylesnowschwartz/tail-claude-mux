@@ -38,7 +38,6 @@ Then remove the `set -g @plugin` line from `~/.tmux.conf` and run `prefix + alt 
 - [Configuration](./docs/reference/configuration.md)
 - [Keybindings](./docs/reference/features-and-keybindings.md)
 - [Programmatic API](./docs/reference/programmatic-api.md) — push status / progress / logs to the sidebar over HTTP
-- [Architecture](./docs/explanation/architecture.md)
 - [Internal contracts](./CONTRACTS.md)
 
 ## License
