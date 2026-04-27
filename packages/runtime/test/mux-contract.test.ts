@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import type { MuxProvider, MuxProviderV1, MuxSessionInfo, FullMuxProvider } from "../src/contracts/mux";
+import type { MuxProvider, MuxSessionInfo } from "../src/contracts/mux";
 import { isWindowCapable, isSidebarCapable, isBatchCapable, isFullSidebarCapable } from "../src/contracts/mux";
 
 describe("Mux Contract", () => {
@@ -17,9 +17,8 @@ describe("Mux Contract", () => {
     expect(info.windows).toBe(2);
   });
 
-  test("MuxProviderV1 interface has specificationVersion and required methods", () => {
+  test("MuxProviderV1 interface has required methods", () => {
     const mock: MuxProvider = {
-      specificationVersion: "v1",
       name: "test-mux",
       listSessions: () => [],
       switchSession: (_name: string, _clientTty?: string) => {},
@@ -33,7 +32,6 @@ describe("Mux Contract", () => {
       cleanupHooks: () => {},
     };
 
-    expect(mock.specificationVersion).toBe("v1");
     expect(mock.name).toBe("test-mux");
     expect(mock.listSessions()).toEqual([]);
     expect(mock.getCurrentSession()).toBeNull();
@@ -43,7 +41,6 @@ describe("Mux Contract", () => {
 
   test("MuxProvider supports optional capability methods", () => {
     const mock: MuxProvider = {
-      specificationVersion: "v1",
       name: "test-mux",
       listSessions: () => [],
       switchSession: () => {},
@@ -73,7 +70,6 @@ describe("Mux Contract", () => {
   test("type guards correctly narrow capabilities", () => {
     // Minimal provider — no capabilities
     const minimal: MuxProvider = {
-      specificationVersion: "v1",
       name: "minimal",
       listSessions: () => [],
       switchSession: () => {},

@@ -221,8 +221,7 @@ function syncGitWatchers(sessions: SessionData[], broadcastFn: () => void) {
 
 // --- Server startup ---
 
-export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], watchers?: AgentWatcher[]): void {
-  const allProviders = [mux, ...(extraProviders ?? [])];
+export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   const allWatchers = watchers ?? [];
   const tracker = new AgentTracker();
   const metadataStore = new SessionMetadataStore();
@@ -232,7 +231,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
 
   // Clear previous log on server start
   try { writeFileSync(DEBUG_LOG, ""); } catch {}
-  log("server", "starting", { providers: allProviders.map((p) => p.name) });
+  log("server", "starting", { providers: [mux.name] });
 
   // Load initial theme from config
   const config = loadConfig();
@@ -365,10 +364,8 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
     const now = Date.now();
     if (dirSessionCache && now - dirSessionCacheTs < DIR_CACHE_TTL) return dirSessionCache;
     const map = new Map<string, string>();
-    for (const p of allProviders) {
-      for (const s of p.listSessions()) {
-        if (s.dir) map.set(s.dir, s.name);
-      }
+    for (const s of mux.listSessions()) {
+      if (s.dir) map.set(s.dir, s.name);
     }
     dirSessionCache = map;
     dirSessionCacheTs = now;
@@ -493,25 +490,19 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
   const clientTtyBySession = new Map<string, string>();
 
   function getCurrentSession(): string | null {
-    // Try all providers until one returns a session
-    for (const p of allProviders) {
-      const result = p.getCurrentSession();
-      if (result) {
-        log("getCurrentSession", "result", { result, provider: p.name });
-        return result;
-      }
+    const result = mux.getCurrentSession();
+    if (result) {
+      log("getCurrentSession", "result", { result, provider: mux.name });
+      return result;
     }
     log("getCurrentSession", "no provider returned a session");
     return null;
   }
 
   function computeState(): ServerState {
-    // Merge sessions from all providers
     const allMuxSessions: (import("../contracts/mux").MuxSessionInfo & { provider: MuxProvider })[] = [];
-    for (const p of allProviders) {
-      for (const s of p.listSessions()) {
-        allMuxSessions.push({ ...s, provider: p });
-      }
+    for (const s of mux.listSessions()) {
+      allMuxSessions.push({ ...s, provider: mux });
     }
     allMuxSessions.sort((a, b) => {
       if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
@@ -533,10 +524,8 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
 
     // Batch pane counts per provider (uses BatchCapable type guard)
     const paneCountMaps = new Map<MuxProvider, Map<string, number>>();
-    for (const p of allProviders) {
-      if (isBatchCapable(p)) {
-        paneCountMaps.set(p, p.getAllPaneCounts());
-      }
+    if (isBatchCapable(mux)) {
+      paneCountMaps.set(mux, mux.getAllPaneCounts());
     }
 
     const sessions: SessionData[] = orderedMuxSessions.map(({ name, createdAt, windows, dir, provider }) => {
@@ -711,7 +700,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
   // --- Sidebar management ---
 
   function getProvidersWithSidebar() {
-    return allProviders.filter(isFullSidebarCapable);
+    return isFullSidebarCapable(mux) ? [mux] : [];
   }
 
   /** Parse "clientTty|session|windowId" or legacy "session:windowId" context from POST body */
@@ -764,7 +753,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
 
   const pendingSidebarSpawns = new Set<string>();
 
-  function toggleSidebar(ctx?: { session: string; windowId: string }): void {
+  function toggleSidebar(_ctx?: { session: string; windowId: string }): void {
     const providers = getProvidersWithSidebar();
     if (providers.length === 0) {
       log("toggle", "SKIP — no providers with sidebar methods");
@@ -1249,7 +1238,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
 
   /** Refresh pane agent presence by scanning tmux panes and folding results into the tracker. */
   function refreshPaneAgents(): void {
-    const hasTmux = allProviders.some((p) => p.name === "tmux");
+    const hasTmux = mux.name === "tmux";
     if (!hasTmux) {
       // No tmux provider — mark all previously-alive agents as exited
       // by applying empty presence for each tracked session
@@ -1460,7 +1449,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
       externalThemeWatcher = null;
     }
     try { unlinkSync(PID_FILE); } catch {}
-    for (const p of allProviders) p.cleanupHooks();
+    mux.cleanupHooks();
   }
 
   // --- Write PID + start server ---
@@ -1766,16 +1755,15 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
   // forget today: a silent tmux failure here is the difference between
   // "agents update live" and "sidebar feels frozen". See docs in
   // packages/mux/providers/tmux/src/provider.ts -> setupHooks().
-  for (const p of allProviders) {
-    log("bootstrap", "installing hooks", { provider: p.name });
-    try {
-      p.setupHooks(SERVER_HOST, SERVER_PORT);
-    } catch (err) {
-      log("bootstrap", "setupHooks threw", { provider: p.name, error: err instanceof Error ? err.message : String(err) });
-      continue;
-    }
-    if (p.name === "tmux") verifyTmuxHooksInstalled();
+  log("bootstrap", "installing hooks", { provider: mux.name });
+  let setupOk = true;
+  try {
+    mux.setupHooks(SERVER_HOST, SERVER_PORT);
+  } catch (err) {
+    log("bootstrap", "setupHooks threw", { provider: mux.name, error: err instanceof Error ? err.message : String(err) });
+    setupOk = false;
   }
+  if (setupOk && mux.name === "tmux") verifyTmuxHooksInstalled();
 
   // Detect pre-existing sidebar panes (e.g. after a server restart while
   // TUI sidebars are still running and reconnecting)
@@ -1854,6 +1842,5 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
   process.on("SIGINT", () => { cleanup(); process.exit(0); });
   process.on("SIGTERM", () => { cleanup(); process.exit(0); });
 
-  const names = allProviders.map((p) => p.name).join(", ");
-  console.log(`tcm server listening on ${SERVER_HOST}:${SERVER_PORT} (mux: ${names})`);
+  console.log(`tcm server listening on ${SERVER_HOST}:${SERVER_PORT} (mux: ${mux.name})`);
 }

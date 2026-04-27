@@ -187,7 +187,6 @@ type SidebarPosition = "left" | "right";
 
 ```ts
 interface MuxProviderV1 {
-  readonly specificationVersion: "v1";
   readonly name: string;
 
   listSessions(): MuxSessionInfo[];

@@ -11,4 +11,4 @@ const watchers = [new ClaudeCodeHookAdapter(), new PiHookAdapter()];
 console.log(`Primary mux provider: ${mux.name}`);
 console.log(`Agent watchers: ${watchers.map((w) => w.name).join(", ")}`);
 
-startServer(mux, [], watchers);
+startServer(mux, watchers);

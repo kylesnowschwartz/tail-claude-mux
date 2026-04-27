@@ -1,8 +1,3 @@
-// ─── Specification version ───────────────────────────────────────────────────
-// Like ai-sdk's specificationVersion — a literal discriminant for version compat.
-
-export type MuxSpecificationVersion = "v1";
-
 // ─── Core data types ─────────────────────────────────────────────────────────
 
 export interface MuxSessionInfo {
@@ -29,20 +24,14 @@ export interface SidebarPane {
 /** Position for sidebar placement */
 export type SidebarPosition = "left" | "right";
 
-/** Provider-specific metadata (escape hatch — like ai-sdk's providerMetadata) */
-export type MuxProviderMetadata = Record<string, Record<string, unknown>>;
-
 // ─── Capability interfaces ───────────────────────────────────────────────────
 // Split from one monolith into composable traits. Providers implement what they
 // support. The server narrows with type guards, not NonNullable hacks.
 
 /**
  * Core mux operations — every provider MUST implement this.
- *
- * Like ai-sdk's ProviderV4 required methods (languageModel, embeddingModel).
  */
 export interface MuxProviderV1 {
-  readonly specificationVersion: "v1";
   readonly name: string;
 
   // Session CRUD
@@ -105,13 +94,11 @@ export type FullMuxProvider = MuxProviderV1 & WindowCapable & SidebarCapable & B
 
 /**
  * The union type the server accepts — core is required, capabilities are optional.
- *
- * Like ai-sdk's LanguageModel = V2 | V3 | V4 — accepts any level of capability.
  */
 export type MuxProvider = MuxProviderV1 & Partial<WindowCapable & SidebarCapable & BatchCapable>;
 
 // ─── Type guards ─────────────────────────────────────────────────────────────
-// Runtime narrowing — like ai-sdk's isInstance() pattern, but for capabilities.
+// Runtime narrowing for capabilities.
 
 /** Check if a provider supports window operations */
 export function isWindowCapable(p: MuxProvider): p is MuxProviderV1 & WindowCapable {
@@ -143,10 +130,3 @@ export function isFullSidebarCapable(
   return isWindowCapable(p) && isSidebarCapable(p);
 }
 
-// ─── Provider settings ───────────────────────────────────────────────────────
-// Like ai-sdk's OpenAIProviderSettings — each provider can extend this.
-
-export interface MuxProviderSettings {
-  /** Override the provider name (for custom/wrapped providers) */
-  name?: string;
-}

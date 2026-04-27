@@ -11,12 +11,6 @@ import type {
 import { TmuxClient } from "./client";
 import { appendFileSync } from "fs";
 
-/** Settings for creating a tmux provider (ai-sdk style) */
-export interface TmuxProviderSettings {
-  /** Override the provider name */
-  name?: string;
-}
-
 const tmux = new TmuxClient();
 
 function plog(msg: string, data?: Record<string, unknown>) {
@@ -37,12 +31,7 @@ const STASH_SESSION = "_tcm_stash";
 const SIDEBAR_PANE_TITLE = "tcm-sidebar";
 
 export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapable, BatchCapable {
-  readonly specificationVersion = "v1" as const;
-  readonly name: string;
-
-  constructor(settings?: TmuxProviderSettings) {
-    this.name = settings?.name ?? "tmux";
-  }
+  readonly name = "tmux";
 
   listSessions(): MuxSessionInfo[] {
     const sessions = tmux.listSessions()
@@ -179,7 +168,7 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
   }
 
   spawnSidebar(
-    sessionName: string,
+    _sessionName: string,
     windowId: string,
     width: number,
     position: SidebarPosition,

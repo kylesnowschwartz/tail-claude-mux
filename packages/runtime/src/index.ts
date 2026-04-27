@@ -9,7 +9,6 @@ export type {
   SidebarCapable,
   BatchCapable,
   FullMuxProvider,
-  MuxProviderSettings,
 } from "./contracts/mux";
 export {
   isWindowCapable,
@@ -24,8 +23,6 @@ export { isHookReceiver } from "./contracts/agent-watcher";
 export { AgentTracker } from "./agents/tracker";
 export { ClaudeCodeHookAdapter, toolDescription } from "./agents/watchers/claude-code-hooks";
 export { PiHookAdapter, piToolDescription } from "./agents/watchers/pi-hooks";
-export { MuxRegistry } from "./mux/registry";
-export { detectMux } from "./mux/detect";
 export { loadConfig, saveConfig } from "./config";
 export type { TcmConfig } from "./config";
 export { resolveTheme, BUILTIN_THEMES, DEFAULT_THEME } from "./themes";
