@@ -19,7 +19,7 @@
 export const SEV_WORKING_SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 export const SEV_WAITING = "\u{F009C}";   // nf-md-bell-alert
 export const SEV_READY = "\u{F05E1}";     // nf-md-check-circle-outline
-export const SEV_STOPPED = "\u{F09DF}";   // nf-md-circle-small
+export const SEV_STOPPED = "\u{F0667}";   // nf-md-stop-circle
 export const SEV_ERROR = "\u{F0028}";     // nf-md-alert-circle
 
 /** Determinate-progress variant for `working` (8 fill levels).
@@ -53,7 +53,7 @@ export const ID_GENERIC = "\u{F167A}";       // nf-md-robot-outline
 // vocabulary doc has a single source of truth across surfaces.
 // See `integrations/tmux-plugin/scripts/header.tmux` for usage.
 export const STATUSLINE_SHELL = "\u{EA85}";    // nf-cod-terminal (boxed >_)
-export const STATUSLINE_LAST_WINDOW = "\u{F054C}"; // nf-md-undo — last-visited-window marker (curl-back)
+export const STATUSLINE_LAST_WINDOW = "\u{F17B3}"; // nf-md-arrow_u_left — last-visited-window marker (curl-back)
 
 /** Resolve an identity glyph for a known agent type, falling back to generic. */
 export function identityGlyph(agent: string): string {
