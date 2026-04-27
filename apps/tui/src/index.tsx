@@ -27,6 +27,7 @@ import {
   SEV_ERROR,
   BRAND_CLAWD,
   BRANCH_GLYPH,
+  DIR_MISMATCH_GLYPH,
   WRAP_UP,
   WRAP_DOWN,
   ACTIVITY_LEAD,
@@ -1626,13 +1627,21 @@ function SessionCard(props: SessionCardProps) {
             </Show>
           </box>
 
-          {/* Row 2: branch */}
+          {/* Row 2: branch + dir-mismatch flag (focused only) */}
           <Show when={props.session.branch}>
-            <text truncate>
-              <span style={{ fg: props.isFocused ? P().pink : (props.paneFocused() ? P().overlay0 : P().surface2) }}>
-                {BRANCH_GLYPH}{" "}{truncBranch()}
-              </span>
-            </text>
+            <box flexDirection="row">
+              <text truncate>
+                <span style={{ fg: props.isFocused ? P().pink : (props.paneFocused() ? P().overlay0 : P().surface2) }}>
+                  {BRANCH_GLYPH}{" "}{truncBranch()}
+                </span>
+              </text>
+              <box flexGrow={1} />
+              <Show when={props.isFocused && dirMismatch()}>
+                <text flexShrink={0}>
+                  <span style={{ fg: P().overlay0, attributes: DIM }}>{" "}{DIR_MISMATCH_GLYPH}</span>
+                </text>
+              </Show>
+            </box>
           </Show>
 
           {/* Row 3: metadata summary (status + progress) — only when collapsed */}
@@ -1647,17 +1656,8 @@ function SessionCard(props: SessionCardProps) {
       {/* Expanded detail — shown inline when focused */}
       <Show when={props.isFocused}>
         <box flexDirection="column" paddingLeft={1}>
-          {/* Directory — only when cwd doesn't match session name */}
-          <Show when={dirMismatch()}>
-            <text truncate>
-              <span style={{ fg: P().subtext0 }}>{dirParts().project}</span>
-            </text>
-            <Show when={dirParts().parent}>
-              <text truncate>
-                <span style={{ fg: P().overlay0, attributes: DIM }}>{"  "}{dirParts().parent}</span>
-              </text>
-            </Show>
-          </Show>
+          {/* Directory mismatch is now flagged with DIR_MISMATCH_GLYPH on the
+              branch row above; the inline two-line cwd block has been retired. */}
           {/* Agent instances */}
           <Show when={agents().length > 0}>
             <box flexDirection="column">

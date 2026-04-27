@@ -13,6 +13,7 @@ const FOCUSED_BORDER = 2;          // <box border> on focused card: 1 col per si
 const NAME_TRUNC_LIMIT = 18;
 const BRANCH_TRUNC_LIMIT = 15;
 const BRANCH_ICON_COLS = 2;         // "⎇ " prefix when branch is present
+const DIR_MISMATCH_COLS = 2;        // " 󱧋" suffix on focused branch row when cwd leaf differs from session name
 
 // Expanded agent list item layout (inside focused card border + paddingLeft={1}):
 //   expandPad(1) + dismiss(2) + name + [threadId] + [unseenBadge] + statusIcon(2) + padRight(1)
@@ -46,7 +47,11 @@ export function computeMinSidebarWidth(sessions: SessionData[]): number {
     const branchLen = s.branch ? Math.min(s.branch.length, BRANCH_TRUNC_LIMIT) : 0;
     let branchRow = 0;
     if (branchLen) {
-      branchRow = PADDING_LEFT + BRANCH_ICON_COLS + branchLen + PADDING_RIGHT;
+      // Focused-card branch row also carries the dir-mismatch glyph when
+      // the cwd's leaf segment disagrees with the session name. Any card may
+      // become focused, so measure for it whenever the mismatch holds.
+      const mismatchCols = hasDirMismatch(s) ? DIR_MISMATCH_COLS : 0;
+      branchRow = PADDING_LEFT + BRANCH_ICON_COLS + branchLen + mismatchCols + PADDING_RIGHT;
     }
 
     widestContent = Math.max(widestContent, nameRow, branchRow);
@@ -62,6 +67,17 @@ export function computeMinSidebarWidth(sessions: SessionData[]): number {
   }
 
   return Math.max(ABSOLUTE_MIN_SIDEBAR_WIDTH, widestContent + FOCUSED_BORDER);
+}
+
+/** Mirrors the TUI's `dirMismatch` predicate: leaf segment of cwd differs
+ *  from the session name (after stripping a leading $HOME, which doesn't
+ *  affect the leaf). Kept inline so this module stays self-contained — no
+ *  cross-package dep on the TUI's formatDir helper. */
+function hasDirMismatch(s: SessionData): boolean {
+  if (!s.dir) return false;
+  const segments = s.dir.split("/").filter(Boolean);
+  const leaf = segments[segments.length - 1];
+  return !!leaf && leaf !== s.name;
 }
 
 /** Mirrors the TUI's agentCount/agentBadge logic: " ●" for 1, " ●N" for N>1. */

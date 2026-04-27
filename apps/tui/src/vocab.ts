@@ -37,6 +37,7 @@ export { STATUSLINE_LAST_WINDOW, STATUSLINE_SHELL } from "@tcm/runtime";
 // ── Structural & branding glyphs ──
 export const BRAND_CLAWD = ID_CLAUDE_CODE;   // header product mark
 export const BRANCH_GLYPH = "\u{F062C}";     // nf-md-source-branch
+export const DIR_MISMATCH_GLYPH = "\u{F19CB}"; // nf-md-folder-question-outline
 export const ACTIVITY_LEAD = "\u{F0142}";    // nf-md-chevron-right
 export const ACTIVITY_HEAD = "\u{F0054}";    // nf-md-arrow-right (heading separator)
 export const WRAP_UP = "\u{F0143}";          // nf-md-chevron-up (rolodex top)

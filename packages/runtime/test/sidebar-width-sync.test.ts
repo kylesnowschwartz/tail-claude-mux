@@ -58,10 +58,13 @@ describe("sidebar width sync", () => {
 });
 
 function makeSession(overrides: Partial<SessionData> = {}): SessionData {
+  const name = overrides.name ?? "test";
+  // Default dir's leaf matches the session name so the helper does not
+  // accidentally trigger dirMismatch in tests that only override `name`.
   return {
-    name: "test",
+    name,
     createdAt: 0,
-    dir: "/tmp/test",
+    dir: `/tmp/${name}`,
     branch: "",
     dirty: false,
     isWorktree: false,
@@ -104,6 +107,21 @@ describe("computeMinSidebarWidth", () => {
     // widest content = 16 + border 2 = 18
     expect(computeMinSidebarWidth([
       makeSession({ name: "ab", branch: "feature/long" }),
+    ])).toBe(18);
+  });
+
+  test("dir mismatch widens the branch row by the glyph cells", () => {
+    // name "ab", dir leaf "claude" (≠ "ab") → mismatch glyph adds 2 cols.
+    // branch row = 1 + 2 + 12 + 2 + 1 = 18 → + border 2 = 20.
+    expect(computeMinSidebarWidth([
+      makeSession({ name: "ab", branch: "feature/long", dir: "/Users/k/Code/dotfiles/claude" }),
+    ])).toBe(20);
+  });
+
+  test("matching dir leaf does not add mismatch cols", () => {
+    // dir leaf "ab" === name "ab" → no glyph, branch row stays 16 → + 2 = 18.
+    expect(computeMinSidebarWidth([
+      makeSession({ name: "ab", branch: "feature/long", dir: "/Users/k/Code/ab" }),
     ])).toBe(18);
   });
 
