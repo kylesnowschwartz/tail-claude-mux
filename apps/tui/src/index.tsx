@@ -957,7 +957,7 @@ function App() {
         {/* Focused session — bordered frame pinned at center */}
         <box border borderStyle="rounded" borderColor={paneFocused() ? P().blue : P().surface2} flexShrink={0} height={maxCardHeight()} overflow="hidden">
           <Show when={focusedData()}>
-            {(data) => (
+            {(data: Accessor<SessionData>) => (
               <SessionCard
                 session={data()}
                 isFocused={true}
@@ -1694,7 +1694,7 @@ async function main() {
   }
   render(() => <App />, {
     exitOnCtrlC: true,
-    targetFPS: 30,
+    targetFps: 30,
     useMouse: true,
   });
 }
