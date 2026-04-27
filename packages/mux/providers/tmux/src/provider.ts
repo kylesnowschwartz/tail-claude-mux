@@ -124,7 +124,6 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     tmux.unsetGlobalHook("after-select-window");
     tmux.unsetGlobalHook("after-new-window");
     tmux.unsetGlobalHook("client-resized");
-    tmux.unsetGlobalHook("after-resize-pane");
     tmux.unsetGlobalWindowHook("pane-exited");
     tmux.unsetGlobalHook("after-kill-pane");
     tmux.unsetGlobalWindowHook("pane-focus-in");
