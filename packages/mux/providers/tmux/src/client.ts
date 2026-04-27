@@ -487,7 +487,6 @@ export class TmuxClient {
     borderStyle?: "rounded" | "sharp" | "double" | "heavy" | "simple" | "padded" | "none";
     env?: Record<string, string>;
     closeOnExit?: boolean;
-    closOnExit?: boolean;
   }): void {
     const args = ["display-popup"];
     if (options.title) args.push("-T", options.title);
@@ -500,7 +499,7 @@ export class TmuxClient {
         args.push("-e", `${k}=${v}`);
       }
     }
-    const closeOnExit = options.closeOnExit ?? options.closOnExit ?? true;
+    const closeOnExit = options.closeOnExit ?? true;
     if (closeOnExit) args.push("-E");
     args.push(options.command);
     this.run(args);

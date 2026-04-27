@@ -4,8 +4,6 @@ import { join } from "path";
 import type { PartialTheme } from "./themes";
 
 export interface TcmConfig {
-  /** Explicit mux provider name (overrides auto-detect) */
-  mux?: string;
   /** Custom server port */
   port?: number;
   /** Theme: builtin name (e.g. "catppuccin-latte") or partial inline theme object */
@@ -14,8 +12,6 @@ export interface TcmConfig {
   sidebarWidth?: number;
   /** Sidebar position relative to the terminal window (default "left") */
   sidebarPosition?: "left" | "right";
-  /** Tmux prefix key for sidebar toggle (default "s") */
-  keybinding?: string;
   /** Persisted detail panel heights keyed by mux session name */
   detailPanelHeights?: Record<string, number>;
 }

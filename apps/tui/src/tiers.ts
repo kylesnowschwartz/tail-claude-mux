@@ -65,36 +65,3 @@ export function activityDescription(palette: ThemePalette, paneFocused: boolean,
   };
 }
 
-/**
- * Style for an unseen session/agent name.
- *
- * Replaces the retired `●` glyph with a `teal` colour shift. Bold applies
- * if this row is the current session. Pane-unfocused dims via the DIM
- * attribute (mirroring the tier system's slide). Severity colour does NOT
- * apply here — severity lives in the left gutter; the name only carries
- * unseen.
- *
- * See vocab §4 "Unseen state — colour-only marker on the name".
- */
-export function unseenName(palette: ThemePalette, paneFocused: boolean, currentSession: boolean): TierStyle {
-  let attributes = 0;
-  if (currentSession) attributes |= BOLD;
-  if (!paneFocused) attributes |= DIM;
-  return { fg: palette.teal, attributes: attributes || undefined };
-}
-
-/**
- * Style for a session-or-agent name, taking unseen and current-session
- * state into account. Composes the rules above; use this rather than
- * spelling out the conditions in components.
- */
-export function nameStyle(
-  palette: ThemePalette,
-  paneFocused: boolean,
-  opts: { unseen?: boolean; currentSession?: boolean } = {},
-): TierStyle {
-  if (opts.unseen) {
-    return unseenName(palette, paneFocused, opts.currentSession === true);
-  }
-  return tier(opts.currentSession ? "primary" : "secondary", palette, paneFocused);
-}

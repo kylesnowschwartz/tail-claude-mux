@@ -28,13 +28,10 @@ If the file does not exist, tcm falls back to defaults.
 
 | Field | Type | Default | Runtime status | Description |
 | --- | --- | --- | --- | --- |
-| `mux` | `string` | auto-detect | active | Selects the preferred registered mux provider by name |
-| `plugins` | `string[]` | `[]` | active | Package names to load through the plugin loader |
 | `theme` | `string` | `catppuccin-mocha` | active | Built-in theme name persisted by the TUI |
 | `sidebarWidth` | `number` | `26` | active | Sidebar width in columns |
 | `sidebarPosition` | `"left" | "right"` | `"left"` | active | Sidebar placement |
 | `port` | `number` | none | parsed only | Present in the config type, but the current server and TUI still use the fixed `7391` constant |
-| `keybinding` | `string` | none | parsed only | Present in the config type, but keybindings are configured outside this file today |
 
 ## Built-In Themes
 

@@ -1,12 +1,11 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect } from "bun:test";
 import { loadConfig } from "../src/config";
-import { resolveTheme, BUILTIN_THEMES, type Theme } from "../src/themes";
-import { resolve, join } from "path";
+import { resolveTheme, BUILTIN_THEMES } from "../src/themes";
+import { join } from "path";
 
 describe("Config", () => {
   test("loadConfig returns defaults when no config file exists", () => {
     const config = loadConfig("/tmp/nonexistent-dir-" + Date.now());
-    expect(config.mux).toBeUndefined();
     expect(config.port).toBeUndefined();
     expect(config.theme).toBeUndefined();
   });
@@ -16,13 +15,12 @@ describe("Config", () => {
     const configDir = join(tmpDir, ".config", "tcm");
     await Bun.write(
       join(configDir, "config.json"),
-      JSON.stringify({ sidebarWidth: 30, sidebarPosition: "right", keybinding: "b" }),
+      JSON.stringify({ sidebarWidth: 30, sidebarPosition: "right" }),
     );
 
     const config = loadConfig(tmpDir);
     expect(config.sidebarWidth).toBe(30);
     expect(config.sidebarPosition).toBe("right");
-    expect(config.keybinding).toBe("b");
 
     const { rmSync } = require("fs");
     rmSync(tmpDir, { recursive: true, force: true });
@@ -32,7 +30,6 @@ describe("Config", () => {
     const config = loadConfig("/tmp/nonexistent-dir-" + Date.now());
     expect(config.sidebarWidth).toBeUndefined();
     expect(config.sidebarPosition).toBeUndefined();
-    expect(config.keybinding).toBeUndefined();
   });
 
   test("loadConfig reads from config file", async () => {
@@ -40,11 +37,10 @@ describe("Config", () => {
     const configDir = join(tmpDir, ".config", "tcm");
     await Bun.write(
       join(configDir, "config.json"),
-      JSON.stringify({ mux: "tmux", port: 9999 }),
+      JSON.stringify({ port: 9999 }),
     );
 
     const config = loadConfig(tmpDir);
-    expect(config.mux).toBe("tmux");
     expect(config.port).toBe(9999);
 
     const { rmSync } = require("fs");
@@ -56,12 +52,12 @@ describe("Config", () => {
     const configDir = join(tmpDir, ".config", "tcm");
     await Bun.write(
       join(configDir, "config.json"),
-      JSON.stringify({ mux: "tmux" }),
+      JSON.stringify({ port: 7391 }),
     );
 
     const config = loadConfig(tmpDir);
-    expect(config.mux).toBe("tmux");
-    expect(config.port).toBeUndefined();
+    expect(config.port).toBe(7391);
+    expect(config.theme).toBeUndefined();
 
     const { rmSync } = require("fs");
     rmSync(tmpDir, { recursive: true, force: true });
@@ -147,7 +143,7 @@ describe("Themes", () => {
 
   test("every builtin theme has all required palette keys", () => {
     const requiredKeys = ["blue", "yellow", "green", "red", "peach", "teal", "text", "subtext0", "overlay0", "overlay1", "surface0", "surface1", "surface2", "base", "mantle", "crust"];
-    for (const [name, theme] of Object.entries(BUILTIN_THEMES)) {
+    for (const [, theme] of Object.entries(BUILTIN_THEMES)) {
       for (const key of requiredKeys) {
         expect(theme.palette).toHaveProperty(key);
       }
@@ -156,7 +152,7 @@ describe("Themes", () => {
 
   test("every builtin theme has all status colors", () => {
     const statuses = ["idle", "running", "done", "error", "waiting", "interrupted"];
-    for (const [name, theme] of Object.entries(BUILTIN_THEMES)) {
+    for (const [, theme] of Object.entries(BUILTIN_THEMES)) {
       for (const s of statuses) {
         expect(theme.status).toHaveProperty(s);
       }
