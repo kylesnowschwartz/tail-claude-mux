@@ -1,9 +1,9 @@
 #!/usr/bin/env sh
 
-PORT="${OPENSESSIONS_PORT:-7391}"
-HOST="${OPENSESSIONS_HOST:-127.0.0.1}"
+PORT="${TCM_PORT:-7391}"
+HOST="${TCM_HOST:-127.0.0.1}"
 
-PLUGIN_DIR="$(tmux show-environment -g OPENSESSIONS_DIR 2>/dev/null | cut -d= -f2)"
+PLUGIN_DIR="$(tmux show-environment -g TCM_DIR 2>/dev/null | cut -d= -f2)"
 PLUGIN_DIR="${PLUGIN_DIR:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
 BUN_PATH="${BUN_PATH:-$(command -v bun 2>/dev/null || echo "$HOME/.bun/bin/bun")}"
 SERVER_ENTRY="$PLUGIN_DIR/apps/server/src/main.ts"

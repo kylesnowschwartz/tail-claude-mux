@@ -41,7 +41,7 @@ Run `bun run scripts/setup-hooks.ts` to register hooks in `~/.claude/settings.js
 ### Pi (Hook-Based)
 
 - Receives pi-native snake_case events (`session_start`, `agent_start`, `agent_end`, `tool_execution_start`, `tool_execution_end`, `session_shutdown`) via `POST /hook` with `agent: "pi"` on the payload.
-- A pi extension (`integrations/pi-extension/`) subscribes to pi's lifecycle events and POSTs to `http://127.0.0.1:${OPENSESSIONS_PORT:-7391}/hook`. Every POST is fire-and-forget with a 2s request timeout so hook failures never block the agent.
+- A pi extension (`integrations/pi-extension/`) subscribes to pi's lifecycle events and POSTs to `http://127.0.0.1:${TCM_PORT:-7391}/hook`. Every POST is fire-and-forget with a 2s request timeout so hook failures never block the agent.
 - Status mapping:
   - `session_start` → `idle` (optional `session_name` becomes `threadName`).
   - `agent_start` → `running`, clears `toolDescription`.

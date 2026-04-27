@@ -85,7 +85,7 @@ The tmux integration reads these tmux options instead of `config.json`:
 | `@tcm-prefix-key` | `o` | Key after the tmux prefix that enters the opensessions key table (`prefix <key>`) |
 | `@tcm-focus-global-key` | unset | Optional no-prefix tmux keybinding that reveals and focuses the sidebar pane |
 | `@tcm-index-keys` | unset | Optional space-separated no-prefix tmux keys mapped in order to visible sessions `1` through `9` |
-| `@tcm-width` | `26` | exported as `OPENSESSIONS_WIDTH` by the tmux bootstrap script |
+| `@tcm-width` | `26` | exported as `TCM_WIDTH` by the tmux bootstrap script |
 
 The plugin registers these prefix bindings automatically:
 
@@ -132,9 +132,9 @@ All other tmux options fall back to the defaults shown in the table above.
 | Variable | Used by | Notes |
 | --- | --- | --- |
 | `OPENCODE_DB_PATH` | OpenCode watcher | Overrides the default SQLite path |
-| `OPENSESSIONS_DIR` | tmux helper scripts and server | Helps helper scripts find the repo checkout |
-| `OPENSESSIONS_HOST` | helper shell scripts | Script-level override only; the app runtime still uses `127.0.0.1` |
-| `OPENSESSIONS_PORT` | helper shell scripts | Script-level override only; the app runtime still uses `7391` |
+| `TCM_DIR` | tmux helper scripts and server | Helps helper scripts find the repo checkout |
+| `TCM_HOST` | helper shell scripts | Script-level override only; the app runtime still uses `127.0.0.1` |
+| `TCM_PORT` | helper shell scripts | Script-level override only; the app runtime still uses `7391` |
 | `SESSIONIZER_DIR` | tmux sessionizer popup | Colon-separated directories searched for new-session candidates (e.g. `$HOME/Code:$HOME/.config`). Also checked via `tmux show-environment -g` when the shell variable is unset. Defaults to `$HOME/Documents` |
 | `BUN_PATH` | helper scripts | Explicit Bun binary path for helper scripts |
 

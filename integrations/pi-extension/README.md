@@ -22,8 +22,8 @@ pi -e /Users/you/path/to/opensessions/integrations/pi-extension
 ## What it does
 
 The extension subscribes to six pi events and POSTs a JSON payload to
-`http://127.0.0.1:7391/hook` (configurable via `OPENSESSIONS_PORT` and
-`OPENSESSIONS_HOST`). Each payload carries `agent: "pi"` so the server
+`http://127.0.0.1:7391/hook` (configurable via `TCM_PORT` and
+`TCM_HOST`). Each payload carries `agent: "pi"` so the server
 can route it to the pi adapter.
 
 | Pi event | Status effect |

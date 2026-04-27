@@ -205,7 +205,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
 
   // The sidebar launcher lives with the TUI app, not the tmux integration layer.
   const scriptsDir = (() => {
-    const envDir = process.env.OPENSESSIONS_DIR;
+    const envDir = process.env.TCM_DIR;
     if (envDir) return join(envDir, "apps", "tui", "scripts");
     // Fallback: relative to this file
     return join(import.meta.dir, "..", "..", "..", "..", "apps", "tui", "scripts");
@@ -1560,7 +1560,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
           server.stop();
           // Re-exec the server with the same entry point
           const serverEntry = join(
-            process.env.OPENSESSIONS_DIR ?? join(import.meta.dir, "..", "..", "..", ".."),
+            process.env.TCM_DIR ?? join(import.meta.dir, "..", "..", "..", ".."),
             "apps", "server", "src", "main.ts",
           );
           const proc = Bun.spawn([process.execPath, "run", serverEntry], {
@@ -1568,7 +1568,7 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
             env: {
               ...process.env,
               // Tell the new server to cycle sidebars after startup
-              OPENSESSIONS_RELOAD_TUI: skipReload ? "" : "1",
+              TCM_RELOAD_TUI: skipReload ? "" : "1",
             },
           });
           proc.unref();
@@ -1782,8 +1782,8 @@ export function startServer(mux: MuxProvider, extraProviders?: MuxProvider[], wa
       // Triggered by /restart (default) — opt out with ?reload-tui=false.
       // Note: the old toggle cycle (hide/show) didn't work because tmux's
       // spawnSidebar restores stashed panes instead of spawning fresh processes.
-      if (process.env.OPENSESSIONS_RELOAD_TUI === "1") {
-        delete process.env.OPENSESSIONS_RELOAD_TUI;
+      if (process.env.TCM_RELOAD_TUI === "1") {
+        delete process.env.TCM_RELOAD_TUI;
         log("bootstrap", "reloading TUI — killing and respawning sidebars");
         setTimeout(() => {
           const providers = getProvidersWithSidebar();

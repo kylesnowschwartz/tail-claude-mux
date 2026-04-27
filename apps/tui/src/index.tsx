@@ -562,7 +562,7 @@ function App() {
       width: "60%",
       height: "60%",
       closeOnExit: true,
-      env: { OPENSESSIONS_FZF_COLORS: paletteToFzfColors(P()) },
+      env: { TCM_FZF_COLORS: paletteToFzfColors(P()) },
     });
   }
 

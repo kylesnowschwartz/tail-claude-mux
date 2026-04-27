@@ -142,7 +142,7 @@ describe("TmuxClient", () => {
   });
 
   test("getGlobalEnv() returns null for missing var", () => {
-    const val = client.getGlobalEnv("OPENSESSIONS_TEST_NONEXISTENT_VAR_XYZ");
+    const val = client.getGlobalEnv("TCM_TEST_NONEXISTENT_VAR_XYZ");
     expect(val).toBeNull();
   });
 

@@ -37,8 +37,8 @@ tmux kill-session -t "_os_stash" 2>/dev/null || true
 echo "  ✓ removed stash session"
 
 # --- Kill the server ---
-PORT="${OPENSESSIONS_PORT:-7391}"
-HOST="${OPENSESSIONS_HOST:-127.0.0.1}"
+PORT="${TCM_PORT:-7391}"
+HOST="${TCM_HOST:-127.0.0.1}"
 curl -s -o /dev/null -X POST "http://${HOST}:${PORT}/shutdown" 2>/dev/null || true
 echo "  ✓ stopped server (if running)"
 
@@ -67,8 +67,8 @@ done
 echo "  ✓ removed keybindings"
 
 # --- Remove environment variables ---
-tmux set-environment -gu OPENSESSIONS_DIR 2>/dev/null || true
-tmux set-environment -gu OPENSESSIONS_WIDTH 2>/dev/null || true
+tmux set-environment -gu TCM_DIR 2>/dev/null || true
+tmux set-environment -gu TCM_WIDTH 2>/dev/null || true
 echo "  ✓ removed environment variables"
 
 echo "opensessions: uninstall complete. You can now remove the plugin files."

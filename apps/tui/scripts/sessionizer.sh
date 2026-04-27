@@ -10,8 +10,8 @@ fi
 SEARCH_DIRS="${SESSIONIZER_DIR:-$HOME/Documents}"
 
 # Resolve fzf colors: opensessions theme > the-themer > shell defaults
-if [ -n "$OPENSESSIONS_FZF_COLORS" ]; then
-  export FZF_DEFAULT_OPTS="$OPENSESSIONS_FZF_COLORS"
+if [ -n "$TCM_FZF_COLORS" ]; then
+  export FZF_DEFAULT_OPTS="$TCM_FZF_COLORS"
 else
   THEMER_FZF="${HOME}/.config/the-themer/fzf/current.zsh"
   # shellcheck source=/dev/null

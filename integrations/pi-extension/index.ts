@@ -34,8 +34,8 @@ interface PiHookBody {
 }
 
 function endpoint(): string {
-  const port = process.env.OPENSESSIONS_PORT ?? DEFAULT_PORT;
-  const host = process.env.OPENSESSIONS_HOST ?? DEFAULT_HOST;
+  const port = process.env.TCM_PORT ?? DEFAULT_PORT;
+  const host = process.env.TCM_HOST ?? DEFAULT_HOST;
   return `http://${host}:${port}/hook`;
 }
 

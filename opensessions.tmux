@@ -58,8 +58,8 @@ bind_global_index_keys() {
 }
 
 # Export so scripts can read them
-tmux set-environment -g OPENSESSIONS_DIR "$CURRENT_DIR"
-tmux set-environment -g OPENSESSIONS_WIDTH "$WIDTH"
+tmux set-environment -g TCM_DIR "$CURRENT_DIR"
+tmux set-environment -g TCM_WIDTH "$WIDTH"
 
 # --- Bootstrap: kill stale server if version or install path changed ---
 VERSION_FILE="/tmp/opensessions.version"

@@ -22,7 +22,7 @@ async function isPortOpen(host: string, port: number, timeoutMs = 200): Promise<
 }
 
 function resolveServerEntryPath(): string {
-  const envDir = process.env.OPENSESSIONS_DIR;
+  const envDir = process.env.TCM_DIR;
   if (envDir) {
     const fromEnv = join(envDir, "apps", "server", "src", "main.ts");
     if (existsSync(fromEnv)) return fromEnv;

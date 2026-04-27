@@ -15,7 +15,7 @@ else
   BODY="{\"event\":\"$EVENT\"}"
 fi
 
-curl -s -X POST "http://127.0.0.1:${OPENSESSIONS_PORT:-7391}/hook" \
+curl -s -X POST "http://127.0.0.1:${TCM_PORT:-7391}/hook" \
   -H "Content-Type: application/json" \
   -d "$BODY" \
   --connect-timeout 1 --max-time 2 2>/dev/null || true

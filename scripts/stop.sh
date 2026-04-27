@@ -2,8 +2,8 @@
 # Stop server and all sidebars. Tries graceful quit first, then kills.
 set -euo pipefail
 
-PORT="${OPENSESSIONS_PORT:-7391}"
-HOST="${OPENSESSIONS_HOST:-127.0.0.1}"
+PORT="${TCM_PORT:-7391}"
+HOST="${TCM_HOST:-127.0.0.1}"
 BASE="http://${HOST}:${PORT}"
 
 # Graceful quit via server endpoint
