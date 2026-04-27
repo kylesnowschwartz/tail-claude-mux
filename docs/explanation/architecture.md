@@ -78,7 +78,7 @@ Notable design choices:
 
 The mux contract is intentionally extensible, and the repository still contains older experimental provider code beyond tmux.
 
-That code is not part of the current support promise. In particular, the zellij path is not stable enough to recommend today, and we are looking for maintainers who want to help bring it back to a supported state.
+That code is not part of the current support promise. In particular, the zellij path is not stable enough to recommend today.
 
 ## Why The Server Owns Session Switching
 
@@ -117,4 +117,4 @@ The repository now follows a clearer monorepo boundary model:
 - `packages/mux/*` groups the mux contract, concrete mux providers, and the lower-level tmux SDK in one place
 - `integrations/tmux-plugin` contains host-specific tmux glue instead of runtime library code
 
-That keeps entrypoints, reusable libraries, mux adapters, and host integrations separate enough that new contributors can tell what owns what at a glance.
+That keeps entrypoints, reusable libraries, mux adapters, and host integrations separate enough that boundaries are obvious at a glance.
