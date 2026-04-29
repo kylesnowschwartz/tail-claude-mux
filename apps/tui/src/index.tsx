@@ -34,7 +34,6 @@ import {
   WRAP_DOWN,
   ACTIVITY_LEAD,
   ACTIVITY_HEAD,
-  ACTIVITY_GUTTER_FRESH,
   ACTIVITY_VERB_READ,
   ACTIVITY_VERB_LIST,
   ACTIVITY_VERB_SEARCH,
@@ -45,6 +44,7 @@ import {
   ACTIVITY_VERB_SKILL,
   ACTIVITY_VERB_THINKING,
   ACTIVITY_VERB_ERROR,
+  ACTIVITY_VERB_MISC,
 } from "./vocab";
 import { tier } from "./tiers";
 import { classifyVerb, type Verb } from "./classify";
@@ -237,6 +237,47 @@ function splitOutcome(message: string): { main: string; outcome: { text: string;
     main: m[1] + m[2],
     outcome: { text: m[3]!, tone: m[4] === "passed" ? "success" : "error" },
   };
+}
+
+/**
+ * Flatten newlines and collapse internal whitespace runs to single spaces.
+ *
+ * Activity rows are single-line; embedded `\n` (common in shell-command
+ * messages like `Running python3 << 'EOF'\nimport ...`) would otherwise wrap
+ * inside the row and break the column-1 verb-glyph alignment.
+ */
+function flattenMessage(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Strip the leading verb word from a message when its meaning is already
+ * carried by the col-1 verb glyph.
+ *
+ * `⧠ Running tmux capture-pane` → `⧠ tmux capture-pane`. Keeps the verb
+ * stripe legible (no redundancy with the description) and frees ~7–10 cols of
+ * description budget. Patterns mirror classify.ts.
+ *
+ * Verbs whose description IS the content (thinking) are left untouched.
+ * URL-form web entries (`https://…`) are also untouched — the URL is the
+ * payload, not a leading verb word.
+ */
+function stripVerbWord(verb: Verb | undefined, message: string): string {
+  if (!verb) return message;
+  const patterns: Partial<Record<Verb, RegExp>> = {
+    read:   /^(?:reading|read)\s+/i,
+    list:   /^(?:listing|ls)\s+/i,
+    search: /^(?:searching|grep|glob|find)\s+/i,
+    edit:   /^(?:editing|edit|wrote|writing|patching|patched)\s+/i,
+    run:    /^(?:ran|running|run|bash|executing)\s+/i,
+    web:    /^(?:web(?:fetch|search)?|fetching)\s+/i,
+    task:   /^(?:task|agent|delegat(?:ing|ed)|spawn(?:ing|ed))\s+/i,
+    skill:  /^(?:invoking\s+skill|skill)\s+/i,
+    error:  /^(?:error[:\s]+|failed\s+to\s+)/i,
+    // thinking: intentionally absent — the description IS the thought.
+  };
+  const re = patterns[verb];
+  return re ? message.replace(re, '') : message;
 }
 
 /** Pre-truncate a string to `max` columns with a trailing ellipsis. */
@@ -532,15 +573,24 @@ function ActivityZone(props: {
 
   // Tier styles — re-derived per render via accessors so theme/focus changes
   // propagate without prop drilling.
+  //
+  // The freshness signal is carried by description colour: bright for the
+  // newest row, distinctly dimmer for older rows. (Earlier versions used a
+  // gutter glyph at col 0 too — retired in favour of clean col-1 verb-glyph
+  // alignment across all rows.) Both modes use real colour differences, not
+  // the ANSI DIM attribute, which doesn't survive opentui's render pipeline.
   const sparklineStyle  = () => tier("secondary", props.palette, props.paneFocused);
   const suffixStyle     = () => tier("dim",       props.palette, props.paneFocused);
   const eyebrowStyle    = () => tier("muted",     props.palette, props.paneFocused);
   const chipStyle       = () => tier("muted",     props.palette, props.paneFocused);
-  const gutterStyle     = () => tier("secondary", props.palette, props.paneFocused);
-  const verbStyle       = () => tier("secondary", props.palette, props.paneFocused);
   const blankPlaceholder = () => tier("muted",    props.palette, props.paneFocused);
-  const freshDescStyle  = () => tier("secondary", props.palette, props.paneFocused);
-  const oldDescStyle    = () => tier("dim",       props.palette, props.paneFocused);
+  // Verb glyph colour tracks freshness: bright on the newest row, dim on older.
+  const freshFg = () => props.paneFocused ? props.palette.text     : props.palette.subtext0;
+  const oldFg   = () => props.paneFocused ? props.palette.overlay1 : props.palette.surface2;
+  const freshDescStyle  = () => ({ fg: freshFg() });
+  const oldDescStyle    = () => ({ fg: oldFg()   });
+  const freshVerbStyle  = () => ({ fg: freshFg() });
+  const oldVerbStyle    = () => ({ fg: oldFg()   });
 
   // Severity colours bypass tier slide on unfocus.
   const sevErrorStyle   = () => ({ fg: props.palette.red });
@@ -596,38 +646,43 @@ function ActivityZone(props: {
             const isFreshest = createMemo(() => i() === 0);
 
             // Per-entry static values — entry identity is stable under For.
-            const split = splitOutcome(entry.message);
+            // Flatten newlines first so embedded `\n` (e.g. heredoc shell
+            // commands) doesn't wrap inside the row and break col alignment.
+            const flatMessage = flattenMessage(entry.message);
+            const split = splitOutcome(flatMessage);
             const isFailed = entry.tone === "error" && split.outcome?.tone === "error";
-            const displayMain = isFailed ? split.main.trimEnd() : split.main.trimEnd();
-            const renderPassedSuffix = !!split.outcome && split.outcome.tone === "success";
             const verbHint = (entry as { verb?: Verb }).verb;
-            const verb = verbHint ?? classifyVerb(entry.message);
+            const verb = verbHint ?? classifyVerb(flatMessage);
+            // Strip the leading verb word from the description (`Running tmux…`
+            // → `tmux…`) so it isn't redundant with the col-1 verb glyph.
+            const stripped = stripVerbWord(verb, split.main).trimEnd();
+            const displayMain = stripped || split.main.trimEnd();
+            const renderPassedSuffix = !!split.outcome && split.outcome.tone === "success";
 
             // Column-1 glyph + style precedence (§Verb-glyph column).
             // Reactive on `mode` so a row that flips between chip and
             // eyebrow modes (e.g. when a same-source neighbour appears or
             // disappears) updates correctly.
-            const colOne = createMemo<{ glyph: string; style: { fg: string; attributes?: number }; suppressGutter: boolean }>(() => {
+            const colOne = createMemo<{ glyph: string; style: { fg: string; attributes?: number } }>(() => {
               const m = mode();
               if (m.kind === "system-tag") {
-                return { glyph: m.tagGlyph, style: tagStyleFor(m.tagTone), suppressGutter: true };
+                return { glyph: m.tagGlyph, style: tagStyleFor(m.tagTone) };
               }
               if (isFailed) {
-                // Stripe-internal error glyph (cross). Distinct from gutter
-                // SEV_ERROR (alert-circle): col 0 is severity, col 1 is the
-                // per-row tool-failure mark. Mirrors tail-claude-hud's
+                // Stripe-internal error glyph (cross). Mirrors tail-claude-hud's
                 // tool category icon → error replacement on failed tools.
-                return { glyph: ACTIVITY_VERB_ERROR, style: sevErrorStyle(), suppressGutter: true };
+                return { glyph: ACTIVITY_VERB_ERROR, style: sevErrorStyle() };
               }
+              const verbStyle = isFreshest() ? freshVerbStyle() : oldVerbStyle();
               if (verb) {
-                return { glyph: VERB_GLYPHS[verb], style: verbStyle(), suppressGutter: false };
+                return { glyph: VERB_GLYPHS[verb], style: verbStyle };
               }
-              return { glyph: " ", style: blankPlaceholder(), suppressGutter: false };
+              // Misc / fallback verb glyph (gear) — never blank, so the col-1
+              // verb stripe stays a clean vertical column the eye can scan.
+              return { glyph: ACTIVITY_VERB_MISC, style: verbStyle };
             });
 
-            const showFreshGutter = createMemo(
-              () => isFreshest() && !colOne().suppressGutter && mode().kind !== "chip",
-            );
+            // Freshness signal is description colour only — no gutter glyph.
             const dStyle = createMemo(() => (isFreshest() ? freshDescStyle() : oldDescStyle()));
 
             // Description budget — outcome reservation only applies to (passed).
@@ -644,12 +699,10 @@ function ActivityZone(props: {
                   </text>
                 </Show>
                 <text truncate>
-                  {/* Column 0 — pad / gutter / chip-char-1 */}
-                  <Show when={mode().kind === "chip"} fallback={
-                    <Show when={showFreshGutter()} fallback={<span>{" "}</span>}>
-                      <span style={gutterStyle()}>{ACTIVITY_GUTTER_FRESH}</span>
-                    </Show>
-                  }>
+                  {/* Column 0 — single pad cell (or chip-char-1 in chip mode).
+                      Freshness is signalled by description colour, not by
+                      a gutter glyph here. */}
+                  <Show when={mode().kind === "chip"} fallback={<span>{" "}</span>}>
                     <span style={chipStyle()}>{(mode() as Extract<RowMode, { kind: "chip" }>).agentCode[0]}</span>
                   </Show>
                   {/* Column 1 — verb glyph / error / system-tag glyph / blank,
@@ -674,7 +727,7 @@ function ActivityZone(props: {
                   <span style={dStyle()}>{truncatedMain()}</span>
                   {/* (passed) suffix kept inline; (failed) stripped (see bridge). */}
                   <Show when={renderPassedSuffix}>
-                    <span style={{ fg: toneColor(split.outcome!.tone, props.palette), attributes: dStyle().attributes }}>{" "}{split.outcome!.text}</span>
+                    <span style={{ fg: toneColor(split.outcome!.tone, props.palette) }}>{" "}{split.outcome!.text}</span>
                   </Show>
                 </text>
               </>

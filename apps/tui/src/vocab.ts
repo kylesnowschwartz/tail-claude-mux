@@ -70,7 +70,9 @@ export const WRAP_DOWN = "\u{F0140}";        // nf-md-chevron-down (rolodex bott
 //   F009C was bell_outline, not bell_alert                  → SEV_WAITING fixed
 //   E22B  was palette_color, not book_open_o                → fixed to E28B
 // If you change a codepoint here, re-run the audit (see tests/glyph-audit.ts).
-export const ACTIVITY_GUTTER_FRESH = "\u{F044A}"; // nf-md-record (filled small disc — "now")
+// Note: ACTIVITY_GUTTER_FRESH (was U+F044A md-record) was retired — freshness
+// is now signalled purely by description tier colour, not a gutter glyph.
+// Col 0 is reserved for future group-connector / chip-head usage.
 
 // ── Verb glyphs (col 1, the verb stripe) ──
 // Five core verbs are derived client-side by classify.ts. The remaining
@@ -89,3 +91,6 @@ export const ACTIVITY_VERB_THINKING = "\u{F0EB}";  // nf-fa-lightbulb_o (thinkin
 // Both can co-exist on an error row: gutter signals severity, stripe signals
 // "this row's tool failed" in the verb column.
 export const ACTIVITY_VERB_ERROR    = "\u{F00D}";  // nf-fa-xmark (was nf-fa-cross, renamed in nf 3.x)
+// Misc / fallback verb — used when classify.ts returns undefined. Keeps col 1
+// visually consistent (no blank cells in the verb stripe).
+export const ACTIVITY_VERB_MISC     = "\u{F08BB}"; // nf-md-cog-outline
