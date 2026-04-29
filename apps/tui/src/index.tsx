@@ -166,9 +166,18 @@ function getClientTty(): string {
 }
 
 function parseMockFlag(): string | null {
-  for (const arg of process.argv.slice(2)) {
-    if (arg === "--mock") return "quiet";
-    if (arg.startsWith("--mock=")) return arg.slice("--mock=".length);
+  // Supports `--mock` (defaults to "quiet"), `--mock=<name>`, and `--mock <name>`
+  // (space-separated). The space-separated form was previously dropped on the
+  // floor and would silently fall through to the default scenario.
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === "--mock") {
+      const next = args[i + 1];
+      if (next && !next.startsWith("-")) return next;
+      return "quiet";
+    }
+    if (a.startsWith("--mock=")) return a.slice("--mock=".length);
   }
   return null;
 }
@@ -384,10 +393,23 @@ function computeRowModes(entries: readonly ActivityLog[]): RowMode[] {
       continue;
     }
     // Walk forward over the run: same source, with system-tag rows transparent.
+    // System-tag rows interleaved inside a run get their own system-tag mode
+    // (assigned eagerly here so they don't slip through unassigned when the
+    // outer-loop pointer jumps past them via `i = j`).
     let j = i;
     const runRows: number[] = [];
     while (j < n) {
-      if (sysTag[j]) { j++; continue; }
+      if (sysTag[j]) {
+        const e = entries[j]!;
+        modes[j] = {
+          kind: "system-tag",
+          tagGlyph: systemTagGlyph(e.source!),
+          tagTone: e.tone ?? "info",
+          emitEyebrow: false,
+        };
+        j++;
+        continue;
+      }
       if (entries[j]!.source !== source) break;
       runRows.push(j);
       j++;
@@ -398,7 +420,6 @@ function computeRowModes(entries: readonly ActivityLog[]): RowMode[] {
       for (let k = 1; k < runRows.length; k++) {
         modes[runRows[k]!] = { kind: "eyebrow-cont", emitEyebrow: false };
       }
-      // Fill in any system-tag rows interleaved inside the run (already assigned above).
     } else {
       // Single-row run → chip mode candidate.
       const idx = runRows[0]!;
