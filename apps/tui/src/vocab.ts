@@ -26,9 +26,9 @@
 // Working is animated via SEV_WORKING_SPINNER frames (legacy brail spinner,
 // kept for visual continuity from the redesign vocabulary).
 export const SEV_WORKING_SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
-export const SEV_WAITING = "\u{F0178}";   // nf-md-bell-alert (matches tail-claude-hud)
+export const SEV_WAITING = "\u{F0D59}";   // nf-md-bell-alert (filled bell + alert flick)
 export const SEV_READY = "\u{F05E1}";     // nf-md-check-circle-outline
-export const SEV_STOPPED = "\u{F0667}";   // nf-md-stop-circle
+export const SEV_STOPPED = "\u{F0666}";   // nf-md-stop-circle (was U+F0667 stop_circle_outline)
 export const SEV_ERROR = "\u{F0028}";     // nf-md-alert-circle
 
 // ── Identity glyphs (right gutter) ──
@@ -61,13 +61,22 @@ export const WRAP_DOWN = "\u{F0140}";        // nf-md-chevron-down (rolodex bott
 // which are EAW Neutral and need no glyph budget; they're inlined where used.
 //
 // See docs/simmer/activity-zone/result.md §Glyph palette for rationale.
-export const ACTIVITY_GUTTER_FRESH = "\u{F05CB}"; // nf-md-record (filled small disc — "now")
+//
+// CODEPOINT-AUDIT-2026-04: every codepoint below has been verified against
+// SymbolsNerdFontMono-Regular.ttf via fontTools — the glyph name at the CP
+// matches the comment. Three earlier picks were wrong (the patcher had
+// renamed/moved them in a recent nerd-fonts release):
+//   F05CB was account_voice (person+sound waves), not record → fixed to F044A
+//   F009C was bell_outline, not bell_alert                  → SEV_WAITING fixed
+//   E22B  was palette_color, not book_open_o                → fixed to E28B
+// If you change a codepoint here, re-run the audit (see tests/glyph-audit.ts).
+export const ACTIVITY_GUTTER_FRESH = "\u{F044A}"; // nf-md-record (filled small disc — "now")
 
 // ── Verb glyphs (col 1, the verb stripe) ──
 // Five core verbs are derived client-side by classify.ts. The remaining
 // glyphs are wired into VERB_GLYPHS for forward-compatibility with watchers
 // that emit web/task/skill/thinking events.
-export const ACTIVITY_VERB_READ     = "\u{E22B}";  // nf-fae-book-open-o (was nf-md-eye)
+export const ACTIVITY_VERB_READ     = "\u{E28B}";  // nf-fae-book-open-o (was nf-md-eye; old E22B was palette_color)
 export const ACTIVITY_VERB_LIST     = "\u{F0279}"; // nf-md-format-list-bulleted (kept; hud has no list)
 export const ACTIVITY_VERB_SEARCH   = "\u{F0968}"; // nf-md-folder-search (was nf-md-magnify)
 export const ACTIVITY_VERB_EDIT     = "\u{EE75}";  // nf-fa-pen-nib (was nf-md-pencil)
@@ -75,8 +84,8 @@ export const ACTIVITY_VERB_RUN      = "\u{F0BE0}"; // nf-md-wrench-outline (was 
 export const ACTIVITY_VERB_WEB      = "\u{F059F}"; // nf-md-web
 export const ACTIVITY_VERB_TASK     = "\u{F167A}"; // nf-md-robot-outline (sub-agent / Task tool)
 export const ACTIVITY_VERB_SKILL    = "\u{F0BE0}"; // nf-md-wrench-outline (alias of RUN by design)
-export const ACTIVITY_VERB_THINKING = "\u{F0EB}";  // nf-fa-lightbulb (thinking-block content)
+export const ACTIVITY_VERB_THINKING = "\u{F0EB}";  // nf-fa-lightbulb_o (thinking-block content; renamed _o in nf 3.x)
 // Stripe-internal error glyph (col 1) — distinct from gutter SEV_ERROR (col 0).
 // Both can co-exist on an error row: gutter signals severity, stripe signals
 // "this row's tool failed" in the verb column.
-export const ACTIVITY_VERB_ERROR    = "\u{F00D}";  // nf-fa-cross
+export const ACTIVITY_VERB_ERROR    = "\u{F00D}";  // nf-fa-xmark (was nf-fa-cross, renamed in nf 3.x)
