@@ -288,6 +288,25 @@ function truncateText(s: string, max: number): string {
   return s.slice(0, max - 1) + "…";
 }
 
+/**
+ * Format an eyebrow source label for display.
+ *
+ * Sources arrive as `"pi db92"` / `"cc 5c98"` (agent prefix + space + short
+ * thread id). Insert a U+00B7 middle dot to separate the two parts:
+ *   `pi db92` → `pi · db92`
+ *
+ * Same dot character used for the `·Nm` age suffix on the sparkline row, so
+ * the activity zone shares a consistent typographic glue character.
+ *
+ * Sources without an internal space (single-token labels, system tags) are
+ * returned untouched.
+ */
+function formatEyebrow(source: string): string {
+  const i = source.indexOf(" ");
+  if (i < 0) return source;
+  return source.slice(0, i) + " \u00B7 " + source.slice(i + 1).trimStart();
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Activity zone — see docs/simmer/activity-zone/result.md for the full spec.
 // ────────────────────────────────────────────────────────────────────────────
@@ -695,7 +714,7 @@ function ActivityZone(props: {
                 <Show when={mode().kind === "eyebrow-anchor" && mode().emitEyebrow}>
                   <text truncate>
                     <span>{" "}</span>
-                    <span style={eyebrowStyle()}>{(mode() as Extract<RowMode, { kind: "eyebrow-anchor" }>).eyebrow}</span>
+                    <span style={eyebrowStyle()}>{formatEyebrow((mode() as Extract<RowMode, { kind: "eyebrow-anchor" }>).eyebrow)}</span>
                   </text>
                 </Show>
                 <text truncate>
