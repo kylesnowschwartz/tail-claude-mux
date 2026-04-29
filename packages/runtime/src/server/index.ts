@@ -15,7 +15,7 @@ import { syncTmuxHeaderOptions } from "./tmux-header-sync";
 import {
   clampSidebarWidth,
   computeMinSidebarWidth,
-  ABSOLUTE_MIN_SIDEBAR_WIDTH,
+  DEFAULT_SIDEBAR_WIDTH,
   SAVE_DEBOUNCE_MS,
 } from "./sidebar-width-sync";
 import {
@@ -244,7 +244,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   const externalThemePath = join(homedir(), ".config", "tcm", "active-theme.json");
   let externalTheme: PartialTheme | null = null;
   let externalThemeWatcher: FSWatcher | null = null;
-  let configuredWidth = clampSidebarWidth(config.sidebarWidth ?? 26);
+  let configuredWidth = clampSidebarWidth(config.sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
   let sidebarPosition: "left" | "right" = config.sidebarPosition ?? "left";
   let sidebarVisible = false;
 
@@ -1418,11 +1418,12 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
         break;
       }
       case "equalize-width": {
+        // Snap back to the configured default. The runtime's
+        // `enforceSidebarWidth` will still push wider if session/agent content
+        // demands it, but the operator's preference baseline becomes
+        // DEFAULT_SIDEBAR_WIDTH — a known number, not a content-dependent fit.
         cancelPendingSave();
-        const sessions = lastState?.sessions ?? [];
-        configuredWidth = sessions.length > 0
-          ? computeMinSidebarWidth(sessions)
-          : ABSOLUTE_MIN_SIDEBAR_WIDTH;
+        configuredWidth = DEFAULT_SIDEBAR_WIDTH;
         saveConfig({ sidebarWidth: configuredWidth });
         enforceSidebarWidth();
         broadcastState();

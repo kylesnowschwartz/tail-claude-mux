@@ -1301,7 +1301,7 @@ function App() {
         break;
       case "=":
         send({ type: "equalize-width" });
-        flash("equalized");
+        flash("reset width");
         break;
       case "t":
         themeBeforePreview = theme();
@@ -1642,7 +1642,7 @@ function App() {
               ["n/c", "new session"],
               ["r", "refresh"],
               ["t", "theme picker"],
-              ["=", "equalize widths"],
+              ["=", "reset width"],
               ["⌥↑↓", "reorder"],
               ["1-9", "jump to session"],
               ["q", "quit"],

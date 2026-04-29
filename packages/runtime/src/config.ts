@@ -8,7 +8,7 @@ export interface TcmConfig {
   port?: number;
   /** Theme: builtin name (e.g. "catppuccin-latte") or partial inline theme object */
   theme?: string | PartialTheme;
-  /** Sidebar column width (default 26) */
+  /** Sidebar column width (default DEFAULT_SIDEBAR_WIDTH = 33; see sidebar-width-sync.ts) */
   sidebarWidth?: number;
   /** Sidebar position relative to the terminal window (default "left") */
   sidebarPosition?: "left" | "right";

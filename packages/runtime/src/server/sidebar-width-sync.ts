@@ -2,6 +2,20 @@ import type { SessionData } from "../shared";
 import { TERMINAL_STATUSES } from "../contracts/agent";
 
 export const ABSOLUTE_MIN_SIDEBAR_WIDTH = 15;
+/**
+ * Default sidebar width in terminal columns.
+ *
+ * Chosen for the activity zone: at 33 cols the description budget is 29
+ * chars (after col-0 pad + col-1 verb glyph + separator), which fits the
+ * median `tmux …` / `apps/tui/src/index.tsx`-style payloads without
+ * truncation. Below 30 the activity descriptions get cropped mid-path; above
+ * 36 the editing pane starts feeling pinched on a 192-col terminal.
+ *
+ * `=` (equalize-width) snaps back to this constant. The runtime may push
+ * further upward via `enforceSidebarWidth` when session/agent content needs
+ * more room — this is the floor preference, not a hard cap.
+ */
+export const DEFAULT_SIDEBAR_WIDTH = 33;
 export const MAX_SIDEBAR_WIDTH_PERCENT = 0.4;
 export const SAVE_DEBOUNCE_MS = 1000;
 
