@@ -216,17 +216,41 @@ function splitOutcome(message: string): { main: string; outcome: { text: string;
   };
 }
 
+/** Pre-truncate a string to `max` columns with a trailing ellipsis. */
+function truncateText(s: string, max: number): string {
+  if (max <= 0) return "";
+  if (s.length <= max) return s;
+  if (max <= 1) return "…";
+  return s.slice(0, max - 1) + "…";
+}
+
 /**
  * Activity zone — fixed-height structural band beneath the rolodex.
  *
- * Layout (always visible, never animates):
- *   ──────────────  ← top zone separator
- *   <focused-name> →  ← heading (Tier 2 + arrow-right Tier 4)
- *    cc 1859  editing tmux-header-sync.ts   ← freshest: Tier 2 italic
- *    cc 1859  ran  bun test (passed)        ← history: Tier 3 italic
- *    pi 15c8  awaiting input                ← history: Tier 3 italic
+ * Tufte-leaning prototype layout (full-width descriptions, source as inline
+ * prefix on change):
  *
- * Empty state: heading + `(no recent activity)` (Tier 4 muted placeholder).
+ *   pi db92 · Reading build.ts        ← first row: source prefix in muted Tier 4
+ *   Reading tsconfig.json              ← same source: no prefix, full width
+ *   Reading package.json
+ *   cc 1859 · ran bun test (passed)     ← source changed: prefix re-appears
+ *   Reading something else
+ *
+ * Design rationale:
+ *   • The session heading is gone — the rolodex above already shows which
+ *     session is focused. Restating it earned no information.
+ *   • Source is no longer a column. Columns pay a fixed horizontal cost on
+ *     every row; source is variable information that often doesn't change
+ *     within a viewing window. Inlining it on change pays only when there's
+ *     signal to pay for.
+ *   • Continuation rows have NO indent — they start at the left margin and
+ *     get the full description width. The ragged left where prefixes appear
+ *     is intentional: it visually tags the source-change moment.
+ *   • First visible row always carries a prefix as an anchor for the reader
+ *     (so single-source sessions still show their source at least once).
+ *   • Italic dropped in favour of weight: Tier 1 (bold) for freshest, Tier 3
+ *     (dim) for older entries.
+ *   • Description is pre-truncated with `…` to avoid wrap orphans.
  *
  * Source ordering: production accumulates logs newest-LAST (push). The mock
  * scenarios use newest-first for authoring convenience. We sort by `ts` desc
@@ -237,34 +261,32 @@ function ActivityZone(props: {
   palette: ThemePalette;
   paneFocused: boolean;
   cap: number;
+  termWidth: number;
 }) {
-  const heading = () => props.focusedSession?.name ?? "";
-  const entries = () => {
+  const entries = createMemo(() => {
     const logs = props.focusedSession?.metadata?.logs ?? [];
     if (logs.length === 0) return [];
     return [...logs].sort((a, b) => b.ts - a.ts).slice(0, props.cap);
-  };
-  const sepFg = () => props.paneFocused ? props.palette.overlay0 : props.palette.surface2;
-  const headingStyle = () => tier("secondary", props.palette, props.paneFocused);
-  const headingArrowStyle = () => tier("muted", props.palette, props.paneFocused);
+  });
   const placeholderStyle = () => tier("muted", props.palette, props.paneFocused);
-  const leaderStyle = () => tier("muted", props.palette, props.paneFocused);
-  const sourceStyle = () => tier("secondary", props.palette, props.paneFocused);
+  const sourceStyle = () => tier("muted", props.palette, props.paneFocused);
+  const sepStyle = () => tier("muted", props.palette, props.paneFocused);
+  const freshDescStyle = () => tier("primary", props.palette, props.paneFocused);
+  const oldDescStyle = () => tier("dim", props.palette, props.paneFocused);
+
+  // Layout: pad(1) | desc(*) | pad(1).
+  // Source labels appear inline as prefixes on rows where the source differs
+  // from the row above (or on the first visible row). The separator between
+  // source and description is `·` (middle dot) with single spaces around it.
+  const PAD = 1;
+  const SEPARATOR = " \u00b7 ";
+  const fullDescWidth = () => Math.max(8, props.termWidth - PAD - PAD);
 
   return (
     <box flexDirection="column" flexShrink={0} paddingLeft={1} paddingRight={1}>
-      {/* Top zone separator */}
-      <box height={1}><text style={{ fg: sepFg() }}>{"─".repeat(200)}</text></box>
+      {/* Air row separating activity zone from the rolodex above. */}
+      <box height={1} />
 
-      {/* Heading: focused-session name + arrow-right separator */}
-      <text truncate>
-        <span style={headingStyle()}>{heading()}</span>
-        <Show when={heading()}>
-          <span style={headingArrowStyle()}>{" "}{ACTIVITY_HEAD}</span>
-        </Show>
-      </text>
-
-      {/* Body: empty placeholder OR entries */}
       <Show when={entries().length > 0} fallback={
         <text truncate>
           <span style={placeholderStyle()}>{"(no recent activity)"}</span>
@@ -272,8 +294,10 @@ function ActivityZone(props: {
       }>
         <For each={entries()}>
           {(entry, i) => {
+            const list = entries();
             const isFreshest = i() === 0;
-            const descStyle = activityDescription(props.palette, props.paneFocused, isFreshest);
+            const prev = i() > 0 ? list[i() - 1] : null;
+            const showPrefix = !!entry.source && (prev == null || prev!.source !== entry.source);
             const sysSourceTone = (() => {
               if (!entry.source) return null;
               if (entry.source.startsWith("[") && entry.source.endsWith("]")) {
@@ -281,15 +305,25 @@ function ActivityZone(props: {
               }
               return null;
             })();
-            const sourceCol = (entry.source ?? "").padEnd(10, " ").slice(0, 10);
             const split = splitOutcome(entry.message);
+            const outcome = split.outcome;
+            const reserved = outcome ? outcome.text.length + 1 : 0;
+            const prefixLen = showPrefix ? entry.source!.length + SEPARATOR.length : 0;
+            const mainAvail = Math.max(0, fullDescWidth() - prefixLen - reserved);
+            const truncatedMain = truncateText(split.main.trimEnd(), mainAvail);
+            const dStyle = isFreshest ? freshDescStyle() : oldDescStyle();
+            const sourceSpanStyle = sysSourceTone
+              ? { fg: toneColor(sysSourceTone, props.palette) }
+              : sourceStyle();
             return (
               <text truncate>
-                <span style={leaderStyle()}>{ACTIVITY_LEAD}</span>
-                <span style={sysSourceTone ? { fg: toneColor(sysSourceTone, props.palette) } : sourceStyle()}>{" "}{sourceCol}</span>
-                <span style={descStyle}>{" "}{split.main}</span>
-                <Show when={split.outcome}>
-                  <span style={{ fg: toneColor(split.outcome!.tone, props.palette), attributes: descStyle.attributes }}>{split.outcome!.text}</span>
+                <Show when={showPrefix}>
+                  <span style={sourceSpanStyle}>{entry.source}</span>
+                  <span style={sepStyle()}>{SEPARATOR}</span>
+                </Show>
+                <span style={dStyle}>{truncatedMain}</span>
+                <Show when={outcome}>
+                  <span style={{ fg: toneColor(outcome!.tone, props.palette), attributes: dStyle.attributes }}>{" "}{outcome!.text}</span>
                 </Show>
               </text>
             );
@@ -727,6 +761,7 @@ function App() {
     onCleanup(() => clearInterval(interval));
   });
 
+
   // Reset agent-mode when focused session loses all agents
   createEffect(() => {
     const data = focusedData();
@@ -1054,7 +1089,8 @@ function App() {
         focusedSession={focusedData()}
         palette={P()}
         paneFocused={paneFocused()}
-        cap={renderer.terminalHeight < 30 ? 3 : 5}
+        cap={renderer.terminalHeight < 30 ? 5 : 7}
+        termWidth={renderer.terminalWidth}
       />
 
       {/* Footer */}

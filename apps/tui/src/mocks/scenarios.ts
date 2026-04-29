@@ -22,7 +22,12 @@ export interface MockScenario {
   paneFocused: boolean;
 }
 
-const NOW = 1735000000000; // stable timestamp; deterministic for screenshots
+// `NOW` is captured at module-load time — not a frozen literal — so relative
+// timestamps in the activity zone (e.g. `2s`, `5s`, `30s`) reflect realistic
+// recency in --mock mode. Within a single TUI session this is still
+// deterministic enough for screenshots; only cross-session reproducibility is
+// lost.
+const NOW = Date.now();
 const HOUR_AGO = NOW - 60 * 60 * 1000;
 const FOUR_MIN_AGO = NOW - 4 * 60 * 1000;
 
