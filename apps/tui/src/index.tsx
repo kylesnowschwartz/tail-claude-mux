@@ -25,6 +25,8 @@ import {
   SEV_READY,
   SEV_STOPPED,
   SEV_ERROR,
+  // SEV_WAITING (nf-md-bell-alert) doubles as the catch-all system-tag glyph
+  // when a row's source matches /^\[.+\]$/ — see ActivityZone Rule 0.
   BRAND_CLAWD,
   BRANCH_GLYPH,
   DIR_MISMATCH_GLYPH,
@@ -32,8 +34,15 @@ import {
   WRAP_DOWN,
   ACTIVITY_LEAD,
   ACTIVITY_HEAD,
+  ACTIVITY_GUTTER_FRESH,
+  ACTIVITY_VERB_READ,
+  ACTIVITY_VERB_LIST,
+  ACTIVITY_VERB_SEARCH,
+  ACTIVITY_VERB_EDIT,
+  ACTIVITY_VERB_RUN,
 } from "./vocab";
-import { tier, activityDescription } from "./tiers";
+import { tier } from "./tiers";
+import { classifyVerb, type Verb } from "./classify";
 import { getScenario, listScenarios } from "./mocks/scenarios";
 
 // Detect which mux we're running inside
@@ -224,33 +233,220 @@ function truncateText(s: string, max: number): string {
   return s.slice(0, max - 1) + "…";
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Activity zone — see docs/simmer/activity-zone/result.md for the full spec.
+// ────────────────────────────────────────────────────────────────────────────
+
+type ActivityLog = NonNullable<NonNullable<SessionData["metadata"]>["logs"]>[number];
+
+/** Sparkline alphabet: U+2581…U+2588 (▁▂▃▄▅▆▇█). EAW Neutral, single-cell. */
+const SPARKLINE_GLYPHS = ["\u2581", "\u2582", "\u2583", "\u2584", "\u2585", "\u2586", "\u2587", "\u2588"] as const;
+
+/** Sparkline geometry: 8 cells × 8 s/bucket = 64 s window. */
+const SPARKLINE_CELLS = 8;
+const SPARKLINE_BUCKET_MS = 8_000;
+const SPARKLINE_WINDOW_MS = SPARKLINE_CELLS * SPARKLINE_BUCKET_MS; // 64 000
+
+/**
+ * Bucket log entries into the 64 s sparkline window. Returns 8 counts where
+ * index 0 is the oldest cell and index 7 is the freshest.
+ *
+ * Pure function: deterministic given (logs, now). Tested implicitly by the
+ * mock scenarios; see docs/simmer/activity-zone/result.md §Sparkline contract.
+ */
+function bucketSparklineLogs(logs: readonly { ts: number }[], now: number): number[] {
+  const buckets = new Array(SPARKLINE_CELLS).fill(0);
+  for (const log of logs) {
+    const ageMs = now - log.ts;
+    if (ageMs < 0 || ageMs >= SPARKLINE_WINDOW_MS) continue;
+    // Bucket 7 (freshest) is age [0, 8s); bucket 6 is [8s, 16s); …; bucket 0 is [56s, 64s).
+    const idx = SPARKLINE_CELLS - 1 - Math.floor(ageMs / SPARKLINE_BUCKET_MS);
+    if (idx >= 0 && idx < SPARKLINE_CELLS) buckets[idx]++;
+  }
+  return buckets;
+}
+
+/**
+ * Render bucket counts to the 8-glyph sparkline string.
+ *
+ * Y-axis: auto-rescale to `max(localMax, 1)`; the `,1)` floor prevents
+ * division-by-zero in the all-zero case and keeps a single event from
+ * saturating the line. Zero counts render as `▁` (visible flat baseline,
+ * never blank — calm reads as a continuous line, not as absence of channel).
+ */
+function sparklineString(buckets: readonly number[]): string {
+  const localMax = Math.max(...buckets, 0);
+  const max = Math.max(localMax, 1);
+  let out = "";
+  for (const c of buckets) {
+    if (c <= 0) {
+      out += SPARKLINE_GLYPHS[0]; // ▁ floor
+      continue;
+    }
+    const step = Math.min(7, Math.max(0, Math.ceil((7 * c) / max)));
+    out += SPARKLINE_GLYPHS[step];
+  }
+  return out;
+}
+
+/**
+ * Format a positive duration as a ≤3-char `·Nm`-style suffix payload.
+ *
+ * Returns `45s`, `2m`, `15m`, `1h`, `2d` etc. Caller prepends `·`.
+ * Rounds to the next-coarser unit at 60s/60m/24h boundaries.
+ */
+function formatRelTime(deltaMs: number): string {
+  const sec = Math.max(0, Math.floor(deltaMs / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h`;
+  const day = Math.floor(hr / 24);
+  return `${day}d`;
+}
+
+/** Test if a source string is a system tag like `[bell]` or `[event:foo]`. */
+function isSystemTag(source: string | undefined): source is string {
+  return !!source && source.startsWith("[") && source.endsWith("]");
+}
+
+/**
+ * Look up the column-1 glyph for a system-tagged source. The bell-alert glyph
+ * is the catch-all ("[bell]" → bell-alert; any unknown system tag also gets
+ * bell-alert as a generic "system event" indicator). Specific tags can override
+ * here as the runtime emits them.
+ */
+function systemTagGlyph(source: string): string {
+  // Reuses existing severity-glyph entries — no new glyph budget.
+  // SEV_WAITING is nf-md-bell-alert.
+  if (source === "[bell]") return SEV_WAITING;
+  return SEV_WAITING;
+}
+
+/** 5-entry verb glyph dictionary. See vocab.ts and classify.ts. */
+const VERB_GLYPHS: Record<Verb, string> = {
+  read:   ACTIVITY_VERB_READ,
+  list:   ACTIVITY_VERB_LIST,
+  search: ACTIVITY_VERB_SEARCH,
+  edit:   ACTIVITY_VERB_EDIT,
+  run:    ACTIVITY_VERB_RUN,
+};
+
+/**
+ * Per-row layout decision — computed in one pass over the visible entries.
+ * `kind` selects the column-0…2 occupancy; `colOneGlyph` and `colOneTone`
+ * select the column-1 glyph (verb/severity/system-tag/blank).
+ */
+type RowMode =
+  | { kind: "system-tag"; tagGlyph: string; tagTone: MetadataTone; emitEyebrow: false }
+  | { kind: "chip"; agentCode: string; emitEyebrow: false }
+  | { kind: "eyebrow-anchor"; eyebrow: string; emitEyebrow: true }
+  | { kind: "eyebrow-cont"; emitEyebrow: false }
+  | { kind: "no-source"; emitEyebrow: false };
+
+/**
+ * Compute the row-mode for every visible entry in one pass.
+ *
+ * Rules (highest precedence first; see docs/simmer/activity-zone/result.md
+ * §Source position):
+ *   0. system tag (source === "[…]")  → system-tag row, doesn't break agent runs
+ *   1–2. agent source, run-length keyed:
+ *     run ≥ 2  → eyebrow mode (anchor on first row, cont on the rest)
+ *     run = 1  → chip mode
+ *   3. tie-breaker: adjacent chip rows with matching agentcode prefix → both
+ *      fall through to eyebrow mode (each with its own full-source eyebrow)
+ */
+function computeRowModes(entries: readonly ActivityLog[]): RowMode[] {
+  const n = entries.length;
+  const modes: RowMode[] = new Array(n);
+  const sysTag = entries.map((e) => isSystemTag(e.source));
+
+  // First pass — assign system-tag, eyebrow, and chip modes by walking through
+  // contiguous agent-source runs. System-tag rows are transparent to runs.
+  let i = 0;
+  while (i < n) {
+    if (sysTag[i]) {
+      const e = entries[i]!;
+      modes[i] = {
+        kind: "system-tag",
+        tagGlyph: systemTagGlyph(e.source!),
+        tagTone: e.tone ?? "info",
+        emitEyebrow: false,
+      };
+      i++;
+      continue;
+    }
+    const source = entries[i]!.source;
+    if (!source) {
+      modes[i] = { kind: "no-source", emitEyebrow: false };
+      i++;
+      continue;
+    }
+    // Walk forward over the run: same source, with system-tag rows transparent.
+    let j = i;
+    const runRows: number[] = [];
+    while (j < n) {
+      if (sysTag[j]) { j++; continue; }
+      if (entries[j]!.source !== source) break;
+      runRows.push(j);
+      j++;
+    }
+    if (runRows.length >= 2) {
+      // Eyebrow mode: anchor on first non-system-tag row, cont on the rest.
+      modes[runRows[0]!] = { kind: "eyebrow-anchor", eyebrow: source, emitEyebrow: true };
+      for (let k = 1; k < runRows.length; k++) {
+        modes[runRows[k]!] = { kind: "eyebrow-cont", emitEyebrow: false };
+      }
+      // Fill in any system-tag rows interleaved inside the run (already assigned above).
+    } else {
+      // Single-row run → chip mode candidate.
+      const idx = runRows[0]!;
+      const agentCode = source.slice(0, 2);
+      modes[idx] = { kind: "chip", agentCode, emitEyebrow: false };
+    }
+    i = j;
+  }
+
+  // Second pass — same-agent multi-thread tie-breaker.
+  // For each pair of adjacent chip rows where the agentcode prefix matches,
+  // fall both through to eyebrow mode (each carrying its full source).
+  // (Adjacency here means "consecutive in the visible list", system-tag rows
+  // do not bridge — but they don't break a chip-pair either since they sit
+  // between two distinct chip candidates.)
+  for (let k = 0; k < n - 1; k++) {
+    const a = modes[k];
+    const b = modes[k + 1];
+    if (a?.kind === "chip" && b?.kind === "chip" && a.agentCode === b.agentCode) {
+      modes[k]     = { kind: "eyebrow-anchor", eyebrow: entries[k]!.source!,     emitEyebrow: true };
+      modes[k + 1] = { kind: "eyebrow-anchor", eyebrow: entries[k + 1]!.source!, emitEyebrow: true };
+    }
+  }
+
+  return modes;
+}
+
 /**
  * Activity zone — fixed-height structural band beneath the rolodex.
  *
- * Tufte-leaning prototype layout (full-width descriptions, source as inline
- * prefix on change):
+ * Layout (single-source steady, per the spec):
  *
- *   pi db92 · Reading build.ts        ← first row: source prefix in muted Tier 4
- *   Reading tsconfig.json              ← same source: no prefix, full width
- *   Reading package.json
- *   cc 1859 · ran bun test (passed)     ← source changed: prefix re-appears
- *   Reading something else
+ *   ▁▂▃▄▅▆▆▅                  ← sparkline (top row, focused-session colour)
+ *                              ← air row
+ *    pi db92                   ← eyebrow (Tier 4 muted)
+ *   ●r build.ts                ← gutter `●` on freshest, verb glyph col 1
+ *    r tsconfig.json           ← continuation: gutter is space, verb persists
+ *    r package.json
+ *    s scenarios.ts
  *
- * Design rationale:
- *   • The session heading is gone — the rolodex above already shows which
- *     session is focused. Restating it earned no information.
- *   • Source is no longer a column. Columns pay a fixed horizontal cost on
- *     every row; source is variable information that often doesn't change
- *     within a viewing window. Inlining it on change pays only when there's
- *     signal to pay for.
- *   • Continuation rows have NO indent — they start at the left margin and
- *     get the full description width. The ragged left where prefixes appear
- *     is intentional: it visually tags the source-change moment.
- *   • First visible row always carries a prefix as an anchor for the reader
- *     (so single-source sessions still show their source at least once).
- *   • Italic dropped in favour of weight: Tier 1 (bold) for freshest, Tier 3
- *     (dim) for older entries.
- *   • Description is pre-truncated with `…` to avoid wrap orphans.
+ * Multi-source interleave switches to chip mode (`pi│ r build.ts` / `cc│ r …`)
+ * which displaces the gutter+verb's column-block. Failed rows displace the
+ * verb glyph with `SEV_ERROR` (red, severity-bypass on unfocus); the gutter
+ * is suppressed on freshest+failed to avoid double-encoding.
+ *
+ * See docs/simmer/activity-zone/result.md for the full spec including
+ * sparkline contract, source-position precedence rules, glyph palette, and
+ * unfocus rules.
  *
  * Source ordering: production accumulates logs newest-LAST (push). The mock
  * scenarios use newest-first for authoring convenience. We sort by `ts` desc
@@ -263,69 +459,188 @@ function ActivityZone(props: {
   cap: number;
   termWidth: number;
 }) {
-  const entries = createMemo(() => {
-    const logs = props.focusedSession?.metadata?.logs ?? [];
-    if (logs.length === 0) return [];
-    return [...logs].sort((a, b) => b.ts - a.ts).slice(0, props.cap);
-  });
-  const placeholderStyle = () => tier("muted", props.palette, props.paneFocused);
-  const sourceStyle = () => tier("muted", props.palette, props.paneFocused);
-  const sepStyle = () => tier("muted", props.palette, props.paneFocused);
-  const freshDescStyle = () => tier("primary", props.palette, props.paneFocused);
-  const oldDescStyle = () => tier("dim", props.palette, props.paneFocused);
+  // 1 Hz tick — drives sparkline window slide and `·Nm` suffix updates.
+  // Sparkline buckets only need re-computation every 8 s in principle, but
+  // running at 1 Hz keeps the suffix (`·45s` → `·46s`) honest, and the work
+  // is trivial.
+  const [nowMs, setNowMs] = createSignal(Date.now());
+  const tick = setInterval(() => setNowMs(Date.now()), 1000);
+  onCleanup(() => clearInterval(tick));
 
-  // Layout: pad(1) | desc(*) | pad(1).
-  // Source labels appear inline as prefixes on rows where the source differs
-  // from the row above (or on the first visible row). The separator between
-  // source and description is `·` (middle dot) with single spaces around it.
-  const PAD = 1;
-  const SEPARATOR = " \u00b7 ";
-  const fullDescWidth = () => Math.max(8, props.termWidth - PAD - PAD);
+  const allLogs = createMemo<readonly ActivityLog[]>(() => {
+    const logs = props.focusedSession?.metadata?.logs ?? [];
+    return [...logs].sort((a, b) => b.ts - a.ts);
+  });
+
+  const entries = createMemo(() => allLogs().slice(0, props.cap));
+  const rowModes = createMemo(() => computeRowModes(entries()));
+
+  // Empty-state classification — one of three sub-cases per §Sparkline contract.
+  type EmptyState = "none" | "no-logs" | "window-empty";
+  const emptyState = createMemo<EmptyState>(() => {
+    const all = allLogs();
+    if (all.length === 0) return "no-logs";
+    const newest = all[0]!.ts;
+    return nowMs() - newest >= SPARKLINE_WINDOW_MS ? "window-empty" : "none";
+  });
+
+  // Sparkline shape derived from the visible logs (cap-bounded — the sparkline
+  // shows the same window the user can see, not all-time history).
+  const sparkline = createMemo(() => {
+    const buckets = bucketSparklineLogs(allLogs(), nowMs());
+    return sparklineString(buckets);
+  });
+
+  // `·Nm` suffix payload — only renders in window-empty case (ii).
+  const ageSuffix = createMemo(() => {
+    if (emptyState() !== "window-empty") return null;
+    const all = allLogs();
+    if (all.length === 0) return null;
+    return formatRelTime(nowMs() - all[0]!.ts);
+  });
+
+  // Tier styles — re-derived per render via accessors so theme/focus changes
+  // propagate without prop drilling.
+  const sparklineStyle  = () => tier("secondary", props.palette, props.paneFocused);
+  const suffixStyle     = () => tier("dim",       props.palette, props.paneFocused);
+  const eyebrowStyle    = () => tier("muted",     props.palette, props.paneFocused);
+  const chipStyle       = () => tier("muted",     props.palette, props.paneFocused);
+  const gutterStyle     = () => tier("secondary", props.palette, props.paneFocused);
+  const verbStyle       = () => tier("secondary", props.palette, props.paneFocused);
+  const blankPlaceholder = () => tier("muted",    props.palette, props.paneFocused);
+  const freshDescStyle  = () => tier("secondary", props.palette, props.paneFocused);
+  const oldDescStyle    = () => tier("dim",       props.palette, props.paneFocused);
+
+  // Severity colours bypass tier slide on unfocus.
+  const sevErrorStyle   = () => ({ fg: props.palette.red });
+  const tagStyleFor     = (t: MetadataTone | undefined) => ({ fg: toneColor(t, props.palette) });
+
+  // Layout arithmetic. Box is paddingLeft=0, paddingRight=1, so total content
+  // width is termWidth-1; each row spends its leftmost cell on a per-row
+  // "pad-or-gutter-or-chip" character. See §States in the spec.
+  const PAD_RIGHT = 1;
+  const contentWidth = () => Math.max(8, props.termWidth - PAD_RIGHT);
+
+  // Description column width by row mode:
+  //   eyebrow / system-tag: leading char + verb-glyph + sep = 3 cols of overhead
+  //   chip:                 chip(3) + sep + verb-glyph + sep = 6 cols of overhead
+  const descWidthEyebrow = () => Math.max(4, contentWidth() - 3);
+  const descWidthChip    = () => Math.max(4, contentWidth() - 6);
 
   return (
-    <box flexDirection="column" flexShrink={0} paddingLeft={1} paddingRight={1}>
-      {/* Air row separating activity zone from the rolodex above. */}
+    <box flexDirection="column" flexShrink={0} paddingLeft={0} paddingRight={PAD_RIGHT}>
+      {/* Sparkline row — always present in active and window-empty states.
+          In the no-logs state we still render a flat sparkline (per §States
+          State 1 sub-case (i)) for visual continuity. */}
+      <text truncate>
+        <span>{" "}</span>
+        <span style={sparklineStyle()}>{sparkline()}</span>
+        <Show when={ageSuffix()}>
+          <span style={suffixStyle()}>{" \u00B7"}{ageSuffix()}</span>
+        </Show>
+      </text>
+
+      {/* Air row separating sparkline from the activity stream. */}
       <box height={1} />
 
       <Show when={entries().length > 0} fallback={
         <text truncate>
-          <span style={placeholderStyle()}>{"(no recent activity)"}</span>
+          <span>{" "}</span>
+          <span style={blankPlaceholder()}>{"(no recent activity)"}</span>
         </text>
       }>
         <For each={entries()}>
           {(entry, i) => {
-            const list = entries();
-            const isFreshest = i() === 0;
-            const prev = i() > 0 ? list[i() - 1] : null;
-            const showPrefix = !!entry.source && (prev == null || prev!.source !== entry.source);
-            const sysSourceTone = (() => {
-              if (!entry.source) return null;
-              if (entry.source.startsWith("[") && entry.source.endsWith("]")) {
-                return entry.tone ?? "info";
-              }
-              return null;
-            })();
+            const idx = i();
+            const mode = rowModes()[idx]!;
+            const isFreshest = idx === 0;
+
+            // splitOutcome bridge: when tone===error AND a trailing (failed)
+            // marker is present, strip the suffix from the displayed
+            // description (column-1 SEV_ERROR carries the signal). For
+            // (passed), keep the suffix render — success is the unmarked
+            // default; the suffix is its sole carrier.
             const split = splitOutcome(entry.message);
-            const outcome = split.outcome;
-            const reserved = outcome ? outcome.text.length + 1 : 0;
-            const prefixLen = showPrefix ? entry.source!.length + SEPARATOR.length : 0;
-            const mainAvail = Math.max(0, fullDescWidth() - prefixLen - reserved);
-            const truncatedMain = truncateText(split.main.trimEnd(), mainAvail);
+            const isFailed = entry.tone === "error" && split.outcome?.tone === "error";
+            const displayMain = isFailed ? split.main.trimEnd() : split.main.trimEnd();
+            const renderPassedSuffix = !!split.outcome && split.outcome.tone === "success";
+
+            // Column-1 glyph + style precedence (per §Verb-glyph column).
+            const verbHint = (entry as { verb?: Verb }).verb;
+            const verb = verbHint ?? classifyVerb(entry.message);
+            let colOneGlyph: string;
+            let colOneStyle: { fg: string; attributes?: number };
+            let suppressGutter = false; // freshest+failed/sys-tag double-encoding override
+
+            if (mode.kind === "system-tag") {
+              colOneGlyph = mode.tagGlyph;
+              colOneStyle = tagStyleFor(mode.tagTone);
+              suppressGutter = true;
+            } else if (isFailed) {
+              colOneGlyph = SEV_ERROR;
+              colOneStyle = sevErrorStyle();
+              suppressGutter = true;
+            } else if (verb) {
+              colOneGlyph = VERB_GLYPHS[verb];
+              colOneStyle = verbStyle();
+            } else {
+              colOneGlyph = " ";
+              colOneStyle = blankPlaceholder();
+            }
+
+            // Per-row leading character — pad-space, gutter, or chip-char.
+            const showFreshGutter = isFreshest && !suppressGutter && mode.kind !== "chip";
             const dStyle = isFreshest ? freshDescStyle() : oldDescStyle();
-            const sourceSpanStyle = sysSourceTone
-              ? { fg: toneColor(sysSourceTone, props.palette) }
-              : sourceStyle();
+
+            // Description budget — outcome reservation only applies to (passed).
+            const reserved = renderPassedSuffix ? split.outcome!.text.length + 1 : 0;
+            const widthBudget = mode.kind === "chip" ? descWidthChip() : descWidthEyebrow();
+            const mainAvail = Math.max(0, widthBudget - reserved);
+            const truncatedMain = truncateText(displayMain, mainAvail);
+
             return (
-              <text truncate>
-                <Show when={showPrefix}>
-                  <span style={sourceSpanStyle}>{entry.source}</span>
-                  <span style={sepStyle()}>{SEPARATOR}</span>
+              <>
+                <Show when={mode.emitEyebrow && mode.kind === "eyebrow-anchor"}>
+                  <text truncate>
+                    <span>{" "}</span>
+                    <span style={eyebrowStyle()}>{(mode as Extract<RowMode, { kind: "eyebrow-anchor" }>).eyebrow}</span>
+                  </text>
                 </Show>
-                <span style={dStyle}>{truncatedMain}</span>
-                <Show when={outcome}>
-                  <span style={{ fg: toneColor(outcome!.tone, props.palette), attributes: dStyle.attributes }}>{" "}{outcome!.text}</span>
-                </Show>
-              </text>
+                <text truncate>
+                  {/* Column 0 — pad / gutter / chip-char-1 */}
+                  <Show when={mode.kind === "chip"} fallback={
+                    <Show when={showFreshGutter} fallback={<span>{" "}</span>}>
+                      <span style={gutterStyle()}>{ACTIVITY_GUTTER_FRESH}</span>
+                    </Show>
+                  }>
+                    <span style={chipStyle()}>{(mode as Extract<RowMode, { kind: "chip" }>).agentCode[0]}</span>
+                  </Show>
+                  {/* Column 1 — verb glyph / SEV_ERROR / system-tag glyph / blank,
+                      OR chip-char-2 in chip mode */}
+                  <Show when={mode.kind === "chip"} fallback={
+                    <span style={colOneStyle}>{colOneGlyph}</span>
+                  }>
+                    <span style={chipStyle()}>{(mode as Extract<RowMode, { kind: "chip" }>).agentCode[1]}</span>
+                  </Show>
+                  {/* Column 2 — chip separator (chip mode only) */}
+                  <Show when={mode.kind === "chip"}>
+                    <span style={chipStyle()}>{"\u2502"}</span>
+                  </Show>
+                  {/* Chip mode: separator + verb glyph + separator before description */}
+                  <Show when={mode.kind === "chip"}>
+                    <span>{" "}</span>
+                    <span style={colOneStyle}>{colOneGlyph}</span>
+                  </Show>
+                  {/* Pre-description separator */}
+                  <span>{" "}</span>
+                  {/* Description */}
+                  <span style={dStyle}>{truncatedMain}</span>
+                  {/* (passed) suffix kept inline; (failed) stripped (see bridge). */}
+                  <Show when={renderPassedSuffix}>
+                    <span style={{ fg: toneColor(split.outcome!.tone, props.palette), attributes: dStyle.attributes }}>{" "}{split.outcome!.text}</span>
+                  </Show>
+                </text>
+              </>
             );
           }}
         </For>

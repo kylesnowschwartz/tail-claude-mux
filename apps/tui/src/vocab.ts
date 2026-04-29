@@ -42,3 +42,18 @@ export const ACTIVITY_LEAD = "\u{F0142}";    // nf-md-chevron-right
 export const ACTIVITY_HEAD = "\u{F0054}";    // nf-md-arrow-right (heading separator)
 export const WRAP_UP = "\u{F0143}";          // nf-md-chevron-up (rolodex top)
 export const WRAP_DOWN = "\u{F0140}";        // nf-md-chevron-down (rolodex bottom)
+
+// ── Activity-zone glyphs (sparkline + gutter + verb stripe) ──
+// All Material Design Icons in the PUA range U+F0000–U+F1AFF — the nerd-fonts
+// patcher guarantees these render as a single column-cell, EAW Neutral.
+// See docs/simmer/activity-zone/result.md §Glyph palette for rationale.
+//
+// The activity-zone sparkline alphabet is plain Unicode block characters
+// (U+2581–U+2588) which are also EAW Neutral and need no glyph budget; they
+// are inlined where they're used.
+export const ACTIVITY_GUTTER_FRESH = "\u{F05CB}"; // nf-md-record (filled small disc — "now")
+export const ACTIVITY_VERB_READ   = "\u{F0208}"; // nf-md-eye
+export const ACTIVITY_VERB_LIST   = "\u{F0279}"; // nf-md-format-list-bulleted
+export const ACTIVITY_VERB_SEARCH = "\u{F0349}"; // nf-md-magnify
+export const ACTIVITY_VERB_EDIT   = "\u{F03EB}"; // nf-md-pencil
+export const ACTIVITY_VERB_RUN    = "\u{F040A}"; // nf-md-play

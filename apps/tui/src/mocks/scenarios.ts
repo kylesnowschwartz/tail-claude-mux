@@ -248,6 +248,168 @@ export const MOCK_SCENARIOS: Record<string, MockScenario> = {
     currentSession: "tcm",
     paneFocused: false,
   },
+
+  // ── Activity-zone state mocks (one per canonical state in the spec) ──
+  // See docs/simmer/activity-zone/result.md §States.
+
+  "activity-empty": {
+    name: "activity-empty",
+    description: "tcm focused; no logs at all (Sparkline State 1 sub-case i — idle).",
+    sessions: [
+      aiEngineeringTemplate,
+      piMono,
+      {
+        ...tcmLive,
+        metadata: { status: null, progress: null, logs: [] },
+      },
+      claudeCodeSystem,
+      theThemerReady,
+    ],
+    focusedSession: "tcm",
+    currentSession: "tcm",
+    paneFocused: true,
+  },
+
+  "activity-stale": {
+    name: "activity-stale",
+    description: "tcm focused; logs > 64 s old (Sparkline State 1 sub-case ii — wedged, shows ·Nm suffix).",
+    sessions: [
+      aiEngineeringTemplate,
+      piMono,
+      {
+        ...tcmLive,
+        metadata: {
+          status: null,
+          progress: null,
+          logs: [
+            { message: "Reading build.ts",       source: "pi db92", tone: "neutral", ts: NOW - 15 * 60_000 },
+            { message: "Reading tsconfig.json",  source: "pi db92", tone: "neutral", ts: NOW - 15 * 60_000 - 4_000 },
+            { message: "Reading package.json",   source: "pi db92", tone: "neutral", ts: NOW - 15 * 60_000 - 8_000 },
+            { message: "Searching ActivityZone", source: "pi db92", tone: "neutral", ts: NOW - 15 * 60_000 - 12_000 },
+          ],
+        },
+      },
+      claudeCodeSystem,
+      theThemerReady,
+    ],
+    focusedSession: "tcm",
+    currentSession: "tcm",
+    paneFocused: true,
+  },
+
+  "activity-single": {
+    name: "activity-single",
+    description: "tcm focused; single-source steady run — 6 reads from pi db92 within 60 s (State 2).",
+    sessions: [
+      aiEngineeringTemplate,
+      piMono,
+      {
+        ...tcmLive,
+        metadata: {
+          status: null,
+          progress: null,
+          logs: [
+            { message: "Reading tiers.ts",        source: "pi db92", tone: "neutral", ts: NOW - 2_000 },
+            { message: "Searching ActivityZone",  source: "pi db92", tone: "neutral", ts: NOW - 12_000 },
+            { message: "Reading scenarios.ts",    source: "pi db92", tone: "neutral", ts: NOW - 22_000 },
+            { message: "Reading package.json",    source: "pi db92", tone: "neutral", ts: NOW - 32_000 },
+            { message: "Reading tsconfig.json",   source: "pi db92", tone: "neutral", ts: NOW - 44_000 },
+            { message: "Reading build.ts",        source: "pi db92", tone: "neutral", ts: NOW - 56_000 },
+          ],
+        },
+      },
+      claudeCodeSystem,
+      theThemerReady,
+    ],
+    focusedSession: "tcm",
+    currentSession: "tcm",
+    paneFocused: true,
+  },
+
+  "activity-multi": {
+    name: "activity-multi",
+    description: "tcm focused; pi/cc multi-source interleave — chip mode throughout (State 3).",
+    sessions: [
+      aiEngineeringTemplate,
+      piMono,
+      {
+        ...tcmLive,
+        metadata: {
+          status: null,
+          progress: null,
+          logs: [
+            { message: "Reading build.ts",       source: "pi db92", tone: "neutral", ts: NOW - 4_000 },
+            { message: "Reading types.ts",       source: "cc 1859", tone: "neutral", ts: NOW - 11_000 },
+            { message: "Reading scenarios.ts",   source: "pi db92", tone: "neutral", ts: NOW - 18_000 },
+            { message: "Editing index.tsx",      source: "cc 1859", tone: "neutral", ts: NOW - 25_000 },
+            { message: "Reading vocab.ts",       source: "pi db92", tone: "neutral", ts: NOW - 33_000 },
+            { message: "Reading tiers.ts",       source: "cc 1859", tone: "neutral", ts: NOW - 41_000 },
+          ],
+        },
+      },
+      claudeCodeSystem,
+      theThemerReady,
+    ],
+    focusedSession: "tcm",
+    currentSession: "tcm",
+    paneFocused: true,
+  },
+
+  "activity-errors": {
+    name: "activity-errors",
+    description: "tcm focused; error-heavy cascade — 4 failed rows + 1 surviving read (State 4).",
+    sessions: [
+      aiEngineeringTemplate,
+      piMono,
+      {
+        ...tcmLive,
+        metadata: {
+          status: null,
+          progress: null,
+          logs: [
+            { message: "Editing src/index.tsx (failed)", source: "pi 15c8", tone: "error",   ts: NOW - 2_000 },
+            { message: "Editing types.ts (failed)",      source: "pi 15c8", tone: "error",   ts: NOW - 8_000 },
+            { message: "Reading tsconfig.json",          source: "pi 15c8", tone: "neutral", ts: NOW - 18_000 },
+            { message: "Editing vocab.ts (failed)",      source: "pi 15c8", tone: "error",   ts: NOW - 28_000 },
+            { message: "Editing tiers.ts (failed)",      source: "pi 15c8", tone: "error",   ts: NOW - 40_000 },
+          ],
+        },
+      },
+      claudeCodeSystem,
+      theThemerReady,
+    ],
+    focusedSession: "tcm",
+    currentSession: "tcm",
+    paneFocused: true,
+  },
+
+  "activity-bell": {
+    name: "activity-bell",
+    description: "tcm focused; system-tag [bell] interleaved with pi reads (Rule 0 system-tag precedence).",
+    sessions: [
+      aiEngineeringTemplate,
+      piMono,
+      {
+        ...tcmLive,
+        metadata: {
+          status: null,
+          progress: null,
+          logs: [
+            { message: "Reading build.ts",         source: "pi db92", tone: "neutral", ts: NOW - 3_000 },
+            { message: "awaiting confirmation",    source: "[bell]",  tone: "warn",    ts: NOW - 8_000 },
+            { message: "Reading tsconfig.json",    source: "pi db92", tone: "neutral", ts: NOW - 14_000 },
+            { message: "Reading package.json",     source: "pi db92", tone: "neutral", ts: NOW - 22_000 },
+            { message: "Reading scenarios.ts",     source: "pi db92", tone: "neutral", ts: NOW - 32_000 },
+          ],
+        },
+      },
+      claudeCodeSystem,
+      theThemerReady,
+    ],
+    focusedSession: "tcm",
+    currentSession: "tcm",
+    paneFocused: true,
+  },
 };
 
 export type MockScenarioName = keyof typeof MOCK_SCENARIOS;
