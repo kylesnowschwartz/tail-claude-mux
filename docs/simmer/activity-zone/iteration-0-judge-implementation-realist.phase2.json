@@ -1,0 +1,86 @@
+{
+  "lens": "implementation-realist",
+  "iteration": 0,
+  "phase": 2,
+  "artifact": "docs/simmer/activity-zone/iteration-0-candidate.md",
+  "deliberation": {
+    "hud-fidelity": {
+      "my_phase1_score": 7,
+      "other_scores": { "information-designer": 7, "terminal-ux-pragmatist": 7 },
+      "agreements": [
+        "All three lenses converge on 7. We agree both terminal tests pass: the sparkline alphabet U+2581–U+2588 is single-cell-safe; the row-end '✗' and gutter '●' do ride the line of work.",
+        "All three lenses agree the freshest row carries 4 primitives (gutter '●' + verb-glyph + bold weight + outcome badge), sitting on the rubric's ceiling. Information-designer adds that 'freshest' is double-encoded (gutter + bold) — same signal twice. I flagged this in phase 1 too.",
+        "All three agree the sparkline 'pattern' instrument conflates stuck/idle into the same flat shape."
+      ],
+      "challenges": [
+        "Information-designer's framing of the verb-glyph column as 'the design's small-multiples instrument' undersells how broken the column gets if it's intermittent. The pragmatist makes the implementation point sharper: if column 1 sometimes carries a verb glyph and sometimes a status glyph (and sometimes nothing for non-tool events), it's not a small-multiples instrument at all — it's a polysemous slot that the renderer must arbitrate per-row. That's a *build-time* concern, not just a perceptual one. I want to fold this into my own lens reading: column 1 inconsistency is a feasibility hit (the verb→glyph classifier has to be defined client-side because the producer is out-of-scope, and its fallback for non-tool events directly determines whether column 1 is a column at all).",
+        "I do NOT agree that the sparkline-label '7/min' is a major HUD-fidelity penalty. Information-designer treats it as restating the shape; the pragmatist agrees implicitly. I'd argue the label resolves the stuck/idle ambiguity ('▁▁▁▁▁▁▁▁ 0/min' reads differently from '▁▁▁▁▁▁▁▁ 4/min' if y-axis is auto-scaled to local max — which is exactly why the y-axis rule belongs in my ASI). Restatement only counts as a penalty if the shape is faithful; without a contract, the shape isn't."
+      ],
+      "concessions": [
+        "Concede that verb-glyph column-1 inconsistency is a real hud-fidelity hit (not just a feasibility hit) because a small-multiples instrument that breaks discipline isn't a small-multiples instrument. This pushes me toward 6.5, but I'm rounding to 7 because the per-row primitive count and both terminal-test passes still hold; the column-1 break is a failure mode that bites only when the dictionary is incomplete, which is recoverable inside one iteration."
+      ],
+      "revised_score": 7,
+      "score_change": 0,
+      "revised_rationale": "Both terminal tests pass in spirit. The U+2581–U+2588 sparkline alphabet is single-cell-safe; '●' col 0 and '✗' end-of-row both sit on the line of work. Per-row primitives hold at 3 on continuation rows and hit 4 on the freshest row (gutter '●' + verb-glyph + Tier-1 bold + outcome '✗') — at the rubric's ceiling, not over. Three penalties: (1) 'Freshest' is double-encoded — gutter '●' AND bold-weight on description carry the same signal. (2) Verb-glyph column 1 is the design's small-multiples instrument, but the dictionary is open (Q4/Q9) and non-tool events have no natural mapping — column 1 will sometimes be empty, sometimes a verb glyph, sometimes a status glyph, breaking the small-multiples discipline that earns it the column. (3) The sparkline's data wiring (window, buckets, refresh, scaling, empty-state alphabet) is left in Open Questions 1/2/7 — a primitive that doesn't render coherently isn't a HUD primitive."
+    },
+    "four-questions": {
+      "my_phase1_score": 7,
+      "other_scores": { "information-designer": 8, "terminal-ux-pragmatist": 8 },
+      "agreements": [
+        "All three lenses agree all four questions are gestured at on paper.",
+        "All three agree pattern is degraded by stuck/idle conflation.",
+        "Information-designer and I both flag latest as over-encoded (gutter + bold)."
+      ],
+      "challenges": [
+        "Pragmatist argues exception is reasonably answered because tone-coloured description bands the row even when no badge is emitted. I agree the tone band IS a fallback, but the spec doesn't commit to it as the primary glance-instrument for exceptions — the badge is foregrounded. If the badge column is the answer, then badge-vs-truncation collision (Open Q8) determines whether the answer renders at 30 cols, and the spec is silent on that. So I read pragmatist's point as 'the design happens to have a fallback' rather than 'the design has answered exception cleanly.'",
+        "Information-designer's bump to 8 rests on dictionary-completion being recoverable; I agree it is, but in *this* iteration's text it isn't done, and 'pattern' relies on it (verb-rate is the small-multiples reading). Both pattern and exception are answerable contingent on open questions resolving — 'contingent' justifies 7, not 8, on a four-questions axis whose 8/9 demands all four pass with at most one slightly weaker."
+      ],
+      "concessions": [
+        "Concede that on a 'glance, not read' standard, three of four (liveness, latest, pattern-via-shape) are unambiguously answerable with the candidate as written; only exception is genuinely contingent on open-question resolution. That's closer to 7.5 than 7. But not enough to flip to 8 because pattern's stuck/idle conflation is a designed-in degradation that no resolution of Q1/2/7 can fully fix without adding a second instrument."
+      ],
+      "revised_score": 7,
+      "score_change": 0,
+      "revised_rationale": "Liveness reads from sparkline existence (contingent on the contract resolving). Pattern reads from sparkline shape but conflates 'stuck' (recent-but-unchanging) with 'idle' (no events) — both render '▁▁▁▁▁▁▁▁'. Exception reads from row-end '✗' but that badge collides with the existing pre-truncation pipeline (Open Q8 unresolved); at 30 cols on long descriptions, the badge column may be eaten before it renders, leaving exception to fall back to tone — which works but is not the design's foregrounded instrument. Latest is over-encoded (gutter '●' + Tier-1 bold). Four-of-four exist on paper; one (latest) is uncontested in the build."
+    },
+    "terminal-feasibility": {
+      "my_phase1_score": 5,
+      "other_scores": { "information-designer": 7, "terminal-ux-pragmatist": 5 },
+      "agreements": [
+        "Pragmatist and I converge at 5 with overlapping but non-identical enumerations of holes. Their list is state-coverage-shaped (empty / multi-source / error-heavy / narrow-30 not mocked, unfocus deferred, verb dictionary unfinished). Mine is renderer-shaped (sparkline data contract, codepoint budget arithmetic, verb-glyph classifier source, outcome×truncation rule). Both lists are real and complementary.",
+        "Pragmatist's specific arithmetic — 'eyebrow on multi-source pi+cc interleave eats 30–50% of the vertical budget at cap 5–7' — is the same trade-off I flagged at item (4); they put a number on it.",
+        "Pragmatist's concrete 30-col arithmetic — '~24 cols left for description after chrome' — supports my outcome-badge × truncation concern: at that width the badge column is the first cell the truncator eats unless explicitly reserved."
+      ],
+      "challenges": [
+        "Information-designer's 7 reads to me as scoring spec-completeness (states drawn, open questions enumerated), not buildability. From the implementation-realist lens, 'all glyphs attainable' is too generous: '●' (U+25CF) and '✓'/'✗' (U+2713/U+2717) are East Asian Width Ambiguous — single-cell on most modern terminals but not guaranteed; '⚠' (U+26A0) is East Asian Width WIDE and would render 2 cells on many terminal+font combinations, which silently breaks column 0 alignment. None of these four are nerd-font glyphs and none are committed to vocab.ts. The brief explicitly caps new glyphs at 6 with codepoint+rationale; the candidate floats potentially 5 verb + 1 gutter + 2–3 badges = 8–9 against that budget. That's a feasibility hit information-designer's 7 doesn't reflect.",
+        "Information-designer also doesn't penalise the verb-glyph parser gap: logs[] entries carry { message, source, ts, tone } with no verb tag; the producer is explicitly out-of-scope; therefore the renderer must regex-classify message strings client-side and the spec doesn't define that classifier. That's a build-blocking gap, not a polish gap."
+      ],
+      "concessions": [
+        "Concede that the design IS implementable in principle — none of the holes require a missing OpenTUI capability or a forbidden producer change. They're all in-scope spec gaps. So a score below 5 would be wrong; 5 ('implementable but hand-waves a state, or 7+ glyphs') is the right bucket."
+      ],
+      "revised_score": 5,
+      "score_change": 0,
+      "revised_rationale": "Implementable in principle; multiple build-blocking spec gaps that would stall a tomorrow-build. (1) SPARKLINE CONTRACT UNSPECIFIED — Open Q1/2/7/10 leave six load-bearing decisions in the air: data source (logs[] count? rate? debounce-signal?), bucket geometry (8 cells × what window?), refresh policy (per-update? 1Hz tick? rAF?), y-axis rule (auto-scale or fixed max?), empty-state alphabet (suppress / flat / phrase?), unfocus behaviour (tier-slide or severity-bypass?). The producer is out-of-scope per the brief, so the sparkline must derive purely from logs[] as it stands — and the spec doesn't say how. (2) CODEPOINT BUDGET HAND-WAVED — '●' '✓' '✗' are East Asian Width Ambiguous (not guaranteed single-cell), '⚠' is EAW Wide (will break col-0 alignment in many terminals), none are nerd-font, none are in vocab.ts. Plus 5 verb-glyph candidates in Q9. Tally 8–9 new glyphs against a 6-glyph budget. (3) VERB-GLYPH PARSER NOT SOURCED — logs[] has no verb tag, producer is forbidden territory, so the renderer needs a client-side message-classifier the spec doesn't define. (4) MULTI-SOURCE × EYEBROW × CAP 5–7 — pragmatist puts the number at 30–50% of vertical budget eaten by eyebrows on a pi+cc interleave; Q5 names the trade-off but doesn't resolve it. (5) SYSTEM-TAGGED SOURCE ('[bell]') has no eyebrow rule. (6) OUTCOME × TRUNCATION — the spec doesn't say whether the badge column is reserved before pre-truncation or appended after. (7) UNFOCUS — Q10 unresolved; spec must pick tier-slide vs severity-bypass for sparkline cells and verb glyphs. (8) NO ASCII MOCKS for empty / multi-source / error-heavy / 30-col despite the brief explicitly requesting them. None individually fatal; in aggregate, a build attempt stalls inside any one."
+    }
+  },
+  "score_summary": {
+    "hud-fidelity": { "phase1": 7, "phase2": 7, "delta": 0 },
+    "four-questions": { "phase1": 7, "phase2": 7, "delta": 0 },
+    "terminal-feasibility": { "phase1": 5, "phase2": 5, "delta": 0 }
+  },
+  "asi_candidate": {
+    "summary": "Pin down the sparkline contract — its data source, bucket geometry, refresh rate, y-axis rule, unfocus behaviour, and empty-state alphabet — so the load-bearing HUD primitive is buildable from the existing logs[] stream alone.",
+    "actionable_change": "In §Proposed direction, replace Open Questions 1, 2, 7, and the sparkline half of 10 with a resolved §Sparkline contract subsection that commits to all six dimensions: (a) DATA SOURCE — bucket count of metadata.logs[] entries by ts, derived purely client-side (the log producer is out-of-scope per the brief); (b) GEOMETRY — 8 cells × 8s/bucket = 64s window, oldest cell on the left, freshest on the right; (c) REFRESH — re-bucket on every logs[] update plus a 1Hz tick to slide the window when no new entries arrive (no rAF, no per-frame work); (d) Y-AXIS — auto-rescale to max(localMax, 1) so a single entry renders as one block at the top tick rather than a full column, eliminating the 'one event = saturated' artefact; (e) GLYPH ALPHABET — '▁▂▃▄▅▆▇█' (U+2581–U+2588, East Asian Width Neutral, no codepoint budget cost); (f) UNFOCUS — sparkline cells slide via Tier 3 → Tier 4 colour (treated as text, NOT severity-bypass; rate is not a severity), and the optional '7/min' label drops to Tier 4 muted; (g) EMPTY STATE — when logs[] is empty, suppress the sparkline row entirely (the existing '(no recent activity)' Tier-4 line carries the no-signal state cleanly); when logs[] is non-empty but the 64s window is empty (stale/stuck agent), render '▁▁▁▁▁▁▁▁' in Tier 4 muted with the label '0/min' so 'idle' and 'stuck' read as the same low-energy shape but distinct from 'empty'. Add one ASCII mock per state (empty / single-source / multi-source / error-heavy / 30-col) showing the sparkline row with the resolved contract applied.",
+    "why_this_lens": "From the implementation-realist lens, 'if I tried to build this tomorrow, where would I get stuck?' has one dominant answer for this candidate: the sparkline. It is the design's novel HUD primitive (load-bearing for two of four watcher questions — liveness, pattern), but the spec hand-waves data source, refresh rate, scaling, and unfocus — exactly what the brief explicitly penalises ('Penalise designs that hand-wave a primitive — sparkline goes here — without specifying its data source, refresh rate, glyph alphabet, and unfocus behaviour'). The other gaps (codepoint budget, verb-glyph parser, eyebrow row-cost) are fixable inside known patterns; the sparkline is the only primitive that is both genuinely new and genuinely undefined. Resolving it converts the design's biggest perceptible-by-glance bet from a 'goes here' label into a function the renderer can call against the existing logs[] stream — without leaving the search space (no new producer fields, no new vocab budget, no new OpenTUI capability). Phase-2 deliberation reinforced this: neither other panelist proposed dropping the sparkline, so the ASI survives; both proposed sibling closures (verb-glyph dictionary, exception-mass column) that are complementary, not substitutive.",
+    "scope": "Single-section edit to docs/simmer/activity-zone/iteration-1-candidate.md: insert a §Sparkline contract subsection inside §Proposed direction with the seven commitments (a)–(g) above; remove items 1, 2, 7, and the sparkline half of 10 from §Open design questions; add five small ASCII mocks (empty / single-source / multi-source / error-heavy / 30-col) showing the resolved sparkline row.",
+    "refinements_from_phase1": [
+      "Tightened (d) y-axis rule to 'max(localMax, 1)' instead of 'auto-rescale', closing the off-by-one where one event = saturated column.",
+      "Tightened (f) unfocus rule to commit explicitly to tier-slide (not severity-bypass), with rationale that rate is not a severity. Phase-1 left this as 'sparkline cells slide via Tier 3 → Tier 4'; phase-2 makes the rule-class explicit, which is what Open Q10 was actually asking.",
+      "Tightened (g) empty state to distinguish three sub-cases (no logs at all / logs but 64s window empty / active) rather than two. Information-designer and pragmatist both flagged stuck-vs-idle conflation; this resolves it inside the contract."
+    ]
+  },
+  "notes_for_synthesis": [
+    "All three lenses converged on hud-fidelity 7 and on four-questions 7–8. Terminal-feasibility split: information-designer 7 vs pragmatist 5 vs me 5. The split tracks whether the lens is reading 'spec polish' (info-designer) or 'tomorrow-build readiness' (pragmatist + me). For synthesis, the pragmatist+realist 5 should weight more heavily on the feasibility axis — that axis is definitionally about buildability, not spec-completeness.",
+    "Three ASIs are likely complementary, not substitutive: my sparkline contract closure, information-designer's verb-glyph dictionary closure, pragmatist's (likely) state-coverage / multi-source eyebrow resolution. All three live inside one iteration without conflict. If the orchestrator can only carry one ASI forward, mine is the highest-leverage because the sparkline is load-bearing for 2 of the 4 watcher questions; verb-glyph is load-bearing for 1 (pattern via verb-shape), and is partially redundant with sparkline-pattern.",
+    "Codepoint budget and verb-glyph parser remain as flagged-but-not-folded concerns. They are properly scoped to a follow-up iteration: commit specific nerd-font codepoints (e.g. nf-md-circle-medium for gutter, nf-md-check / nf-md-close for badges, retire EAW-Wide '⚠'), and define a client-side message→verb classifier with a fallback rule for non-tool events that keeps column 1 a stable small-multiples instrument."
+  ]
+}

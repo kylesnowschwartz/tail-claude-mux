@@ -1,0 +1,63 @@
+{
+  "lens": "implementation-realist",
+  "iteration": 2,
+  "phase": 2,
+  "phase1_scores": { "hud-fidelity": 8, "four-questions": 8, "terminal-feasibility": 9, "mean": 8.33 },
+  "phase2_scores": { "hud-fidelity": 9, "four-questions": 8, "terminal-feasibility": 9, "mean": 8.67 },
+  "movement": "+0.33 (hud-fidelity 8→9 conceded; four-questions 8 held; terminal-feasibility 9 held)",
+  "deliberation": {
+    "hud_fidelity": {
+      "designer_score": 9,
+      "pragmatist_score": 9,
+      "my_phase1": 8,
+      "my_phase2": 9,
+      "verdict": "concede",
+      "reasoning": "My phase-1 held 8 on the rule 'no design-surface change → no movement.' That rule is wrong here. The column-arithmetic annotation IS hud-fidelity-relevant from a realist angle: it converts the 30-col mocks from 'asserted' to 'auditable cell-by-cell,' which directly increases the probability that what ships matches what's drawn. Designer is right that this is genuine micro-typography work. On the ●✗ freshest+failed adjacency: this is NOT a Tufte double-encoding — gutter ● answers 'latest?' and col-1 ✗ answers 'failed?' — they encode orthogonal questions. Designer's framing of the State-4 row 0 as the genuine HUD reading 'the latest thing also failed' is correct. Pragmatist's separate concern (●r / ●✗ intra-cell padding undocumented) is a soft realist demerit but not score-moving — nerd-font PUA glyphs ship with intra-glyph padding by construction. I conceded over-conservatism in phase-1.",
+      "evidence": "Lines 296-304 of candidate (column arithmetic) verifiable against apps/tui/src/index.tsx:283 (fullDescWidth = termWidth - PAD - PAD) and :286 (paddingLeft={1} paddingRight={1}). The annotation makes the mocks reproducible, which is the realist-flavoured hud-fidelity criterion."
+    },
+    "four_questions": {
+      "designer_score": 9,
+      "pragmatist_score": 8,
+      "my_phase1": 8,
+      "my_phase2": 8,
+      "verdict": "challenge designer's 9; hold my 8",
+      "reasoning": "Designer's by-question table reads 'Pattern: Pass — hump/sustained/decaying shapes are demonstrated in states 2/3/4 and read directly.' This evaluates Pattern only on the ACTIVE-window cases. It does not address the window-empty case — where a flat ▁▁▁▁▁▁▁▁ sparkline reads identically whether the agent is wedged on a 60s+ Bash run or simply finished its burst. Pragmatist explicitly caught this in iteration-1 phase-2 (which is why iter-1 four-questions was 8 not 9) and re-flagged that iteration-2 chose to leave it un-fixed in favour of the three buildability stalls. The candidate's own open-questions list dropped this item between iter-1 and iter-2, which is regression-by-omission rather than resolution. Designer's score_rationale.four_questions.demerits acknowledges 'Latest is the weakest in chip mode' and 'no chip-mode + error mockup' but does NOT acknowledge stuck-vs-idle Pattern conflation. The Pattern question is genuinely partial-answer, not pass. Holding 8 with pragmatist; designer's 9 over-rewards by ignoring the Pattern hole that her own iter-1 phase-2 score reflected.",
+      "designer_defensibility": "indefensible on the stuck-vs-idle catch specifically. Defensible on Liveness, Exception, Latest. The 9 averages over four questions where one is genuinely partial — 8 is the correct round number.",
+      "if_designer_concedes": "8.5 → rounds to 9 or 8 depending on rule; pragmatist and I agree 8."
+    },
+    "terminal_feasibility": {
+      "designer_score": 9,
+      "pragmatist_score": 9,
+      "my_phase1": 9,
+      "my_phase2": 9,
+      "verdict": "agree",
+      "reasoning": "Three-way 9 with shared rationale: Rule 0 system-tag closure clean (1.0), column-arithmetic clean modulo cosmetic +1 in per-mode budgets (1.0), splitOutcome bridge partial closure on under-marking edge (0.8). All three panelists independently surface the same residual (Rule 1 trigger keys on tone:'error' AND-conjunction with splitOutcome outcome tone, missing the producer-emits-failed-with-neutral-tone case). 10 reserved for closing that one OR-clause. Pragmatist's cosmetic off-by-one in description budgets (≤27 vs ≤26 eyebrow, ≤24 vs ≤23 chip) is a real catch but does not move the score — mocks themselves are honest at 30 cols, only the prose threshold is +1 generous."
+    }
+  },
+  "asi_refined": {
+    "primary": {
+      "target": "Verb-glyph column, Rule 1 (lines 186-194 of iteration-2 candidate)",
+      "edit": "Broaden Rule 1's trigger from `tone === \"error\" AND splitOutcome.outcome?.tone === \"error\"` to `tone === \"error\" OR splitOutcome(message).outcome?.tone === \"error\"`. In either case render SEV_ERROR in col 1 and strip the `(failed)` suffix. The bridge note simplifies because both signals route through the same OR-trigger.",
+      "why": "Trust the suffix-fact (which IS the message ground truth — splitOutcome at index.tsx:215 derives outcome.tone purely from regex group 4) instead of only the producer's tone-claim. Closes the under-marking edge with one OR-clause, zero new primitives, no producer contract change. Matched to lens (terminal-feasibility, primary): this is a one-line implementer-side change.",
+      "cost": "One sentence on line 186, one phrase deletion in the bridge note. No new glyphs, no mock changes."
+    },
+    "secondary_acknowledgement": {
+      "source": "pragmatist phase-1",
+      "target": "Sparkline tier rule, §States preamble",
+      "edit": "Window-empty sparkline renders Tier-3 (dim) when localMax === 0 over the 64s window; active-low renders Tier-2. Adds an explicit cross-band reference: 'wedged-vs-finished is answered by the rolodex severity spinner above, not by the sparkline alone.'",
+      "why_secondary_not_primary": "This is a four-questions Pattern fix and requires a small design-surface change (Tier-step rule on sparkline). Higher leverage on the four-questions axis but outside my realist primary-axis lift. I defer to pragmatist on framing; my primary remains the under-marking OR-clause because it is buildability-blocking in the realist sense (week-of-use rule consistency for users learning 'red col-1 = exception').",
+      "ranking_if_iter3_picks_one": "If iter-3 has budget for ONE ASI: stuck/idle Pattern fix (pragmatist's) wins on lens-weighted leverage because the under-marking edge is producer-config-dependent and may not bite under current shipped producers, whereas stuck/idle bites every long-running compile. If iter-3 has budget for TWO: do both — they don't interact."
+    },
+    "tertiary_designer_acknowledgement": {
+      "source": "designer phase-1 summary",
+      "target": "Visual hierarchy in mocks (`**bold**` Tier-2, plain Tier-3, `~muted~` Tier-4)",
+      "why_tertiary": "Real Tufte work but pure documentation polish — no implementation difference. From realist lens this is lowest leverage of the three because no buildability stall is unblocked. Worth doing only after primary and secondary land."
+    }
+  },
+  "calibration_anchor_phase2": {
+    "self_consistency": "Phase-1 was 8/8/9 = 8.33. Phase-2 is 9/8/9 = 8.67. The +1 on hud-fidelity is conceded after re-reading designer's column-arithmetic-as-micro-typography argument and pragmatist's matching 9. The +0 on four-questions reflects that designer's 9 is not defensible against the stuck/idle conflation that her iter-1 phase-2 score itself reflected. The +0 on terminal-feasibility reflects three-way agreement on the under-marking residual.",
+    "vs_iteration_1_phase2": "iter-1 phase-2 was 8/8/8 = 8.0 (mine). iter-2 phase-2 is 9/8/9 = 8.67. The +0.67 lift is concentrated in hud-fidelity (column-arithmetic clarification) and terminal-feasibility (Rule-0 + bridge + arithmetic). Four-questions held flat because iter-2 was scoped away from the stuck/idle fix.",
+    "panel_position": "Mid-panel. Pragmatist 9/8/9 = 8.67 (matches me). Designer 9/9/9 = 9.0 (one notch higher on four-questions, which I challenge). If panel converges on my position, mean is 8.67; if designer holds, mean is ~8.78."
+  },
+  "summary_inline": "Phase-2: 9/8/9 = 8.67 (was 8/8/9 = 8.33). Conceded hud-fidelity 8→9 to designer+pragmatist — column-arithmetic annotation IS realist-relevant micro-typography (auditable mocks ship truer), and ●✗ adjacency encodes orthogonal questions, not double-marks the same one. Held four-questions at 8 against designer's 9 — her Pattern: Pass evaluation covers active-window only and silently drops the window-empty stuck-vs-idle conflation that her own iter-1 phase-2 8 reflected; pragmatist's 8 is the correct read. Held terminal-feasibility at 9 in three-way agreement; the splitOutcome under-marking residual (Rule 1 AND-conjunction misses producer-emits-failed-with-neutral-tone) gates the 10. ASI refined: primary = one OR-clause on Rule 1 trigger (realist axis, one-line); secondary acknowledgement = pragmatist's sparkline Tier-step rule for stuck/idle (four-questions axis, higher user-impact); tertiary = designer's perceptual-mock typography (lowest realist leverage). If iter-3 picks one, stuck/idle wins on lens-weighted leverage."
+}

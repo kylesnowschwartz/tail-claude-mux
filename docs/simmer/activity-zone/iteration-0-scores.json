@@ -1,0 +1,22 @@
+{
+  "iteration": 0,
+  "scores": {
+    "hud-fidelity": {
+      "score": 7,
+      "reasoning": "Both terminal tests pass: sparkline (≤8 cells, fixed U+2581–U+2588 alphabet, inside existing line) and spellcheck (gutter `●`, end-row `✗` on line of work). Four data-ink offences prevent higher score: (1) freshest is double-encoded (gutter `●` AND Tier-1 bold carry same signal), (2) sparkline label '7/min' restates what shape shows, (3) per-row primitive count hits ceiling of 4 on freshest row (gutter + verb-glyph + bold + badge), (4) verb-glyph column is the design's small-multiples instrument but dictionary/fallback unresolved (Q4/Q9), so column-1 sometimes carries glyph, sometimes doesn't—breaking small-multiples discipline that earns it the column.",
+      "improvement": "Drop Tier-1 bold on freshest row (keep gutter `●` only); drop '7/min' suffix; close verb-glyph dictionary with explicit 5-verb set + fallback rule so column-1 is guaranteed-populated every row."
+    },
+    "four-questions": {
+      "score": 8,
+      "reasoning": "All four answerable by glance: liveness from sparkline existence, pattern from sparkline shape, exception from row-end `✗` + tone, latest from gutter `●`. Two weaknesses: (1) Pattern conflates 'stuck' (recent-but-unchanging agent) with 'idle' (no events)—both render flat `▁▁▁▁▁▁▁▁` with no distinction. (2) Exception encoded as end-of-row glyph rather than gutter mass—a left column of `✗` accumulating under error-heavy load would let eye count failures without reading (canonical Tufte gutter-mass move), but current placement forfeits this and risks truncation collision.",
+      "improvement": "Move exception marker from end-of-row badge to gutter displacement (failed rows get `✗` in column-1 instead of verb-glyph), creating vertical stripe under error-heavy load for peripheral exception-count by mass."
+    },
+    "terminal-feasibility": {
+      "score": 5,
+      "reasoning": "Implementable in principle, but hand-waves critical edges that would stall tomorrow's build. Sparkline contract entirely in Open Questions (data source, bucket geometry, refresh rate, y-axis scaling, empty-state alphabet, unfocus behavior). Multi-source case acknowledged as 'expensive' but unresolved—eyebrow-per-source-change eats 30–50% of vertical budget on pi+cc interleave. Only single-source state mocked; empty/multi-source/error-heavy/30-col absent. Codepoint width issues: `●` `✓` `✗` are East Asian Width Ambiguous (risk 2-cell rendering), `⚠` is Wide. Verb-glyph classifier has no data source (logs[] lack verb tag, renderer must regex-classify). Unfocus rules deferred to Q10.",
+      "improvement": "Pin sparkline contract (8-cell × 8s/bucket = 64s window, auto-rescale y-axis to max(localMax,1), tier-slide on unfocus); add four 30-col ASCII mocks (empty/single-source/multi-source/error-heavy); resolve multi-source with hybrid source-position rule (eyebrow for runs ≥2 rows, inline 3-char chip for interleaving); pin width-deterministic codepoints."
+    }
+  },
+  "composite": 6.7,
+  "asi": "Seed hand-waves critical edges: multi-source eyebrow thrash (costs 30–50% vertical budget), sparkline contract undefined (data source/geometry/refresh/y-axis/empty-state all in Open Questions), missing state mocks (only 1 of 4 drawn), exception placement forfeits gutter-mass count, unfocus rules deferred, codepoint width risks. Better = four mocked states at 30 cols, resolved source-position rule (hybrid eyebrow/inline keyed on run-length), sparkline contract pinned (64s window, buckets, refresh, scaling), exception moved to gutter-displacement for vertical-stripe under load, unfocus tier-slide committed, width-deterministic glyphs."
+}

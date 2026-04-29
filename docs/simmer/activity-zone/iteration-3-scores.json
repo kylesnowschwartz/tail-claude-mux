@@ -1,0 +1,22 @@
+{
+  "iteration": 3,
+  "scores": {
+    "hud-fidelity": {
+      "score": 9,
+      "reasoning": "Three-way consensus at 9 across both phases. Both terminal tests pass cleanly. ≤3 primitives per row holds in every state, including the new freshest+failed row (now 2 primitives after the gutter override drops `●` when SEV_ERROR occupies col 1). The case-(ii) `·Nm` suffix lands as a status-line-field primitive within the sparkline row — 4 cells of Tier-3 ASCII, suppressed in cases (i) and (iii) where the shape carries the rate, so the sparkline row's primitive count stays at 1 in active mode and at 2 only when the shape has nothing to say. The persistent chip-mode `│` separator (one per row of multi-source state) is a structural cost that would only resolve via a chip-geometry redesign — out of scope for this iteration.",
+      "improvement": "10 reserves for a chip-mode geometry that doesn't need a per-row separator (e.g. dim left-rail spanning the chip-mode run rather than per-row pipe). Out of scope here."
+    },
+    "four-questions": {
+      "score": 9,
+      "reasoning": "Three-way agreement at 9 in phase 2 (Designer conceded 10→9 on Realist's 'magnitude reads, binary glances' framing; Pragmatist upgraded 9→10 in solidarity with Designer's phase-1 view). Median lands at 9. Iteration-3's targeted fix lands cleanly: the binary 'is there a `·Nm` suffix?' is genuinely peripheral — wedged-vs-idle is now glanceable in the window-empty sub-case where iteration-2 conflated them. All four watcher questions answer by glance: liveness (sparkline shape with ▁-floor + suffix presence), pattern (sparkline burst/decay/flat shapes + verb-glyph stripe), exception (column-1 SEV_ERROR displacement + gutter mass under cascade), latest (gutter `●` in eyebrow mode, position+tier in chip mode). 10 would require the magnitude of N (45s vs 15m vs 3d) to also glance, which it doesn't.",
+      "improvement": "Defer 10. The remaining gap (magnitude reading vs glancing) is an inherent property of relative-time text; resolving would require a second visual instrument (dot density, colour ramp, position) which would push primitive count over 3."
+    },
+    "terminal-feasibility": {
+      "score": 9,
+      "reasoning": "Full panel convergence at 9 across both phases. Verifications: (a) `·Nm` suffix is implementable from existing `logs[].ts` data with no producer change — `formatRelTime(now - newestEntry.ts)` already exists in the renderer history (commit `872a621` removed it but the helper pattern is trivial to re-introduce); (b) freshest-row gutter override is a single one-line conditional in the Show wrapper around the existing `●`; (c) multi-thread tie-breaker is buildable by inspecting the previous chip row's `agentCode(source)` for collision; (d) glyph palette stays at 6/6 (the `·` separator is plain ASCII, no MD codepoint cost); (e) no buildability stalls reintroduced. Spec is 'buildable straight through' with all four states mocked, all primitives pinned, all unfocus rules committed.",
+      "improvement": "10 reserves for a primary verification (a green-tick pass on a smoke-test implementation against the full mock corpus). That's an iteration-into-code task, not a spec task."
+    }
+  },
+  "composite": 9.0,
+  "asi": "Iteration-3 closed the last unresolved watcher-question gap (stuck-vs-idle Pattern conflation) with a conditional Tier-3 dim suffix that lands as a status-line-field primitive within the sparkline row. Three-way consensus at 9/9/9 (Designer 9/9/9, Pragmatist 9/10/9, Realist 9/9/9) → composite 9.0. Median 9 across all three criteria. The design is now buildable straight through with all four states mocked, all primitives pinned to the ≤3-per-row ceiling, all unfocus rules committed, all glyphs in the 6/6 vocab budget with verified MD-PUA codepoints, all source-position branches resolved (system-tag precedence + run-length-keyed eyebrow/chip + same-agent multi-thread tie-breaker), and the splitOutcome legacy bridge in place. The remaining 1-point gap to 10 across all axes is inherent ceiling — chip-mode `│` separator (structural, would require chip geometry redesign), magnitude-reading on `·Nm` suffix (inherent to relative-time text), green-tick implementation pass (iteration-into-code rather than spec). This is the recommended ship state. Implementation is the next phase, not another simmer iteration."
+}

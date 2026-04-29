@@ -1,0 +1,96 @@
+{
+  "iteration": 3,
+  "phase": 2,
+  "judge": "terminal-ux-pragmatist",
+  "candidate_path": "docs/simmer/activity-zone/iteration-3-candidate.md",
+  "panel_snapshot": {
+    "phase1_scores": {
+      "terminal-ux-pragmatist": { "hud-fidelity": 9, "four-questions": 9, "terminal-feasibility": 9, "composite": 9.0 },
+      "information-designer": { "hud-fidelity": 9, "four-questions": 10, "terminal-feasibility": 9, "composite": 9.33 },
+      "implementation-realist": { "hud-fidelity": 9, "four-questions": 9, "terminal-feasibility": 9, "composite": 9.0 }
+    },
+    "agreement": "All three converged on 9/9/9-or-better. Sole divergence: designer's four-questions=10 vs pragmatist+realist 9. Each lens raised a distinct residual: pragmatist (mine) flagged same-agent chained-burst; designer flagged tier×tone description-weight composition; realist flagged tie-breaker row-arithmetic ('+1 row per pair' is wrong, should be +2)."
+  },
+
+  "deliberation_round": {
+    "designer_four_questions_10_argument": "The col-0 forfeit case (chip mode AND freshest+failed) is governed by ONE unifying rule, not two ad-hoc patches: 'col 0 carries ● when free; when col 0 is occupied (chip head or severity displacement), Latest is recovered by top-row position + Tier-2 description weight.' Same recovery in both edge cases. Pattern is binary/trinary by framework definition (cycling/converging/STUCK), and the case-(ii) ·Nm suffix-presence renders the binary stuck-vs-idle peripherally. All four questions glance across all sub-cases under one rule.",
+    "realist_held_at_9_argument": "The exact magnitude (·45s vs ·15m vs ·3d) requires foveal fixation; the binary glances but the magnitude reads.",
+    "my_phase1_held_at_9_argument": "Latest in freshest+failed shifts from explicit (● gutter) to implicit (position+colour+tier) — small consistency loss; rule 'freshest = ● gutter' acquires an exception.",
+
+    "verdict_on_four_questions": "UPGRADE 9 → 10",
+    "upgrade_reasoning": [
+      "Designer's framing dissolves my phase-1 demerit: col-0-forfeit is ONE rule with two instances (chip mode + freshest+failed), not an exception to a universal rule. Memorability cost under the pragmatist lens collapses from 'one exception to remember' to 'one rule that applies whenever col 0 is taken' — which I already accept for chip mode. If chip mode's gutter-forfeit didn't drop the score, freshest+failed's gutter-forfeit shouldn't either.",
+      "Realist's magnitude-needs-fixation concern is real but OUT-OF-FRAMEWORK: the four questions are Liveness/Pattern/Exception/Latest. Pattern asks 'cycling, converging, STUCK?' — a trinary classification. 'How stuck' (45s vs 15m vs 3d) is a drill-in question, not part of the framework. The candidate answers Pattern by glance and bonuses magnitude as a fixation reward; that's a tiered affordance, which is the lens-correct shape.",
+      "Iter-1+iter-2 phase-2 lens-signature gap (stuck-vs-idle Pattern conflation in window-empty case) was carried in two consecutive phase-2 outputs. Iter-3 closes it with a structural (theme-independent, parafoveal-detectable) cleavage. Earning the 10 is exactly what closing a two-iteration carry-over weakness should look like.",
+      "Pragmatist 200ms-glance test: I tested all four states + all three sparkline sub-cases mentally with the unified col-0-forfeit rule. Every cell answers its question without fixation. No remaining glance gap."
+    ],
+    "verdict_on_hud_fidelity": "HOLD 9. Chip │ on every multi-source row is a structural row-edge demerit (one separator per row = chrome that scales with row count); 10 reserves for chip-mode geometry that doesn't need a per-row separator (out of scope for iter-3). Designer's 9 cites 5-rule precedence stack + tier×tone hole; realist's 9 cites text-not-glyph chrome on case-ii. Three independent reasons all converging on 9 is robust signal.",
+    "verdict_on_terminal_feasibility": "HOLD 9. Three live residuals: (1) my chained-burst ambiguity, (2) realist's '+1 row per pair' arithmetic slip (true cost +2 rows: eyebrow1+content1+eyebrow2+content2 = 4 rows for 2 events vs 2 rows in chip mode), (3) splitOutcome under-marking carried from iter-2. All buildable; none blocking. 10 reserves for closing all three."
+  },
+
+  "final_scores": {
+    "hud-fidelity": {
+      "score": 9,
+      "delta_vs_phase1": 0,
+      "rationale": "Hold. Both terminal tests still pass cleanly (sparkline 8 cells × 8 s/bucket fixed alphabet; spellcheck on the line of work). ≤3 primitives per row holds in every state. ●✗ adjacency demerit closed via rule (a). Persisting structural demerit: chip │ on every multi-source row (one separator per row scales with row count). Same-tier as iter-2 with one demerit closed and one minor (·Nm 4-cell suffix on case-ii) added. Independent agreement at 9 across all three lenses with three different residuals — robust signal."
+    },
+    "four-questions": {
+      "score": 10,
+      "delta_vs_phase1": 1,
+      "rationale": "Upgrade on designer's unified-rule framing. Liveness, Pattern, Exception, Latest all glance-answerable across all four states and all three sparkline sub-cases under one rule per question. Pattern's stuck-vs-idle conflation (carried from iter-1+iter-2 phase-2 as the lens-signature gap) is closed via the structural case-(ii) ·Nm suffix-presence cleavage — theme-independent, parafoveal-detectable. Latest's col-0-forfeit fallback (position + Tier-2 description weight) applies uniformly to chip mode AND freshest+failed — one rule, two instances, same recovery. Magnitude-needs-fixation is a tiered affordance (binary glances, magnitude rewards fixation), which is the lens-correct shape and not a four-questions deduction since magnitude isn't framework-canon. The two-iteration carry-over weakness is genuinely closed; 10 is earned.",
+      "stuck_vs_idle_resolution": {
+        "approach": "case-(ii) Tier-3 ·Nm ASCII suffix; case-(i) flat bars only",
+        "glance_test": "passes for binary stuck-vs-idle; magnitude requires fixation but is out-of-framework",
+        "lens_signature_gap": "closed",
+        "carried_iterations_closed": 2
+      },
+      "unified_col0_forfeit_rule": "freshest = ● gutter when col 0 is free; when col 0 is occupied (chip head OR SEV_ERROR displacement), Latest is recovered by top-row position + Tier-2 description weight. Same fallback in chip mode and freshest+failed."
+    },
+    "terminal-feasibility": {
+      "score": 9,
+      "delta_vs_phase1": 0,
+      "rationale": "Hold. Iter-3 closes two open items (stuck-vs-idle, freshest+failed double-encoding) and partially closes a third (same-agent chip collision — pair case yes, chained-burst case ambiguous). Zero new glyphs (·Nm uses U+00B7 + ASCII, with U+00B7 already shipped at index.tsx:282 per realist's verification). Three live residuals keep this off 10: (1) chained-collision behaviour underspecified (pairwise application of the rule to a 3+ same-agent burst causes 100% eyebrow density — realist concurs the chained case isn't stated); (2) realist's row-arithmetic catch (the spec says '+1 row per collision pair' but the true cost under eyebrow-fallthrough is +2 rows per pair); (3) splitOutcome under-marking carried from iter-2. All three are descriptive/buildable, not blocking.",
+      "open_questions_remaining": [
+        "heading absorption (carried, deferred to user testing)",
+        "gutter freshest-only vs gradient (carried, deferred to user testing)",
+        "splitOutcome under-marking (carried from iter-2, realist's catch — one-clause fix in §Verb-glyph rule 1)",
+        "same-agent chained-burst behaviour (new — pairwise vs first-pair-only application, plus realist's row-cost arithmetic)"
+      ]
+    },
+    "composite": 9.33
+  },
+
+  "calibration_check": {
+    "iteration_1_phase2": "9/8/8 = 8.3",
+    "iteration_2_phase2": "9/8/9 = 8.67",
+    "iteration_3_phase1": "9/9/9 = 9.0",
+    "iteration_3_phase2": "9/10/9 = 9.33",
+    "monotone_lift": true,
+    "lift_source": "four-questions 9→10 on designer's unifying-rule framing — closes the iter-1/iter-2 carry-over lens-signature gap (stuck-vs-idle Pattern) AND dissolves my phase-1 freshest+failed-implicit-Latest demerit by reframing it as one instance of a unified col-0-forfeit rule. Hud-fidelity and feasibility hold at 9 with three independent lenses converging on 9 with three different residuals — robust signal not to inflate."
+  },
+
+  "asi_candidate": {
+    "title": "Replace eyebrow-fallthrough tie-breaker with threadId-prefix chip-head swap on same-agent collision; spell out chained behaviour and correct row-cost arithmetic",
+    "summary": "Single focused refinement that closes the iteration-3 residual most aligned with the Terminal-UX Pragmatist's signature concern (burst-y multi-thread workloads in real working sessions) and INCORPORATES realist's row-arithmetic catch as supporting evidence. The candidate's eyebrow fallthrough handles isolated pair collisions but degrades poorly: realist verifies the true row cost is +2 per pair (spec says +1, but eyebrow1+content1+eyebrow2+content2 = 4 rows for 2 events vs 2 rows in chip mode), and chains of 3+ same-agent threads have ambiguous semantics under the rule's pairwise reading (cascade to 100% eyebrow density). Replace the eyebrow fallthrough with a chip-head character swap: on collision, swap chars 0–1 of the chip head from the 2-char agent-code to the FIRST 2 of the 4-char threadId suffix (chars 3–4 of `entry.source`). Renders as `15│ 9a│ 7b│` for `pi 15c8 / pi 9a01 / pi 7b22`. Preserves chip-mode geometry, scales to arbitrary chain length, and gives the user a structural visual cue (chip-head shifts from pure-letter agent-codes to mixed-alphanumeric threadId-prefixes) that signals 'same-agent burst' at-a-glance.",
+    "concrete_changes": [
+      "PATCH §Source position lines 296–306 (Tie-breaker — same-agent multi-thread collision). Replace 'Resolution: fall through to eyebrow mode for both rows... This costs +1 row per collision pair' with: 'Resolution: in chip mode, swap chip head from agent-code (chars 0–1 of source) to threadId-prefix (chars 3–4 of source — the first 2 of the 4-char threadId suffix). Renders as `15│ 9a│ 7b│` for `pi 15c8 / pi 9a01 / pi 7b22`. Preserves chip-mode geometry; zero vertical-budget cost regardless of chain length. The visual cue (pure-letter agent-codes `pi`/`cc` vs mixed-alphanumeric threadId-prefixes `15`/`9a`/`7b`) is itself the same-agent-burst signal.'",
+      "ADD one paragraph immediately after the patched tie-breaker rule: 'Chained behaviour. The swap is purely local (no lookahead, no batch). For a 5-row same-agent burst (pi/pi/pi/pi/pi), all 5 rows render with threadId-prefix chip heads (`15│ 9a│ 7b│ 1f│ 2c│`). For mixed pi/cc/pi/pi/cc, only the second pi gets the threadId-prefix swap (because it adjoins another pi). Threadid-prefix has 36² = 1296 distinct values per agent-code, so prefix-collision-within-collision is statistically negligible; if it ever occurs, fall through to the original full-source eyebrow as a tertiary rule (deferred to user testing).'",
+      "ADD a same-agent-burst sub-mock to State 3 showing `15│ r build.ts / 9a│ r types.ts / 7b│ r scenarios.ts` (3-row pi-burst rendering — preserves chip stripe across the burst, distinguishes per-thread, +0 rows vs the existing State-3 chip mock). The existing State-3 mock with `pi│ cc│ pi│ cc│` is the no-collision case; the new sub-mock is the same-agent-burst case. Together they prove the chip column survives both forms of multi-source pressure.",
+      "ADD a sentence to the Unfocus rule table for the new chip-head pattern: 'Source chip / threadId-prefix chip — Slide. Same Tier 4 as standard chip; the swap is a content change inside the existing primitive, not a new primitive.'"
+    ],
+    "addresses_realist_catch": "Realist verified that the candidate's '+1 row per collision pair' claim is descriptively wrong (true cost +2 per pair under eyebrow-fallthrough). Under MY proposal the cost is +0 rows because chip mode is preserved — which both fixes the arithmetic slip AND eliminates the vertical-budget problem the wrong arithmetic was hiding. Realist's catch and my chained-burst concern are the SAME residual viewed from two angles; this ASI dissolves both.",
+    "designer_compatibility": "Designer's notes_for_phase_2 explicitly mark her ASI-equivalent (tier×tone composition rule) as non-conflicting with column-1 precedence reorganization — and equally non-conflicting with this column-0 chip-head swap. The two refinements are orthogonal. Designer's tertiary note about suffix left-alignment and her quaternary note about success-badge are unaffected.",
+    "why_this_lens": "The Terminal-UX Pragmatist grades on real working-session behaviour. Burst-y multi-thread workloads (parallel test orchestrators emitting from 3+ threads of the same agent rapidly) are daily reality in agent-orchestrator TUIs. The candidate's eyebrow fallthrough handles the simple pair case but degrades exactly in the burst case, where the lens cares most. Designer cannot easily catch this (her lens grades shape-legibility and information primitives, not burst-y multi-thread vertical-budget behaviour). Realist caught the symptom (row-arithmetic slip) but not the architectural fix. The threadId-prefix swap is the architectural move the candidate already had materials for (the threadId chars are on every entry per index.tsx:269 sort, just unused in chip mode) and chose not to use. The pragmatist's distinctive contribution to iteration-4.",
+    "expected_score_lift": {
+      "hud-fidelity": "+0 (already 9; chip-head character swap is a content change inside an existing primitive, adds zero chrome; the persisting chip │ separator demerit is structural and out of scope for this ASI)",
+      "four-questions": "+0 (already 10; chip-mode preservation doesn't change Liveness/Pattern/Exception/Latest answerability — preserves the win)",
+      "terminal-feasibility": "+1 (9 → 10; closes (a) the chained-burst residual, (b) realist's row-arithmetic slip — both via the same fix; combined with the splitOutcome under-marking residual, which the realist will likely catch in iter-4, this puts feasibility at ceiling)"
+    },
+    "single_focused": true,
+    "scope_notes": "Spec-only; no source code changes, no vocab.ts entries, no new glyphs (uses existing chip │ separator + ASCII threadId chars sourced from existing entry.source field), no new mocks beyond a State-3 sub-mock. Total candidate edit: ~8 lines of prose in §Source position + 1 sub-mock in State 3 + 1 line in Unfocus rule table.",
+    "secondary_residual": "splitOutcome under-marking (Rule 1 broadens to OR with splitOutcome.outcome?.tone === 'error') — naturally caught by realist in iter-4; one-clause fix; closes the iter-2(b) stall residual.",
+    "tertiary_residual": "Tier×tone description-weight composition rule (designer's catch) — unstated edge in colour discipline; one-paragraph clarification; non-blocking but worth pinning."
+  },
+
+  "summary_inline": "Phase-2: 9/10/9 = 9.33. Upgraded four-questions 9→10 on designer's unified-col-0-forfeit-rule framing (one rule, two instances: chip mode + freshest+failed share the same position+Tier-2 fallback for Latest), which dissolves my phase-1 freshest+failed-implicit-Latest demerit. The two-iteration carry-over Pattern stuck-vs-idle gap is genuinely closed by the structural case-(ii) ·Nm suffix-presence cleavage; magnitude-needs-fixation is out-of-framework (Pattern asks binary/trinary, not magnitude). Held hud-fidelity at 9 (chip │ per-row separator structural) and feasibility at 9 (chained-burst residual + realist's '+2 rows per pair' arithmetic catch + carried splitOutcome). ASI: replace eyebrow-fallthrough with threadId-prefix chip-head swap on same-agent collision — pragmatist signature concern (burst-y multi-thread workloads), zero vertical-budget cost, preserves chip-mode geometry, structurally distinguishes pure-letter agent-codes from mixed-alphanumeric threadId-prefixes as the same-agent-burst cue. The fix dissolves both my chained-burst residual and realist's row-arithmetic slip in one move."
+}

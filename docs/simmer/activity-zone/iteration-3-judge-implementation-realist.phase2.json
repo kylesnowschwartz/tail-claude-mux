@@ -1,0 +1,71 @@
+{
+  "lens": "Implementation Realist",
+  "iteration": 3,
+  "phase": 2,
+  "artifact_type": "single-file",
+  "candidate_path": "docs/simmer/activity-zone/iteration-3-candidate.md",
+  "deliberation_round": 1,
+  "deliberation_target": {
+    "axis": "four_questions",
+    "designer_score": 10,
+    "pragmatist_score": 9,
+    "my_phase1_score": 9,
+    "my_phase1_reason_to_hold": "the value of N (45s vs 15m vs 3d) requires reading to discriminate degrees of stuck-ness; the binary disambiguation glances, the magnitude reads",
+    "designer_strongest_argument": "Pattern in the four-questions framework is categorical (cycling/converging/stuck/idle), not continuous. Suffix-presence-vs-absence answers the categorical question at parafoveal glance. Magnitude (15m vs 3d) is downstream of Pattern, not part of it. Plus 4-char duration tokens parse pre-attentively in trained status-line readers (vim/tmux precedent).",
+    "pragmatist_independent_reason_for_9": "Latest signal becomes implicit on freshest+failed rows (gutter ● dropped, replaced by position + Tier-2 weight + bright red ✗). The rule 'freshest = ● gutter' now has an exception, a small consistency loss flagged in pragmatist question (c)."
+  },
+  "deliberation_outcome": {
+    "verdict": "hold-but-shift-reason",
+    "concede_to_designer": [
+      "Designer's framework reading is correct: Pattern is categorical, not magnitude. The four-questions Pattern test is genuinely answered by suffix-presence-vs-absence at glance. My phase-1 magnitude-read objection set the bar for 10 too strictly — magnitude is a fixation reward, not a Pattern-question requirement.",
+      "Trained-user pre-attentive parsing of 4-char duration tokens is real and well-attested in vim/tmux status-line precedent. The 'reads not glances' objection over-states the cost for the magnitude case."
+    ],
+    "hold_at_9_because": [
+      "Pragmatist's Latest-implicit concern is independently valid and I under-weighted it in phase-1. My phase-1 hud-fidelity rationale treated the gutter-drop (rule a) as purely hud-positive ('removes a cell-level double-encoding'); it has a four-questions side-cost the pragmatist correctly surfaced — Latest carrier on freshest+failed shifts from explicit (●) to implicit (position + tier + red ✗). The exception is bounded but real.",
+      "10 should require all four questions glanceable WITHOUT exception across all states. The Pattern gap is closed, but the Latest exception on freshest+failed rows is the new ceiling. Closing one demerit while opening a smaller offsetting one (per the pragmatist's read, which I now adopt) holds the score at 9 with a strengthened-but-not-perfected rationale.",
+      "Two-of-three lens convergence at 9 (with the pragmatist landing there independently via a different argument) is the principled panel reading. Designer at 10 is defensible; I am genuinely on the boundary; the asymmetric tie-breaker is the Latest exception, which my lens (Implementation Realist) reads as a buildable but real spec gap."
+    ],
+    "score_unchanged": true,
+    "rationale_evolution": "Phase-1 said 'magnitude reads, binary glances.' Phase-2 concedes that line — the framework only asks the binary. New principled reason to hold: Latest carrier becomes implicit on freshest+failed (consistency loss), so a four-questions perfect-10 is not yet earned even though Pattern is fully closed."
+  },
+  "scoring_phase2_final": {
+    "hud_fidelity": {
+      "score": 9,
+      "delta_vs_phase1": 0,
+      "rationale": "Phase-1 reasoning holds with one acknowledged refinement: rule (a) gutter-drop is hud-positive (closes ●✗ adjacency double-marking on freshest+failed) but has a small four-questions side-cost (Latest implicit) — these belong on different axes and don't change the hud-fidelity verdict. Three iter-3 deltas remain hud-positive: case-(ii) `·Nm` only renders where shape carries no rate (defensible data-ink); gutter override removes cell-level chrome jam; tie-breaker preserves chip-column small-multiples. Holds at 9 not 10 because `·Nm` is text-not-glyph on an otherwise pure-glyph instrument row, and chip `│` separator on every multi-source row persists as a structural row-edge cost (per pragmatist's persisting demerit, which I concur with)."
+    },
+    "four_questions": {
+      "score": 9,
+      "delta_vs_phase1": 0,
+      "rationale": "The iteration's headline fix lands cleanly: case-(i)/(ii) split closes the stuck-vs-idle Pattern conflation that survived iter-1 and iter-2. CONCEDING the magnitude-read objection from my phase-1 — designer is right that Pattern is a categorical question and suffix-presence-vs-absence is the categorical answer at parafoveal glance; magnitude is a fixation reward, not a Pattern requirement. HOLDING at 9 on the pragmatist's stronger argument: Latest signal carrier on freshest+failed rows shifts from explicit (● gutter) to implicit (top-row position + Tier-2 description weight + bright red SEV_ERROR), introducing a bounded but real exception to 'freshest = ● gutter.' The exception is consistent within itself (chip mode forfeits the gutter for the same architectural reason — col 0 displaced by something more important) and the red-at-top compound signal is strong, but a 10 should require all four questions answered without exception. Pattern is closed; Latest has one exception state. Solid 9, +1 from iter-2."
+    },
+    "terminal_feasibility": {
+      "score": 9,
+      "delta_vs_phase1": 0,
+      "rationale": "Net-zero feasibility risk added. Verifications (a)–(e) all pass; U+00B7 codepoint precedent at index.tsx:282 makes the `·Nm` suffix safer than the spec's EAW-Ambiguous hedge admits. Acknowledging pragmatist's chained-collision concern (3+ same-agent runs cause vertical-budget collapse if the tie-breaker applies pairwise idempotently) — this is a real edge in burst workloads but it's a vertical-budget cost, not a buildability blocker. The rule-prose ambiguity (pairwise vs first-pair-only) is also a descriptive slip the implementor would need to resolve, on top of my phase-1 row-cost arithmetic catch (+1 vs +2 rows per pair). Both slips compound into the same §Source position paragraph and are addressable in one ASI pass. Holds at 9 (not 10) for: (i) row-cost arithmetic '+1 row per collision pair' is wrong (true cost: +2 rows per pair under single-row-eyebrow fallback); (ii) chained-burst behaviour is implicit but not stated; (iii) splitOutcome under-marking edge from iter-2 is carried (Rule 1 keys only on tone === 'error', misses tone:'neutral' + (failed) suffix — pragmatist's catch, agreed). All three are descriptive, not buildability blockers."
+    },
+    "provisional_avg": 9.0
+  },
+  "asi_focus_phase2_final": {
+    "single_refinement": "In §Source position §Tie-breaker — same-agent multi-thread collision: (1) correct '+1 row per collision pair' to '+2 rows per collision pair (each affected row gets its own 1-row eyebrow, doubling the pair's vertical footprint from 2 → 4 lines)'; (2) explicitly state pairwise idempotent application so chains of 3+ same-agent threads cascade — each adjacent same-prefix pair triggers fall-through, so a triple becomes three eyebrows + three content rows = 6 lines for 3 entries.",
+    "why_this_one_unchanged_from_phase1": "Same surgical target as my phase-1 ASI, now strengthened by the pragmatist's chained-collision analysis. Three candidate ASIs surfaced during deliberation: (1) the row-cost + chained-burst slip (mine + pragmatist's, now compound); (2) Latest-implicit-on-freshest+failed colour-composition spec hole (designer's quaternary note + pragmatist's question c); (3) splitOutcome under-marking carried from iter-2. Option 1 is the only one that combines a descriptive correctness error WITH a vertical-budget impact at the 5–7-row cap, where the difference between '+1 row per pair' and '+2 rows per pair, cascading on chains' changes whether a 3-thread parallel-test-worker burst collapses the panel's display capacity by 50%. One-paragraph fix; high signal-to-noise. Options 2 and 3 are real but lower-leverage and either deferred-to-user-testing (option 2) or carried as a known-edge from iter-2 (option 3).",
+    "scope": "Two-clause edit to one paragraph in §Source position. No section additions, no glyph changes, no producer-side schema change. Optionally: a single-clause hint that an alternative chip-head substitution (threadId-prefix chars instead of agent-code on collision) would preserve chip-mode geometry at zero vertical cost (pragmatist's design alternative) — but this is a design-not-spec note and out of scope for surgical refinement.",
+    "non_conflicting_with_designer_asi": "If designer's ASI targets the description-tier × tone composition rule (her stated remaining colour-spec hole), the two ASIs are orthogonal — mine fixes a count and a cascade behaviour in §Source position; hers would fix a colour-stack rule in §Verb-glyph or §Tier table. Both fit a single iteration-4 surgical pass."
+  },
+  "panel_convergence_assessment": {
+    "consensus_axes": [
+      "hud_fidelity: 9/9/9 unanimous",
+      "terminal_feasibility: 9/9/9 unanimous"
+    ],
+    "split_axis": {
+      "axis": "four_questions",
+      "designer": 10,
+      "pragmatist": 9,
+      "self": 9,
+      "split_severity": "boundary-call, not principled disagreement",
+      "median": 9
+    },
+    "expected_phase2_panel_avg": "between 9.0 (if designer holds) and 9.11 (if both 9s hold and designer holds 10): (9+10+9+9+9+9+9+9+9)/9 = 9.11; or 9.0 flat if everyone lands at 9. My final read favours 9.0–9.11 band."
+  },
+  "summary": "One round of deliberation. CONCEDING the magnitude-vs-binary line of my phase-1 four-questions rationale to designer (she is right that Pattern is categorical, so suffix-presence-vs-absence is the framework's actual ask and magnitude is a fixation reward, not a glance requirement). HOLDING at 9 on a stronger reason adopted from the pragmatist's independent read: Latest signal carrier on freshest+failed rows shifts from explicit (● gutter) to implicit (position + Tier-2 + red ✗), introducing a bounded but real exception to 'freshest = ● gutter.' Two-of-three lens convergence at 9 is the principled panel landing; designer's 10 is defensible and within the boundary band. Final scores 9/9/9 = 9.0, unchanged from phase-1 but with rationale shifted on the four-questions axis. ASI strengthened by pragmatist's chained-collision analysis: correct §Source position row-cost arithmetic from '+1 per pair' to '+2 per pair' AND explicitly state pairwise idempotent cascade for chains of 3+ same-agent threads (compound vertical-budget concern at the 5–7-row cap)."
+}

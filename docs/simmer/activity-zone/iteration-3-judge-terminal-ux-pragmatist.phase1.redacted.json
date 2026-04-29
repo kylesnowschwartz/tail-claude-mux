@@ -1,0 +1,201 @@
+{
+  "iteration": 3,
+  "phase": 1,
+  "judge": "terminal-ux-pragmatist",
+  "artifact_type": "single-file",
+  "candidate_path": "docs/simmer/activity-zone/iteration-3-candidate.md",
+  "lens_summary": "Real-world TUI usage during real working sessions. Behaviour across all four states (empty, single-source, multi-source, error-heavy) at narrow widths (~30 cols), under unfocus dimming, across a week of repeated use. The 200ms-glance test governs.",
+  "calibration_against_seed_iter1_iter2": {
+    "seed_phase2": {
+      "hud-fidelity": 7,
+      "four-questions": 8,
+      "terminal-feasibility": 5,
+      "composite": 6.7
+    },
+    "iteration_1_phase2": {
+      "hud-fidelity": 9,
+      "four-questions": 8,
+      "terminal-feasibility": 8,
+      "composite": 8.3
+    },
+    "iteration_2_phase2": {
+      "hud-fidelity": 9,
+      "four-questions": 8,
+      "terminal-feasibility": 9,
+      "composite": 8.67
+    },
+    "iteration_3_change_envelope": "Single-focused on the stuck-vs-idle Pattern fix (the iter-2-phase-2 carried-over weakness) plus two scope-clean side-fixes: same-agent multi-thread chip collision tie-breaker (closes open-Q3 from iter-2) and freshest+failed gutter override (closes the \u25cf\u2717 adjacency demerit I cited in iter-1+iter-2). Zero new glyphs (\u00b7Nm uses ASCII U+00B7 + digits + unit letter, all proven in the existing ` \u00b7 ` separator). No mock changes except case-(i)/(ii) split in State 1 and rule-(a) annotation in State 4.",
+    "expected_movement": "hud-fidelity holds (one demerit closed via gutter-drop offsetting one new chrome cell-cluster via \u00b7Nm \u2014 net flat at 9). four-questions lifts +1 (8 \u2192 9; stuck-vs-idle binary answerable peripherally via suffix presence). terminal-feasibility holds at 9 (chained-collision burst residual offsets the open-Q3 closure)."
+  },
+  "judge_questions": {
+    "a_does_dot_Nm_disambiguate_at_200ms_glance": {
+      "verdict": "yes-for-binary-question-no-for-magnitude",
+      "reasoning_for_yes": "Pragmatist-lens reading: at 30 cols the entire sparkline row falls inside parafoveal scan from any focus point in the activity zone. The two empty-states render as ` \u2581\u2581\u2581\u2581\u2581\u2581\u2581\u2581` (9 cells, no trailing ink) vs ` \u2581\u2581\u2581\u2581\u2581\u2581\u2581\u2581 \u00b715m` (14 cells, trailing ink). Presence/absence of trailing characters after the bars is a STRUCTURAL difference \u2014 the same kind of parafoveal cue that lets users see 'a menu has a selected entry' without fixating on which one. The four-questions Pattern question is literally 'cycling, converging, STUCK?' \u2014 the binary 'is it stuck' is what the lens cares about, and that is glance-answerable.",
+      "reasoning_for_no_on_magnitude": "The exact duration (\u00b745s vs \u00b72m vs \u00b715m vs \u00b73d) requires foveal fixation to read. This is a tiered affordance: glance gives binary, drill-in gives magnitude. Acceptable under the lens \u2014 magnitude is not a four-questions question, it is a follow-up.",
+      "comparison_to_pragmatist_iter2_proposal": "My iter-2 phase-2 ASI proposed Tier-3-dim-flat (case ii) vs Tier-2-normal-flat (active) as the cleavage. The candidate chose suffix-presence instead. Suffix-presence is arguably STRONGER under my lens because (i) Tier dim/normal contrast is theme-dependent and subtle in many palettes whereas presence/absence-of-trailing-chars is structural and theme-independent; (ii) the suffix bonuses an exact magnitude when the user fixates, whereas Tier-step gives only a binary. The candidate's choice here is at least as good as my proposal and arguably better. Conceding the design call.",
+      "residual_concern": "The suffix sits 1 cell to the right of the bars (` \u00b715m` with a leading space). A trained user glancing at the bars will see 'extra ink to the right' peripherally; a first-time user might not register it as informative until they fixate and decode `\u00b7Nm`. Memorability is one-shot ('any tail = wedged') so this resolves within the first day of use. Not score-affecting.",
+      "passes_200ms_glance_for_pattern_question": true
+    },
+    "b_same_agent_tie_breaker_under_burst_workloads": {
+      "verdict": "holds-for-isolated-collisions-degrades-for-chained-bursts",
+      "isolated_collision_case": "Two consecutive single-row runs with matching agent-prefix (e.g. `pi 15c8` then `pi 9a01`): rule fires, both fall to eyebrow, +1 row cost (3 rows instead of 2). Vertical budget impact: small. Threadid-distinction preserved. Works.",
+      "chained_collision_case": "Three or more consecutive same-agent single-row runs (e.g. `pi 15c8`, `pi 9a01`, `pi 7b22` \u2014 parallel-test-worker emissions, multi-tab agent threads, common in real agent workflows). Pairwise application of the rule (pair 0,1 fires; pair 1,2 fires) means all three rows fall to eyebrow. Cost: 6 rows for 3 entries (100% overhead, 50% of displayed rows are eyebrows). In a 5-row pane this means 2.5 entries visible during a 3-thread burst, vs 5 in normal chip mode. In a 7-row pane: 3.5 entries vs 7. Vertical-budget collapse is a real working-session cost.",
+      "candidate_silence_on_chained_case": "The rule prose says 'Detection runs once per chip-mode candidate; the cost is O(n) over the visible window' but does not specify whether the rule is pairwise (idempotent: same-prefix triplet \u2192 all eyebrow) or first-pair-only. The idempotent reading is the obvious one, but it produces the burst-degradation. A non-idempotent reading would leave the third row chip-rendering as `pi\u2502`, which collapses identity again. The rule as written has a real ambiguity in the chained case.",
+      "cleaner_alternative_not_chosen": "On collision, swap chip head from agent-code (`pi`/`cc`) to threadId-prefix chars (last 2 of the 4-char threadId, e.g. `15\u2502`, `9a\u2502`, `7b\u2502` for `pi 15c8`/`pi 9a01`/`pi 7b22`). Preserves chip-mode geometry, zero vertical-budget cost, distinguishes per-thread under arbitrary burst lengths. The 2-char threadId prefix has 1296 distinct values (36\u00b2) so collision-within-collision is vanishingly rare. The candidate considered dropping threadId in chip mode ('threadid is dropped in chip mode \u2014 the agent code alone is enough to read interleave') and committed to it; the collision case is exactly when that commitment fails and threadId-chars become useful. The candidate's eyebrow fallthrough is buildable but architecturally lossy.",
+      "lens_signature_assessment": "This is the iteration-3 residual that most directly maps to the Terminal-UX Pragmatist's signature concern \u2014 burst-y multi-thread workloads are the daily reality of agent-orchestrator TUI use. The rule as shipped works for the simple case but degrades exactly where the lens cares most. Highest-leverage iteration-3 ASI candidate.",
+      "score_impact": "Not enough to drop terminal-feasibility from 9 (the rule is still buildable; the burst-case is a vertical-budget edge, not a buildability edge). Counts as the new edge that offsets the open-Q3 closure \u2014 net flat at 9."
+    },
+    "c_dropped_gutter_on_error_new_ambiguity": {
+      "verdict": "minor-consistency-loss-acceptable",
+      "candidate_rationale_assessment": "The candidate justifies rule (a) as 'no double-encoding' \u2014 that the \u25cf gutter and the SEV_ERROR \u2717 would double-encode the same event. This rationale is overcooked: \u25cf encodes 'this is the freshest row' and \u2717 encodes 'this row is failed' \u2014 they are ORTHOGONAL signals, not redundant. The two glyphs adjacency-conflict (\u25cf\u2717 at cols 0\u20131 packs two filled glyphs side-by-side, a soft demerit I cited in iter-1+iter-2) is the real reason to drop one of them. The candidate landed on the right design choice with the wrong justification.",
+      "new_ambiguity_introduced": "Latest-signal carrier shifts from explicit (\u25cf in col 0) to implicit (top-of-list position + Tier-2 description weight) on freshest+failed rows specifically. Across the rest of the design, \u25cf is the freshest-row marker; on freshest+failed rows it's absent. So the rule 'freshest = \u25cf gutter' is no longer universal \u2014 there's an exception. Memorability cost: small but real. Theme-dependence cost: Tier-2 vs Tier-3 contrast is asserted in prose but is subtle in low-contrast palettes (a designer-flagged concern from iter-2 deliberation).",
+      "ambiguity_severity": "Low. The bright red \u2717 at top-of-list is itself a strong peripheral signal ('the most recent thing is an error'). Position + colour together carry Latest cleanly even without the gutter. The freshest+failed case is also relatively rare compared to the freshest+normal case (errors are exceptions, not the steady-state). The exception-to-the-rule lives only in the exception state.",
+      "consistency_with_chip_mode": "The candidate explicitly grounds rule (a) in the chip-mode precedent: 'Latest is recovered by top-row position + Tier-2 description weight on row 0, exactly as in chip mode.' This is correct and reinforces the design's grain \u2014 both chip mode and freshest+failed forfeit the gutter for the same architectural reason (col 0 is occupied by something more important: chip head or severity displacement). The exception is consistent within itself.",
+      "score_impact": "No score impact. The ambiguity exists but is bounded and the workaround (position + colour + tier) holds. Closes the \u25cf\u2717 jam demerit I cited in iter-1+iter-2; introduces a smaller demerit (Latest-marker-implicit-on-failed). Net positive on hud-fidelity but bounded \u2014 not enough to lift to 10 because the chip \u2502 on every multi-source row still costs a row-edge demerit."
+    }
+  },
+  "scores": {
+    "hud-fidelity": {
+      "score": 9,
+      "rationale": "Both terminal tests still pass cleanly: sparkline (8 cells \u00d7 8s/bucket, fixed \u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588 alphabet, \u2581-floor as visible baseline) and spellcheck (gutter, verb glyph, SEV_ERROR all on the line of work; \u00b7Nm suffix on the sparkline row itself is in-band, not a popup). \u22643 primitives per row holds across all four states \u2014 verified: case-(ii) sparkline row is sparkline + Tier-3 ASCII suffix (2 primitives); freshest+failed row is now SEV_ERROR + description (2 primitives, gutter dropped); chip rows still 3 (chip + verb + description). Two soft demerits from iter-1/iter-2 status: (1) \u25cf\u2717 adjacency CLOSED via rule (a) gutter override; (2) chip \u2502 on every multi-source row PERSISTS (structural cost of chip mode, unfixable without redesign). One new minor: \u00b7Nm suffix is 4 cells of ASCII text on the sparkline row \u2014 but it only renders in case (ii) where the shape carries no information, so it's not data-ink redundancy. Net: one demerit closed, one offsetting minor added \u2014 holds at 9. 10 still reserved for chip-mode geometry that doesn't need a per-row separator (out of scope for this iteration).",
+      "passes_spellcheck_test": true,
+      "passes_sparkline_test": true,
+      "primitives_per_row_worst_case": 3,
+      "primitives_per_row_active_states": [
+        {
+          "state": "single-source-steady",
+          "row_kind": "freshest",
+          "count": 3,
+          "elements": [
+            "gutter \u25cf",
+            "verb glyph",
+            "description"
+          ]
+        },
+        {
+          "state": "single-source-steady",
+          "row_kind": "non-freshest",
+          "count": 2,
+          "elements": [
+            "verb glyph",
+            "description"
+          ]
+        },
+        {
+          "state": "multi-source",
+          "row_kind": "chip",
+          "count": 3,
+          "elements": [
+            "chip head (cols 0\u20132)",
+            "verb glyph",
+            "description"
+          ]
+        },
+        {
+          "state": "error-heavy",
+          "row_kind": "freshest+failed",
+          "count": 2,
+          "elements": [
+            "SEV_ERROR \u2717",
+            "description"
+          ]
+        },
+        {
+          "state": "error-heavy",
+          "row_kind": "non-freshest+failed",
+          "count": 2,
+          "elements": [
+            "SEV_ERROR \u2717",
+            "description"
+          ]
+        },
+        {
+          "state": "window-empty-sparkline",
+          "row_kind": "case-ii",
+          "count": 2,
+          "elements": [
+            "sparkline cells",
+            "\u00b7Nm Tier-3 suffix"
+          ]
+        }
+      ],
+      "data_ink_redundancy_closed": true,
+      "double_marking_freshest_failed_closed": true,
+      "demerits_closed_vs_iter2": [
+        "\u25cf\u2717 adjacency at cols 0\u20131 (closed via rule a)"
+      ],
+      "demerits_persisting_vs_iter2": [
+        "chip \u2502 separator on every multi-source row (structural)"
+      ],
+      "demerits_added_vs_iter2": [
+        "minor: \u00b7Nm 4-cell ASCII suffix on sparkline row in case (ii) only \u2014 not redundant since shape carries no info in that case"
+      ]
+    },
+    "four-questions": {
+      "score": 9,
+      "rationale": "Liveness, Exception, Latest answered cleanly by glance (carried from iter-2). Pattern: the stuck-vs-idle window-empty conflation that I flagged in iter-1-phase-2 and iter-2-phase-2 is now closed via the case-(ii) \u00b7Nm suffix. The cleavage is structural (presence/absence of trailing characters after the bars is parafoveal-detectable at 200ms) rather than chromatic (Tier-step contrast is theme-dependent). The user reads ` \u2581\u2581\u2581\u2581\u2581\u2581\u2581\u2581` as 'never-active idle' and ` \u2581\u2581\u2581\u2581\u2581\u2581\u2581\u2581 \u00b715m` as 'wedged for 15 minutes'. The exact magnitude requires fixation but the binary stuck-vs-not is glance-answerable, which is what Pattern asks. The previous lens-signature gap that survived two iterations is closed. Lifts +1 from iter-2's 8. Stays short of 10 because Latest in the freshest+failed case is now implicit (position + Tier-2 weight + bright red \u2717) rather than explicit (\u25cf gutter), a small consistency-loss flagged in question (c). Solid 9.",
+      "questions_answered_by_glance": [
+        "liveness",
+        "pattern",
+        "exception",
+        "latest"
+      ],
+      "questions_partially_answered": [],
+      "weakest_question": "latest",
+      "weakest_question_rationale": "Latest-signal-on-freshest-failed-row is now carried by top-of-list position + Tier-2 description weight + bright red SEV_ERROR colour, instead of the explicit \u25cf gutter that carries Latest on freshest-not-failed rows. The combination is still strong (red+top), but the rule 'freshest = \u25cf gutter' has an exception. Memorability cost is small; theme-contrast cost is small; bounded. Not enough to drop the score below 9, but enough that 10 isn't earned.",
+      "stuck_vs_idle_resolution": {
+        "approach": "case-(ii) Tier-3 ASCII \u00b7Nm suffix indicating age of newest entry; case-(i) flat bars only",
+        "glance_test_result": "passes for binary stuck-vs-idle question; magnitude requires fixation",
+        "vs_my_iter2_phase2_proposal": "candidate's suffix-presence approach is structurally stronger than my Tier-step proposal under the pragmatist lens (theme-independent, bonuses magnitude as a fixation reward); conceding design call",
+        "lens_signature_gap_closed": true
+      }
+    },
+    "terminal-feasibility": {
+      "score": 9,
+      "rationale": "Iteration-3 closes two open items: same-agent multi-thread chip collision (open-Q3, partially) and freshest+failed double-encoding (rule a). Introduces zero new glyphs \u2014 \u00b7Nm uses ASCII (U+00B7 middle dot is already in shipped code via the ` \u00b7 ` separator on prefix rows; digits + unit letter are obvious). The verb-glyph dictionary stays closed at 5; the glyph palette stays at 6. The \u00b7Nm rendering is a one-liner (humanize-duration helper: 60s\u2192`Ns`, 60m\u2192`Nm`, 24h\u2192`Nh`, beyond\u2192`Nd` with rounding). Three residuals keep this from 10: (1) chained-collision burst case in the same-agent tie-breaker (3+ same-agent single-row runs cause vertical-budget collapse \u2014 analysed in question b; the rule prose is also ambiguous on pairwise-vs-first-pair-only application); (2) splitOutcome under-marking edge from iter-2 not addressed (Rule 1 still keys only on tone === 'error', misses tone:'neutral' + (failed) suffix \u2014 realist's catch); (3) \u00b7Nm formatting helper isn't quite specified (rounding rules mentioned but not the threshold table \u2014 `\u00b745s` then `\u00b71m`? `\u00b759s` then `\u00b71m`?). All three are buildable today; (1) is the lens-signature concern.",
+      "narrow_width_30_cols_drawn": true,
+      "states_drawn": [
+        "empty (i no-logs)",
+        "empty (ii window-empty)",
+        "single-source",
+        "multi-source",
+        "error-heavy"
+      ],
+      "states_handwaved": [],
+      "state_intersections_undrawn": [
+        "multi-source \u2229 system-tag ([bell] mid-interleave \u2014 Rule 0 defined, mock omitted; carried from iter-2)",
+        "multi-source \u2229 same-agent-burst (3+ pi-thread chained collision \u2014 tie-breaker defined for pairs, chained behaviour ambiguous)",
+        "multi-source \u2229 error-heavy (chip + \u2717 \u2014 defined, mock omitted; carried from iter-2)"
+      ],
+      "unfocus_consistency_resolved": true,
+      "new_glyphs_proposed_count": 6,
+      "new_glyphs_pinned": true,
+      "codepoint_width_risks_addressed": true,
+      "codepoint_width_risk_for_dot": "U+00B7 MIDDLE DOT is EAW Ambiguous; candidate notes Neutral rendering in iTerm2/Alacritty/kitty/wezterm and provides ASCII fallback (.) \u2014 same risk profile as the existing ` \u00b7 ` separator, proven in shipped code",
+      "verb_dictionary_closed": true,
+      "buildable_today": true,
+      "open_questions_closed": [
+        "stuck-vs-idle (via case-ii suffix)",
+        "same-agent multi-thread chip collision (via eyebrow tie-breaker; chained-burst case ambiguous)",
+        "freshest+failed double-encoding (via rule a gutter override)"
+      ],
+      "open_questions_remaining": [
+        "heading absorption (carried)",
+        "gutter freshest-only vs gradient (carried)",
+        "splitOutcome under-marking (carried from iter-2; realist's catch)",
+        "same-agent chained-burst behaviour (new \u2014 pairwise vs first-pair-only)"
+      ]
+    }
+  },
+  "lens_observations": {
+    "two_hundred_ms_glance": "Strengthened over iter-2 in the window-empty case: stuck-vs-idle now reads peripherally via suffix presence. Holds for the four active states. The freshest+failed case lost its explicit \u25cf marker and now relies on position+colour+tier \u2014 still strong (red+top is unmissable) but a small consistency loss.",
+    "stuck_vs_idle_pattern_failure": "CLOSED. The lens-signature gap that persisted from iter-1 phase-2 through iter-2 phase-2 is resolved by the case-(ii) \u00b7Nm suffix. The cleavage is structural (trailing-ink presence) rather than chromatic (Tier-step), which is theme-independent \u2014 a stronger fix than my own iter-2 phase-2 ASI proposed. Conceding the design call to the candidate.",
+    "same_agent_multi_thread_collision": "Half-closed. Isolated pi+pi collision: works, +1 row cost. Chained pi+pi+pi+ collision: rule applied pairwise causes all rows to eyebrow, vertical budget collapses 50%. The candidate prose doesn't specify pairwise-vs-first-pair-only application \u2014 a real ambiguity. Cleaner alternative (threadId-prefix chip head: `15\u2502`/`9a\u2502`/`7b\u2502` on collision) preserves chip mode at zero vertical cost; not chosen.",
+    "freshest_failed_gutter_override": "Removes the \u25cf\u2717 adjacency demerit that I cited in iter-1+iter-2 phase-2. Rationale ('no double-encoding') is technically wrong (\u25cf and \u2717 encode orthogonal facts, not the same fact) but landed on the right design choice. New minor: Latest signal on freshest+failed becomes implicit (position + Tier-2 + red colour) instead of explicit (gutter). Bounded \u2014 bright red \u2717 at top-of-list is still a strong signal.",
+    "demands_attention_check": "Sparkline calm. Gutter calm (and now absent on freshest+failed, removing one chrome-jam). Verb stripe calm. SEV_ERROR loud only on real exceptions. \u00b7Nm suffix Tier-3 dim \u2014 calm by design, only renders in case (ii). The unfocus rule keeps everything except SEV_ERROR sliding one step dimmer; the case-(ii) suffix participates. Canonical HUD-at-rest signature preserved.",
+    "consistency_focus_unfocus": "Resolved. The unfocus table now lists the \u00b7Nm suffix explicitly ('Slide. Already Tier 3') and the case-(ii) suffix slides with the rest of the band. The freshest+failed gutter-drop rule is unaffected by focus (gutter is gone in both states). SEV_ERROR continues to bypass tiers. Self-consistent.",
+    "memorability_week_of_use": "\u00b7Nm convention is one-shot to learn ('any tail = wedged, no tail = idle'). Rule (a) gutter-drop is one-shot to learn ('red \u2717 at top = freshest+failed'). Same-agent tie-breaker is invisible to the user (just renders as eyebrows when same-agent runs collide). All three iteration-3 changes are within the lens's memorability budget for a week of repeated use. The persisting weakness is the chained-collision burst case where vertical budget collapses unexpectedly \u2014 that IS a memorability cost ('why did the panel just halve its capacity?').",
+    "intersection_edges_remaining": "Three: (1) same-agent chained-collision burst behaviour (chip \u2192 eyebrow degradation under 3+ same-agent threads; lens-signature concern); (2) splitOutcome under-marking (carried from iter-2; realist's catch); (3) heading absorption + gutter gradient (carried, both deferred to user testing).",
+    "micro_typography": "\u00b7Nm rendering details: leading space before `\u00b7` (so the suffix doesn't visually merge with the rightmost bar \u2014 `\u2581 \u00b715m` not `\u2581\u00b715m`); unit-letter case (lowercase `s/m/h/d` per spec); rounding thresholds (\u226459s \u2192 `\u00b7Ns`, then `\u00b7Nm`, then `\u00b7Nh` at \u22651h, then `\u00b7Nd` at \u22651d \u2014 implied but not explicit in the spec table). Cosmetic; not blocking."
+  }
+}

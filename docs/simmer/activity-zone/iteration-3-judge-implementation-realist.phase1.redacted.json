@@ -1,0 +1,69 @@
+{
+  "lens": "Implementation Realist",
+  "iteration": 3,
+  "artifact_type": "single-file",
+  "phase": 1,
+  "candidate_path": "docs/simmer/activity-zone/iteration-3-candidate.md",
+  "calibration": {
+    "seed_phase2": {
+      "hud_fidelity": 7,
+      "four_questions": 7,
+      "terminal_feasibility": 5,
+      "avg": 6.3
+    },
+    "iteration_1_phase2": {
+      "hud_fidelity": 8,
+      "four_questions": 8,
+      "terminal_feasibility": 8,
+      "avg": 8.0
+    },
+    "iteration_2_phase2": {
+      "hud_fidelity": 9,
+      "four_questions": 8,
+      "terminal_feasibility": 9,
+      "avg": 8.7,
+      "note": "conceded hud-fidelity 8->9 on column-arithmetic edit re-read"
+    }
+  },
+  "verifications": {
+    "a_suffix_implementable_no_producer_change": {
+      "result": "pass",
+      "evidence": "index.tsx:269 already sorts logs by `b.ts - a.ts`. The `\u00b7Nm` suffix is `Date.now() - sortedLogs[0].ts` formatted with a 5-branch duration switch (s/m/h/d). `entry.ts` is the existing numeric timestamp field on every log entry \u2014 no producer-side schema change needed. Section \u00a7Sparkline contract row `Empty states` defines the formatter inline (`\u00b745s`, `\u00b72m`, `\u00b715m`, `\u00b71h`, `\u00b73d`)."
+    },
+    "b_freshest_gutter_override_single_line": {
+      "result": "pass",
+      "evidence": "\u00a7Verb-glyph column rule 1 contains a labelled paragraph `Gutter override (rule (a))`: 'when rule 1 fires on the freshest row, suppress the gutter `\u25cf` from column 0 for that row only.' Single condition, single override, restated unambiguously in \u00a7State 4 bullet `Top row freshest+failed has no `\u25cf` gutter`. The State 4 mock body itself omits the `\u25cf` on row 0 (` \u2717 src/index.tsx`), corroborating the rule visually."
+    },
+    "c_multithread_tiebreaker_buildable": {
+      "result": "pass",
+      "evidence": "\u00a7Source position `Tie-breaker \u2014 same-agent multi-thread collision` paragraph: 'compare `source[i].slice(0,2)` against `source[i+1].slice(0,2)`; equality is the collision signal.' This is a pairwise scan over the visible window (\u22647 rows), explicitly O(n). Resolution: 'fall through to eyebrow mode for *both* rows.' The previous chip-row's source is inspectable because the chip-mode predicate already iterates with index access (run-length classifier in \u00a7Rules 1\u20132)."
+    },
+    "d_glyph_palette_six_of_six": {
+      "result": "pass",
+      "evidence": "\u00a7Glyph palette table still enumerates exactly 6 entries (gutter `nf-md-record` + 5 verbs). The new `\u00b7Nm` suffix is explicitly called out as `**No codepoint added to the glyph palette** \u2014 purely textual` (using U+00B7 + ASCII digits + s/m/h/d). VERIFIED: U+00B7 is ALREADY shipped at index.tsx:282 (`SEPARATOR = \" \\u00b7 \"`), so the spec's EAW-Ambiguous hedge is overcautious \u2014 the codebase's terminal-policy assumption is already locked."
+    },
+    "e_no_iter2_buildability_regressions": {
+      "result": "pass",
+      "evidence": "All three iter-2 buildability fixes preserved verbatim: (1) \u00a7Source position `Rule 0 \u2014 system tags (highest precedence)` paragraph intact; (2) \u00a7Verb-glyph column rule 1 `Bridge to legacy splitOutcome()` paragraph intact, citing index.tsx:210 (verified \u2014 splitOutcome lives at index.tsx:210); (3) \u00a7States `Column arithmetic` paragraph intact, with `pad(1) | content(28) | pad(1)` ruler convention preserved. No new sections, no new glyphs, no new producer requirements."
+    }
+  },
+  "scoring_phase1_provisional": {
+    "hud_fidelity": {
+      "score": 9,
+      "delta_vs_iter2": 0,
+      "rationale": "Three iter-3 deltas are all hud-positive: (1) `\u00b7Nm` suffix only renders in case (ii) where the shape carries no rate \u2014 defensible data-ink, not chrome restating; (2) `Gutter override (rule (a))` removes a cell-level double-encoding on freshest+failed rows; (3) tie-breaker preserves small-multiples discipline of the chip column. Holds at 9 rather than pushing to 10 because the `\u00b7Nm` text annotation, however well-defended, is text-not-glyph on what is otherwise a pure-glyph instrument row, and the 4-cell footprint is real chrome on the case-(ii) line. Same integer tier as iter-2 but more defensible inside that tier."
+    },
+    "four_questions": {
+      "score": 9,
+      "delta_vs_iter2": 1,
+      "rationale": "This is the iteration's headline fix. Iter-2 sat at 8 because Pattern was 3-of-4 \u2014 the flat-sparkline window-empty case conflated wedged (recent burst then 64s silence) with idle (never emitted). Iter-3 closes it: case (i) renders flat alone, case (ii) renders flat + `\u00b7Nm`. The binary 'is there a suffix?' is genuinely peripheral \u2014 wedged-vs-idle is now glanceable. Doesn't reach 10 because the *value* of N (45s vs 15m vs 3d) requires reading to discriminate degrees of stuck-ness; the binary disambiguation glances, the magnitude reads."
+    },
+    "terminal_feasibility": {
+      "score": 9,
+      "delta_vs_iter2": 0,
+      "rationale": "Net-zero feasibility risk added. Verifications (a)\u2013(e) all pass. The `\u00b7Nm` formatter is ~10 lines of duration-switch code; sorting is already in place; gutter override is one boolean predicate (`isFreshest && col1HasSeverityGlyph`); tie-breaker is a pairwise O(n) scan. The U+00B7 codepoint precedent at index.tsx:282 makes the suffix safer than the spec admits. Holds at 9 (not 10) for two minor blemishes: (i) \u00a7Source position claims '+1 row per collision pair' but a colliding 2-row pair becomes 4 lines under single-row-eyebrow fallback (eyebrow + content \u00d7 2), so the true cost is +2 rows per pair; (ii) the tie-breaker is specified pairwise but doesn't explicitly address chains of 3+ same-agent threads (transitive cascade is implicit but not stated). Both are descriptive slips, not buildability blockers."
+    },
+    "provisional_avg": 9.0
+  },
+  "summary": "Iter-3 lands its headline four-questions fix (stuck-vs-idle via case-(ii) `\u00b7Nm` suffix) cleanly, with two scope-clean side-fixes (freshest+failed gutter override, same-agent chip tie-breaker) that are each individually buildable from existing index.tsx data. All five verification gates (a\u2013e) pass. `\u00b7` is already shipped at index.tsx:282 so the EAW hedge is moot. The only descriptive blemish is the tie-breaker's '+1 row per collision pair' claim \u2014 the true cost is +2 rows. Provisional 9/9/9 = 9.0 (four-questions 8\u21929, hud-fidelity and feasibility hold at 9). ASI: correct the row-cost arithmetic in \u00a7Source position."
+}

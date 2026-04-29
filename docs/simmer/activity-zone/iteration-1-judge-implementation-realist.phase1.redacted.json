@@ -1,0 +1,177 @@
+{
+  "lens": "implementation-realist",
+  "iteration": 1,
+  "phase": 1,
+  "artifact": "docs/simmer/activity-zone/iteration-1-candidate.md",
+  "seed_baseline": {
+    "scores": {
+      "hud-fidelity": 7,
+      "four-questions": 7,
+      "terminal-feasibility": 5,
+      "composite": 6.3
+    },
+    "foundational_gaps": [
+      "sparkline contract entirely unspecified",
+      "codepoint budget hand-waved",
+      "verb-glyph parser not sourced",
+      "multi-source eyebrow thrash",
+      "system-tagged source rule absent",
+      "outcome\u00d7truncation undefined",
+      "unfocus deferred",
+      "no four-state mocks"
+    ]
+  },
+  "what_changed_vs_seed": [
+    "\u00a7Sparkline contract added: alphabet U+2581\u2013U+2588, geometry 8\u00d78s=64s window, scaling Math.ceil(7*count/max(localMax,1)), refresh on logs[] mutation + 1Hz tick, three empty-state cases (no-logs / window-empty / active), unfocus rule (slide).",
+    "\u00a7Verb-glyph column closed at exactly 5 entries with codepoints (eye/list/magnify/pencil/play); explicit 4-rule precedence (tone===error \u2192 SEV_ERROR; verb? key \u2192 glyph; regex fallback; else single space). Rule 4 reframed as informative gap, preserving small-multiples discipline.",
+    "\u00a7Source position committed to a hybrid run-length rule: run\u22652 \u2192 eyebrow, run==1 \u2192 3-cell chip (agentcode + U+2502). Closes the seed's eyebrow-thrash on multi-source interleave.",
+    "\u00a7Glyph palette table: 6 new MD-PUA codepoints with EAW Neutral guarantee; explicit retirement of seed's EAW-Ambiguous \u25cf/\u2713/\u2717 and EAW-Wide \u26a0. Reuses existing SEV_ERROR U+F0028 for failed-row column-1 displacement (no budget cost).",
+    "Outcome\u00d7truncation closed: retire row-end badges entirely, errors render via column-1 displacement (no truncation collision).",
+    "\u00a7Unfocus rule pinned in a table: sparkline/gutter/verb/eyebrow all slide; SEV_ERROR bypasses. Closes seed Q10.",
+    "Four mocks drawn at exactly 30 cols (empty / single-source / multi-source / error-heavy) with ruler.",
+    "Open questions reduced from 10 to 2 (heading-absorption, gutter-gradient)."
+  ],
+  "phase1_scores": {
+    "hud-fidelity": {
+      "score": 8,
+      "rationale": "Both terminal tests now pass cleanly. Spellcheck: column-1 SEV_ERROR displacement marks failed work on the line of work itself (and accumulates as a vertical red stripe under load \u2014 the Tufte 'small multiples' gutter-mass reading the seed gestured at, here delivered). Sparkline test: U+2581\u2013U+2588, 8 cells, single-cell-safe, fixed alphabet, with the \u2581-floor making zero a visible baseline rather than an absence-of-band. Per-row primitive count holds at \u22643 across all four mocks (gutter+verb+desc in eyebrow mode; chip+verb+desc in chip mode; sparkline alone in band header). Restating-elsewhere is gone \u2014 the '7/min' label was correctly killed as data-ink-offence. Two soft demerits keep this off 9: (1) chip mode forfeits the freshest gutter, so 'latest' falls back to position+tier weight on the top row \u2014 defensible but a primitive removed under the multi-source state; (2) the freshest-row error-heavy case has BOTH gutter \u25cf AND SEV_ERROR \u2717 in cols 0/1 (4 visual elements counting tone-coloured desc), which the candidate calls out as intentional but does push the row to the per-row ceiling the rubric counts."
+    },
+    "four-questions": {
+      "score": 8,
+      "rationale": "All four answerable by glance with the iteration-1 contract. Liveness: sparkline shape with \u2581-floor distinguishes 'idle but rendering' from 'panel collapsed' \u2014 a real upgrade over seed's stuck/idle conflation, since seed's open-Q7 left empty-state alphabet unresolved. Pattern: sparkline carries burst/decay/flat shapes coherently; the verb-glyph stripe gives a second pattern instrument (read-rate vs edit-burst). Exception: column-1 SEV_ERROR displacement is foregrounded, severity-bypass keeps it bright at unfocus, gutter-mass under cascading failures is the canonical HUD pattern. Latest: gutter \u25cf + Tier 2 desc weight in eyebrow mode (over-encoded but unambiguous); position+tier-only in chip mode (slightly weaker). One concern keeps this off 9: 'pattern' still partially conflates 'stuck' (recent-but-unchanging within window) with 'idle' (recent burst that decayed) \u2014 the sparkline shape \u2581\u2581\u2581\u2581\u2581\u2581\u2581\u2581 in the candidate's window-empty case reads identically whether the agent is wedged or simply finished. A second instrument (e.g. age-of-newest-entry tick on the sparkline) would resolve, but iteration-1 doesn't add one."
+    },
+    "terminal-feasibility": {
+      "score": 8,
+      "rationale": "Implementable in OpenTUI today. All six new codepoints verified against MD-PUA range (U+F0001\u2013U+F1AFF): nf-md-record U+F05CB, nf-md-eye U+F0208, nf-md-format-list-bulleted U+F0279, nf-md-magnify U+F0349, nf-md-pencil U+F03EB, nf-md-play U+F040A \u2014 all valid MD names at the claimed codepoints, all single-cell EAW Neutral, all in budget. SEV_ERROR U+F0028 reuse is correct (vocab.ts:23). Sparkline glyphs U+2581\u2013U+2588 are EAW Neutral (the only Unicode block that's universally single-cell \u2014 correct call). EAW analysis is sharp: seed's \u25cf/\u2713/\u2717 are EAW Ambiguous and \u26a0 is EAW Wide; iteration-1 retires all four. Sparkline math (Math.ceil(7*count/max(localMax,1))) is correct and division-by-zero safe. Run-length hybrid for source position is computable from logs[] alone \u2014 no producer change required. Six concerns prevent a 9: (1) OFF-BY-2 in column accounting \u2014 ActivityZone wraps content in paddingLeft={1} paddingRight={1} (index.tsx:286), so at 30-col panel the inner content area is 28 cells, not 30; chip-mode 'description \u226424 cells at 30-col panel' is actually 22, eyebrow-mode 'description \u226427 cells' is actually 25. Sub-blocker, but the pre-truncate-in-JS pipeline needs the correct number. (2) SYSTEM-TAG SOURCE in chip mode is undefined \u2014 the candidate names [bell] in \u00a7Constraints but the chip is a hard-2-char agent code with U+2502; what does chip mode emit when source='[bell]'? The seed flagged this exact gap and iteration-1 only half-closed it (eyebrow case is ambient text, fine; chip case has no rule). (3) The 1 Hz sparkline tick is described as 'driven by the existing focused-session timer' \u2014 there is no 1Hz focused-session timer in index.tsx; the only existing timer is spinTimer at 120ms (line 593). The renderer needs a new setInterval(1000), which is trivial but factually misnamed. (4) The regex-classifier proposed for 'classify.ts adjacent to vocab.ts' would be a new source file in apps/tui/src/, which the brief technically scopes outside the generator's edit surface \u2014 fine as a producer-side recommendation, less fine as a renderer fallback the spec depends on for 'buildable today'. (5) Existing splitOutcome (index.tsx:210) parses '(passed)/(failed)' suffixes; the candidate retires row-end badges but doesn't say whether splitOutcome should be removed, kept-but-unused, or rewired to set tone='error' so rule-1 of the verb-glyph precedence fires. Without that bridge, an existing '(failed)' row in the log stream renders the verb glyph plus a now-orphaned suffix. (6) Sparkline row carries an unexplained leading-pad cell (' \u2582\u2583\u2584\u2585\u2586\u2586\u2585\u2583' = 9 chars, not 8) in mocks; whether that's deliberate (1 cell of left-air for visual rhythm) or a typo isn't said."
+    }
+  },
+  "primitive_audit": {
+    "sparkline_row": {
+      "primitives": 1,
+      "implementation": "8 spans of single U+2581\u2013U+2588 chars, optional fg=focused-session colour, computed by client-side bucketer on logs[].ts"
+    },
+    "eyebrow_row": {
+      "primitives": 1,
+      "implementation": "single <text> at Tier 4 muted, source string verbatim, no separator"
+    },
+    "activity_row_eyebrow_mode": {
+      "primitives": 3,
+      "implementation": "col 0: gutter \u25cf (Tier 2, freshest only) | col 1: verb glyph (Tier 2) or single space | col 2: pad | col 3+: pre-truncated description"
+    },
+    "activity_row_chip_mode": {
+      "primitives": 3,
+      "implementation": "cols 0-2: agentcode+U+2502 chip (Tier 4 muted) | col 3: pad | col 4: verb glyph | col 5: pad | col 6+: pre-truncated description"
+    },
+    "activity_row_failed": {
+      "primitives": 3,
+      "implementation": "col 0: gutter \u25cf if freshest | col 1: SEV_ERROR U+F0028 (severity-bypass) | col 2: pad | col 3+: description"
+    }
+  },
+  "codepoint_verification": [
+    {
+      "codepoint": "U+F05CB",
+      "name": "nf-md-record",
+      "valid": true,
+      "eaw": "Neutral",
+      "single_cell": true,
+      "in_budget": true
+    },
+    {
+      "codepoint": "U+F0208",
+      "name": "nf-md-eye",
+      "valid": true,
+      "eaw": "Neutral",
+      "single_cell": true,
+      "in_budget": true
+    },
+    {
+      "codepoint": "U+F0279",
+      "name": "nf-md-format-list-bulleted",
+      "valid": true,
+      "eaw": "Neutral",
+      "single_cell": true,
+      "in_budget": true
+    },
+    {
+      "codepoint": "U+F0349",
+      "name": "nf-md-magnify",
+      "valid": true,
+      "eaw": "Neutral",
+      "single_cell": true,
+      "in_budget": true
+    },
+    {
+      "codepoint": "U+F03EB",
+      "name": "nf-md-pencil",
+      "valid": true,
+      "eaw": "Neutral",
+      "single_cell": true,
+      "in_budget": true
+    },
+    {
+      "codepoint": "U+F040A",
+      "name": "nf-md-play",
+      "valid": true,
+      "eaw": "Neutral",
+      "single_cell": true,
+      "in_budget": true
+    },
+    {
+      "codepoint": "U+F0028",
+      "name": "nf-md-alert-circle (SEV_ERROR, reused)",
+      "valid": true,
+      "eaw": "Neutral",
+      "single_cell": true,
+      "in_budget": "no-cost (already in vocab.ts:23)"
+    },
+    {
+      "codepoint": "U+2502",
+      "name": "BOX DRAWINGS LIGHT VERTICAL (chip separator)",
+      "valid": true,
+      "eaw": "Neutral",
+      "single_cell": true,
+      "in_budget": "no-cost (box-drawing infrastructure)"
+    },
+    {
+      "codepoint": "U+2581..U+2588",
+      "name": "BLOCK glyph alphabet (sparkline)",
+      "valid": true,
+      "eaw": "Neutral",
+      "single_cell": true,
+      "in_budget": "no-cost"
+    }
+  ],
+  "edge_cases_handled": [
+    "Sparkline empty-state: three sub-cases pinned (no-logs collapses band, window-empty renders \u2581\u2581\u2581\u2581\u2581\u2581\u2581\u2581, active renders shape).",
+    "Sparkline divide-by-zero: Math.max(localMax, 1) floor.",
+    "Multi-source thrash: run-length hybrid converts pi/cc/pi/cc interleave from 50% eyebrow-row tax to a chip stripe.",
+    "Outcome\u00d7truncation: row-end badges retired entirely; column-1 displacement reserves col 1 BEFORE description truncation.",
+    "Unfocus: explicit table covering all five new visual elements; SEV_ERROR bypass preserved.",
+    "EAW: all proposed glyphs verified Neutral; seed's ambiguous/wide glyphs retired."
+  ],
+  "edge_cases_unhandled": [
+    "System-tagged source ([bell], [exit], etc.) in chip mode \u2014 iteration's hybrid forces chip when run-length=1, but [bell] is not a 2-char agent code; behaviour undefined. (This is exactly the 'system-tagged source rule absent' foundational gap the seed flagged.)",
+    "Off-by-2 in column-width accounting: chip-mode description-max stated as \u226424 at 30-col panel, actual is 22 (panel minus paddingLeft+paddingRight=2 minus chip-block=6). Same off-by-2 in eyebrow mode (\u226427 stated, 25 actual).",
+    "splitOutcome (index.tsx:210) handling of '(failed)' suffixes during the transition window \u2014 does the renderer rewire splitOutcome to set tone='error', strip the suffix, both, or leave it for the producer? Spec is silent.",
+    "1Hz sparkline tick described as 'driven by the existing focused-session timer' \u2014 that timer doesn't exist; renderer needs a new setInterval. Trivially fixable, but factually wrong as written.",
+    "Sparkline row's leading 1-cell pad in mocks (9 chars total) is unexplained \u2014 is the band 9 cells wide here?",
+    "Stuck-vs-idle conflation under sparkline: a long-running tool that emits no events for 60s+ produces \u2581\u2581\u2581\u2581\u2581\u2581\u2581\u2581 identical to a fully-idle agent. Pattern question 50%-answered for this case."
+  ],
+  "summary_vs_seed": {
+    "hud-fidelity": {
+      "seed_phase2": 7,
+      "iteration1_phase1": 8,
+      "delta": "+1, both terminal tests now pass cleanly with concrete contracts; sparkline empty-state alphabet resolved"
+    },
+    "four-questions": {
+      "seed_phase2": 7,
+      "iteration1_phase1": 8,
+      "delta": "+1, exception now foregrounded as column-1 displacement with severity-bypass; pattern strengthened by closed verb-dictionary"
+    },
+    "terminal-feasibility": {
+      "seed_phase2": 5,
+      "iteration1_phase1": 8,
+      "delta": "+3, sparkline contract pinned + EAW issues retired + multi-source resolved + unfocus committed + four 30-col mocks; remaining demerits are local fix-ups, not foundational gaps"
+    }
+  }
+}

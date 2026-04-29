@@ -1,0 +1,120 @@
+{
+  "iteration": 1,
+  "phase": 2,
+  "judge": "terminal-ux-pragmatist",
+  "artifact_type": "single-file",
+  "candidate_path": "docs/simmer/activity-zone/iteration-1-candidate.md",
+  "deliberation": {
+    "designer_phase1_summary": {
+      "scores": { "hud-fidelity": 9, "four-questions": 9, "terminal-feasibility": 9 },
+      "key_catches_i_missed": [
+        "Freshest is double-encoded — gutter ● on row 0 PLUS description Tier-2-vs-Tier-3 binary. The candidate explicitly rejects a recency-rank gradient gutter in §Open Q2 on the ground that 'description Tier 2→3 already encodes recency,' which is precisely the same argument that indicts the kept gutter+Tier-step pairing. One should retire (designer's notes_for_phase_2[0]).",
+        "Sparkline empty-state case (i) 'no-logs' suppresses the row entirely, but the rubric rewards 'sparkline always rendering meaningful shape.' Should unify with case (ii) flat baseline rather than special-case to suppression.",
+        "Verb-glyph column position shifts across modes — col 1 in eyebrow, col 4 in chip — so verb-shape cannot be read across an eyebrow→chip→eyebrow transition (small-multiples discipline cost of the hybrid rule)."
+      ]
+    },
+    "realist_phase1_summary": {
+      "scores": { "hud-fidelity": 8, "four-questions": 8, "terminal-feasibility": 8 },
+      "key_catches_i_missed": [
+        "OFF-BY-2 column accounting. ActivityZone wraps content in paddingLeft={1} paddingRight={1} (index.tsx:286, verified). Inner area is 28 cells at 30-col panel. Spec's 'description ≤24 cells' (chip mode) is actually ≤22; 'description ≤27 cells' (eyebrow mode) is actually ≤25. Sub-blocker but the JS pre-truncate pipeline needs the right number.",
+        "1 Hz sparkline tick is described as 'driven by the existing focused-session timer' — verified: no such 1Hz timer exists; only spinTimer at 120ms (index.tsx:593). Renderer needs a new setInterval(1000). Trivially fixable but factually wrong as written.",
+        "splitOutcome (index.tsx:210, verified) parses '(passed)/(failed)' suffixes today. Spec retires row-end badges but is silent on the bridge: rewire to set tone='error' (so verb-glyph rule 1 fires)? Strip-but-leave-untoned? Without that bridge, an existing '(failed)' row renders the verb glyph PLUS an orphaned '(failed)' suffix in the description.",
+        "System-tagged source ([bell], [exit]) in chip mode undefined. Hybrid forces chip when run-length=1, but [bell] is not a 2-char agent code. This is the seed's 'system-tagged source rule absent' foundational gap, only half-closed.",
+        "STUCK-vs-IDLE conflation under sparkline. Window-empty case (ii) renders ▁▁▁▁▁▁▁▁ identically whether agent is wedged on a 60s+ Bash run or simply finished. This is a Pattern-question failure that hits in real working sessions — exactly my lens's territory. I missed this in phase-1.",
+        "Sparkline mock has 9 chars not 8 (' ▂▃▄▅▆▆▅▃' = leading space + 8 cells). Whether deliberate left-air or a typo isn't said."
+      ]
+    }
+  },
+  "criterion_responses": {
+    "hud-fidelity": {
+      "decision": "agree-with-self",
+      "score_phase1": 9,
+      "score_phase2": 9,
+      "rationale": "Designer's freshest-double-encoding catch is real and I missed it — but under MY lens (terminal-UX pragmatist, not pure Tufte) the gutter-plus-Tier-step pairing is actually the design's strongest unfocus-survival move: under unfocus, gutter slides one tier dimmer, leaving Tier-step still readable. That's graceful degradation, not redundancy in the Tufte sense — the two encodings serve focused vs unfocused viewing respectively. So I hold 9 but acknowledge the designer's point would land harder under a pure-information-design lens. Realist's 8 was driven by the 4-visual-element ceiling on freshest+failed rows (●✗ desc with tone) and the chip-mode latest weakness — both already in my phase-1 rationale; they're soft demerits keeping this off 10 but don't drop it to 8 under my lens, since the resulting shape in error-cascade reads as one coherent stripe by glance (which is exactly what HUD-fidelity grades on)."
+    },
+    "four-questions": {
+      "decision": "concede",
+      "score_phase1": 9,
+      "score_phase2": 8,
+      "rationale": "The realist's stuck-vs-idle catch is exactly the kind of working-session edge my lens is supposed to grade on, and I missed it. A user who runs a 90-second test suite or a slow Bash command will see ▁▁▁▁▁▁▁▁ identical to a fully-idle agent — the Pattern question fails to cleave 'wedged' from 'finished.' This is a real 200ms-glance failure during real sessions, and lowers four-questions to 8. The fix is light (window-empty case (ii) renders Tier-3 dim flat baseline vs active-but-low-rate at Tier-2, free, no glyph budget) but iteration-1 doesn't ship it. My phase-1 weakest_question was 'latest' (chip-mode freshest forfeit); after deliberation the weakest is 'pattern' (stuck-vs-idle). Both are real; conceding to 8 reflects the realist's catch more accurately than my phase-1 9.",
+      "weakest_question_revised": "pattern",
+      "weakest_question_revised_rationale": "Window-empty sparkline reads identically for wedged-agent and finished-agent. Pattern partially conflates stuck and idle — exactly the gap the seed had that iteration-1 only half-closed. Latest in chip mode (my phase-1 weakest) remains a soft demerit but is recoverable by position+Tier-step convention; stuck-vs-idle has no recovery path in the current spec."
+    },
+    "terminal-feasibility": {
+      "decision": "agree-with-self",
+      "score_phase1": 8,
+      "score_phase2": 8,
+      "rationale": "Realist's six concrete catches reinforce my 8 rather than changing it. Off-by-2 column accounting (verified: index.tsx:286 paddingLeft/Right={1}, inner=28 not 30), missing 1Hz timer (verified: only spinTimer at 120ms exists, index.tsx:593), splitOutcome bridge silent (verified: index.tsx:210 still parses (passed)/(failed)), and system-tagged source chip rule undefined are all on the lens-relevant intersection-edges side. They make my ASI denser but don't change the score — none are foundational; all are 'mockable refinements / trivial fixes / one-clause patches.' Designer's 9 doesn't survive realist's verified concrete demerits (they're factual errors, not stylistic preferences). My phase-1 8 was already the right floor; these catches are absorbed into the refined ASI, not used to drop the score further, because individually each is a one-line spec patch rather than a foundational gap."
+    }
+  },
+  "scores": {
+    "hud-fidelity": {
+      "score": 9,
+      "rationale": "Both terminal tests pass cleanly. Sparkline test: 8 cells × 8 s/bucket, fixed alphabet, ▁-floor as visible baseline. Spellcheck test: gutter cell + verb glyph + SEV_ERROR all on the line of work. ≤3 primitives per row holds across both modes. Data-ink: '7/min' suffix correctly retired by name. Designer's freshest-double-encoding is noted but under this lens defensible: gutter slides under unfocus, Tier-step survives — the dual encoding is graceful degradation across focus states, not redundancy. The freshest+failed row (●✗ desc with tone) does push to the visual-element ceiling — soft demerit. Chip-mode latest forfeit recovered by position+Tier-step convention — defensible. Holds at 9, not 10.",
+      "passes_spellcheck_test": true,
+      "passes_sparkline_test": true,
+      "primitives_per_row_worst_case": 3,
+      "data_ink_redundancy_closed": true
+    },
+    "four-questions": {
+      "score": 8,
+      "rationale": "Liveness, Exception, Latest answered cleanly. Pattern partially answered: sparkline shape carries burst/decay/flat coherently for the active case, but the window-empty case (ii) renders ▁▁▁▁▁▁▁▁ identically whether agent is wedged on a 60s+ tool call or simply finished its burst. Real working sessions hit this — long test runs, slow installs, stuck Bash — and the user must context-switch to the agent's pane to disambiguate, defeating the HUD purpose. The realist caught this; I missed it in phase-1. Resolution is light (window-empty Tier-3 vs active Tier-2) but iteration-1 doesn't ship it. Drops from phase-1 9 to 8.",
+      "questions_answered_by_glance": ["liveness", "exception", "latest"],
+      "questions_partially_answered": ["pattern"],
+      "weakest_question": "pattern",
+      "weakest_question_rationale": "Stuck-vs-idle conflation under window-empty sparkline: a wedged agent and a finished agent both render flat ▁ baseline. Lens-relevant working-session edge."
+    },
+    "terminal-feasibility": {
+      "score": 8,
+      "rationale": "Recovery from seed's 5/10 is real. Codepoints pinned (6 new MD-PUA, all EAW Neutral, verified), four 30-col mocks drawn, hybrid eyebrow/chip rule resolves multi-source thrash, unfocus pinned per-primitive with SEV_ERROR bypass, verb dictionary closed at 5 with explicit precedence ladder, regex-classifier renderer-side fallback makes the spec buildable today. Six concrete demerits (verified against index.tsx) keep this at 8: (1) off-by-2 column accounting (paddingLeft/Right={1} → inner=28 not 30; spec's ≤24/≤27 are actually ≤22/≤25); (2) named '1 Hz focused-session timer' does not exist (only spinTimer at 120ms, line 593) — renderer needs new setInterval(1000); (3) splitOutcome bridge undefined for transition-period '(failed)' suffixes; (4) system-tagged source ([bell], [exit]) in chip mode undefined when run-length=1 and source is not a 2-char agent code; (5) chip-mode error cascade (state 3 ∩ state 4) not mocked — error stripe migrates from col 1 to col 4 in chip mode; (6) same-agent multi-thread (cc 15c8 vs cc 9a01 interleave) collapses to indistinguishable agent-code stripes when threadid is the disambiguating signal. None are foundational; all close in iteration-2 with one-clause patches and one extra mock.",
+      "narrow_width_30_cols_drawn": true,
+      "states_drawn": ["empty", "single-source", "multi-source", "error-heavy"],
+      "states_handwaved": [],
+      "state_intersections_undrawn": ["multi-source ∩ error-heavy (chip-mode error cascade)"],
+      "unfocus_consistency_resolved": true,
+      "new_glyphs_proposed_count": 6,
+      "new_glyphs_pinned": true,
+      "codepoint_width_risks_addressed": true,
+      "verb_dictionary_closed": true,
+      "buildable_today": true,
+      "concrete_demerits_verified": [
+        "paddingLeft={1} paddingRight={1} on ActivityZone box (index.tsx:286) — inner content area is 28 cells at 30-col panel, not 30",
+        "no 1 Hz focused-session timer exists; only spinTimer at 120ms (index.tsx:593)",
+        "splitOutcome at index.tsx:210 still parses (passed)/(failed) suffixes — spec silent on bridge"
+      ]
+    }
+  },
+  "lens_observations": {
+    "two_hundred_ms_glance": "Holds for active states (single-source steady, multi-source interleave, error-heavy cascade). Fails for the window-empty edge: stuck agent and finished agent render the same shape. Real working sessions hit this constantly — long compiles, slow tests, blocked subprocesses.",
+    "multi_source_thrash_resolved": "Yes for run-length ≥ 2 vs run-length = 1 with distinct agent codes. Not yet resolved for same-agent multi-thread (cc 15c8 || cc 9a01) where chip mode collapses both to 'cc│'.",
+    "demands_attention_check": "Sparkline calm. Gutter calm. Verb stripe calm. SEV_ERROR is the only loud primitive. Chip column adds a 3-cell visual band but it's structural, not salient. No false-alarm primitive.",
+    "consistency_focus_unfocus": "Resolved. Per-primitive table is unambiguous. SEV_ERROR bypass produces the canonical 'dim landscape with bright red spots' HUD-at-rest signature.",
+    "memorability_week_of_use": "Five verb glyphs are universal affordances (eye/list/magnify/pencil/play) — pre-learned, not arbitrary. Closed dictionary + blank-on-miss means column behaviour is stable across the week. Liability resolved.",
+    "intersection_edges_remaining": "Six edges close in iteration-2 with light patches: chip-mode error cascade mock (state 3 ∩ 4); same-agent multi-thread chip rule patch; system-tagged source ([bell]/[exit]) in chip mode rule; off-by-2 column accounting (28-cell inner area); 1Hz timer origin (new setInterval, not the named 'existing' one); splitOutcome bridge (rewire to tone='error' to fire verb-glyph rule 1).",
+    "stuck_vs_idle_pattern_failure": "New observation from deliberation. Window-empty sparkline (▁▁▁▁▁▁▁▁) is shape-identical for wedged-agent and finished-agent. Light fix: render window-empty at Tier 3 dim, active-but-low-rate at Tier 2. Costs nothing; cleaves the two cases by glance.",
+    "micro_typography": "●r and ●✗ adjacency (cols 0–1, no inter-cell pad) likely renders fine via nerd-font intra-glyph padding but undocumented. One-line confirmation in §Glyph palette closes it."
+  },
+  "asi_candidate": {
+    "title": "Close the working-session edges: chip-mode error mock, same-agent rule, system-source chip, stuck-vs-idle, plus three column-and-timer micro-pinnings",
+    "summary": "A single coherent intersection-edges refinement that absorbs phase-1's two original gaps (chip-mode error cascade mock + same-agent multi-thread rule) plus the deliberation's catches: stuck-vs-idle Pattern fix (lens-critical, caught by realist), system-tagged source chip rule (the last seed-foundational gap), and three concrete pinnings against the verified codebase (off-by-2 column accounting, 1Hz timer origin, splitOutcome bridge). All six are mockable / one-clause patches; none disturb the strong core (sparkline contract, dictionary closure, codepoint pinning, unfocus rule).",
+    "concrete_changes": [
+      "Add `### State 5 — multi-source error cascade` after State 4. 30-col, ruler optional. Show 6 chip-mode rows where 3+ verb glyphs (col 4) are displaced to SEV_ERROR. Annotate explicitly: error stripe migrates from col 1 (eyebrow mode) to col 4 (chip mode), so the chip-pattern column on the left + the error-pattern column on the right read as two parallel vertical bands. Note that chip mode forfeits the freshest gutter, so freshest+failed reads via SEV_ERROR-on-row-0 plus Tier-2 description weight.",
+      "Patch §Source position with one extra clause: `if run == 1 AND adjacent rows share agent-code (e.g. cc + cc with different threadids), force eyebrow mode for the run instead of chip mode — chip mode collapses to indistinguishable agent-code stripes when threadid is the disambiguating signal.` Show as a 3-row mock fragment (cc 15c8 eyebrow / r build.ts / cc 9a01 eyebrow / r types.ts). Costs a row per same-agent switch but keeps the chip stripe informative.",
+      "Patch §Sparkline contract empty-state case (ii) window-empty: render `▁▁▁▁▁▁▁▁` at **Tier 3 dim** (vs Tier 2 for active-but-low-rate). Cleaves wedged-agent (window-empty, dim flat) from finished-agent (also window-empty, also dim flat) from low-rate-active (Tier 2, brighter flat) by glance. Free — no glyph budget, no new primitive. This is the single most lens-critical refinement: it's the Pattern-question fix that the iteration-1 spec missed.",
+      "Patch §Source position with system-tag chip rule: `if source is a system tag (matches /^\\[\\w+\\]$/, e.g. [bell], [exit]) AND run-length == 1, force eyebrow mode — system tags don't compress to 2-char chips.` Closes the last seed-foundational gap (system-tagged source rule absent).",
+      "Patch §Constraints column accounting: change `30 cols` references to `30-col panel = 28-col inner content area (paddingLeft/Right={1} on the ActivityZone box, index.tsx:286)`. Update chip-mode description-max from `≤24` to `≤22` and eyebrow-mode from `≤27` to `≤25`. Add a 1-line note that all mockups in §States are drawn against the 28-col inner area with the panel padding implicit.",
+      "Patch §Sparkline contract refresh row: replace `1 Hz tick driven by the existing focused-session timer` with `1 Hz tick from a renderer-side setInterval(1000) wired alongside spinTimer (index.tsx:593) — a new timer; iteration-1 prose was incorrect to imply an existing one.` Trivial factual fix.",
+      "Patch §Verb-glyph column rule 1 with the splitOutcome bridge: `splitOutcome (index.tsx:210) is rewired during this iteration to set tone='error' on '(failed)' suffixes and strip the suffix from the rendered description; the existing '(passed)' suffix becomes implicit (no glyph) since success has no column-1 displacement. This makes rule 1 (tone === 'error' → SEV_ERROR) fire correctly on the existing log stream without producer-side changes.` Closes the transition-period orphan-suffix gap.",
+      "One-line micro-typography note in §Glyph palette confirming `●` (gutter) and the verb-glyph cell render at adjacent cells with one column-cell each, relying on nerd-font intra-glyph padding for visual separation — no inter-column whitespace cell inserted. Closes the ●r / ●✗ doubt without adding chrome.",
+      "Optional micro-touch: in §States preamble, add a 1-line coverage matrix listing the 8 realistic state intersections (steady single, steady multi, idle, errored single, errored multi, source-change, same-agent multi-thread, window-empty stuck-vs-idle) and which mock or rule covers each. Makes coverage legible to the reader."
+    ],
+    "why_this_lens": "The Terminal-UX Pragmatist grades on real working-session behaviour, not single-state mockups. Iteration 1 already drew the four primary states and pinned the unfocus rule — the recovery is real. Phase-2 deliberation surfaced one lens-critical edge I missed (stuck-vs-idle Pattern failure during long-running tools — exactly the 200ms-glance test's territory) plus four concrete codebase-verified pinnings (column accounting, timer origin, splitOutcome bridge, system-tag chip). All eight changes are mockable / one-clause patches; none disturb the strong core. The single-focused theme is 'close the intersection edges that survive iteration 1' — chip × error, same-agent × multi-thread, system-tag × chip, stuck × idle.",
+    "expected_score_lift": {
+      "hud-fidelity": "+0 (already 9; the chip-mode error mock and stuck-vs-idle Tier-3 fix both make existing rules visible without changing data-ink or primitive count)",
+      "four-questions": "+1 (8 → 9; stuck-vs-idle fix is the Pattern-question recovery — the only criterion deliberation lowered, fully closes here)",
+      "terminal-feasibility": "+1 (8 → 9; closes the four intersection edges + three codebase-verified pinnings + micro-typography note; remaining gap to 10 is the residual same-agent rule cost of one extra row per switch)"
+    },
+    "single_focused": true,
+    "scope_notes": "Spec-only; no source code, no vocab.ts changes, no new glyphs (6-glyph budget preserved — fixes reuse SEV_ERROR, existing tier system, existing splitOutcome). No producer dependency. The same-agent rule patch and system-tag rule are renderer-side ordering rules. The splitOutcome rewire is a 2-line change to existing code, called out in spec as the bridge but implementable by the generator if scoped. Stuck-vs-idle fix is a Tier-class change in the sparkline render, free."
+  }
+}

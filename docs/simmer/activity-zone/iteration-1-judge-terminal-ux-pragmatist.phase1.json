@@ -1,0 +1,72 @@
+{
+  "iteration": 1,
+  "phase": 1,
+  "judge": "terminal-ux-pragmatist",
+  "artifact_type": "single-file",
+  "candidate_path": "docs/simmer/activity-zone/iteration-1-candidate.md",
+  "lens_summary": "Real-world TUI usage during real working sessions. Behaviour across all four states (empty, single-source, multi-source, error-heavy) at narrow widths (~30 cols), under unfocus dimming, across a week of repeated use. Penalise sunny-mockup designs that hand-wave edges; reward calm peripheral-first designs that survive states without per-state hand-waving. The 200ms-glance test governs.",
+  "calibration_against_seed": {
+    "seed_scores": { "hud-fidelity": 7, "four-questions": 8, "terminal-feasibility": 5, "composite": 6.7 },
+    "seed_foundational_gap": "Hand-waved edges: multi-source thrash, missing state mocks, unfocus drift, dictionary memorability, codepoint width risks.",
+    "iteration_1_closure": "Five of the six flagged gaps are explicitly resolved: four 30-col mocks drawn, hybrid eyebrow/chip rule keyed on run-length, unfocus rule pinned in a per-primitive table with SEV_ERROR bypass, verb dictionary closed at exactly 5, every new glyph pinned to a PUA codepoint with EAW-Neutral verification, and the seed's EAW-Ambiguous `●`/`✓`/`✗` and EAW-Wide `⚠` retired by name. The data-ink offence (`7/min` text suffix) is removed with explicit reasoning. The recovery is concrete, not rhetorical.",
+    "residual_gaps": "Two intersection edges remain undrawn: (a) chip-mode + error (states 3 ∩ 4) — implied by the rules but not mocked; (b) same-agent multi-thread (`pi 15c8` vs `pi 9a01` interleaving) — chip mode drops threadid, so two pi worktrees become indistinguishable. One micro-typography concern: `●✗` and `●r` adjacency at cols 0–1 with no inter-cell pad."
+  },
+  "scores": {
+    "hud-fidelity": {
+      "score": 9,
+      "rationale": "Both terminal tests pass cleanly. Sparkline test: 8 cells × 8 s/bucket = 64 s window, fixed `▁▂▃▄▅▆▇█` alphabet, explicit y-axis rule, 1 Hz refresh anchored to the existing focused-session timer, baseline rendered as `▁` (calm reads as line, not absence). Spellcheck test: gutter cell, verb glyph, and SEV_ERROR all sit on the line of work. The ≤3-primitives-per-row ceiling is now hard: gutter+verb+desc in eyebrow mode, chip+verb+desc in chip mode — never 4. The seed's row-end `✓`/`✗` badges are retired and the exception signal moves to column-1 displacement, which collapses primitive count *and* gives error-heavy windows their natural shape (vertical red stripe). The data-ink redundancy of a `7/min` suffix is closed by name (the seed's main hud-fidelity demerit). One mild concern: the chip's `│` separator is pure structural chrome on every multi-source row — defensible because it disambiguates agent-code from description, but a fourth visible mark per chip-mode row in the strict primitive-counting sense.",
+      "passes_spellcheck_test": true,
+      "passes_sparkline_test": true,
+      "primitives_per_row_worst_case": 3,
+      "data_ink_redundancy_closed": true
+    },
+    "four-questions": {
+      "score": 9,
+      "rationale": "Liveness + Pattern: sparkline shape, peripheral. The four state mocks each draw a *different* characteristic shape (gentle hump = settling, sustained mid-high = parallel busy, high-then-decay = failure cascade) — proving Pattern is not just claimed but visually distinct across realistic working windows. Exception: column-1 displacement is the design's strongest move — under error-heavy load the failed rows accumulate into a literal vertical red stripe at col 1, with surviving non-failed rows reading as gaps in the stripe (state-4 mock makes this concrete, including the diagnostic single-survivor `r` at row 2). Latest: gutter `●` in eyebrow mode; in chip mode the gutter is forfeited and Latest falls back to top-row position + Tier-2 weight. That fallback is the one slightly-weaker question — chip-mode users must know top=freshest by convention rather than by glyph. Defensible (current shipped state already uses this convention) but not free.",
+      "questions_answered_by_glance": ["liveness", "pattern", "exception", "latest"],
+      "weakest_question": "latest",
+      "weakest_question_rationale": "Chip mode forfeits the freshest gutter; latest is recovered by position + Tier-2 weight, which is convention-dependent rather than glyph-explicit."
+    },
+    "terminal-feasibility": {
+      "score": 8,
+      "rationale": "Massive recovery from the seed's 5/10. Codepoint widths are explicitly pinned: every new glyph is in MDI PUA U+F0000–U+F1AFF, EAW Neutral, single column-cell, with the seed's EAW-Ambiguous `●`/`✓`/`✗` and EAW-Wide `⚠` retired by name — this is the lens's 'codepoint width risks' gap closed cleanly. Six new glyphs introduced (within the ≤6 budget). Four states are drawn at exactly 30 cols with a column ruler; the hybrid eyebrow/chip rule (run-length ≥ 2 → eyebrow, run = 1 → chip) directly resolves the eyebrow thrash that drove the seed's score down. The unfocus table covers every new primitive with one rule each, with SEV_ERROR explicit-bypass producing the canonical 'dim landscape with bright red spots' HUD-at-rest signature. Verb dictionary closed at exactly 5 with a 4-rule precedence ladder (tone-error → mapped-verb → regex-classifier → blank); the regex-classifier fallback is what makes the spec buildable today without a producer-side `verb?` ship, so the renderer-side fallback path is pinned, not waved. Producer-side `verb?` is correctly scoped as SHOULD-out-of-scope. Remaining concerns are smaller and intersectional: (1) chip-mode + error (states 3 ∩ 4) is implied — col 4 displaces to SEV_ERROR — but not mocked, and the resulting stripe shifts column from 1 (eyebrow mode) to 4 (chip mode), which a real working session will hit; (2) same-agent multi-thread interleave (two `pi` worktrees, e.g. `pi 15c8` and `pi 9a01`) renders as `pi│ pi│ pi│` in chip mode — the threadid suffix that disambiguated them in eyebrow mode is dropped, so a common worktrees-with-same-agent layout becomes ambiguous; (3) micro-typography: `●r` and `●✗` show two glyphs at adjacent cells with no inter-cell pad — likely fine with nerd-fonts intra-glyph padding but undocumented. None of these are renderer-feature requests; all are mockable refinements.",
+      "narrow_width_30_cols_drawn": true,
+      "states_drawn": ["empty", "single-source", "multi-source", "error-heavy"],
+      "states_handwaved": [],
+      "state_intersections_undrawn": ["multi-source ∩ error-heavy (chip-mode error cascade)"],
+      "unfocus_consistency_resolved": true,
+      "new_glyphs_proposed_count": 6,
+      "new_glyphs_pinned": true,
+      "codepoint_width_risks_addressed": true,
+      "verb_dictionary_closed": true,
+      "buildable_today": true
+    }
+  },
+  "lens_observations": {
+    "two_hundred_ms_glance": "Strong across all four mocked states. The sparkline alphabet is pre-learned; the severity glyph is pre-learned; only the 5 verb glyphs are new, and they're closed. The error-heavy mock proves the column-1 stripe reads at glance — the eye sees 'four red, one gap, latest also red' as one shape, no reading required. The 200ms test passes for the four drawn states.",
+    "multi_source_thrash_resolved": "The seed's most fragile edge is now the spec's strongest move. The hybrid rule fires per source-run, not per row, so the alternating eyebrow/chip/eyebrow rendering tracks actual structure rather than churn. Vertical budget recovered: a 6-row pi/cc interleave window now renders 6 useful description rows instead of ~3 description + ~3 eyebrow rows.",
+    "demands_attention_check": "Sparkline calm by design (peripheral). Gutter `●` calm (single cell, freshest only). Verb-glyph stripe calm (closed alphabet, blank-on-miss embraced as informative). SEV_ERROR is the only loud primitive and only fires when an exception is real. Chip column adds a 3-cell visual band on multi-source rows but the band itself is calm — it's a structural divider, not a salience pull.",
+    "consistency_focus_unfocus": "Resolved. The per-primitive table is unambiguous: sparkline / gutter / verb-glyph / source all slide with tiers; SEV_ERROR bypasses. The 'dim landscape with bright red spots' description is exactly the HUD-at-rest pattern this lens grades on. Implementer cannot drift.",
+    "memorability_week_of_use": "Five verb glyphs (eye / list / magnify / pencil / play) are universal affordances, not arbitrary symbols — a user who has used any modern OS or text editor has pre-learned them. Closed dictionary + blank-on-miss means the column behaviour is stable across the week, not progressively cluttered as new tool types appear. Memorability liability resolved.",
+    "intersection_edges_remaining": "Chip-mode error rendering (col-4 SEV_ERROR stripe) and same-agent multi-thread chip ambiguity. Both are realistic in working sessions: a parallel pi+cc setup where one fails, and a parallel cc+cc worktrees setup that the spec currently collapses. The first is a missing mock; the second is a missing rule patch (~3 lines).",
+    "micro_typography": "`●r` and `●✗` adjacency: spec doesn't pad between gutter and verb columns. PUA glyphs typically ship with intra-glyph padding so adjacent rendering is usually fine, but a one-line confirmation (or a 1-cell separator) would close the doubt."
+  },
+  "asi_candidate": {
+    "title": "Mock the chip-mode error cascade and patch the same-agent multi-thread chip rule",
+    "summary": "A single focused refinement: add a fifth 30-col mock for the multi-source ∩ error-heavy intersection (state 3 + state 4 combined — pi/cc interleave with multiple chip-mode rows failing) and add one rule to the source-position section that handles same-agent dual-thread runs without dropping threadid disambiguation. Both gaps are realistic working-session occurrences (one agent in a parallel-agent run failing; two cc worktrees pulling from the same codebase) and both are mockable refinements that don't disturb the strong core.",
+    "concrete_changes": [
+      "Add `### State 5 — multi-source error cascade` after the existing State 4 mock. 30-col, ruler optional. Show 6 chip-mode rows where 3+ of the verb glyphs (col 4) are displaced to SEV_ERROR. The mock makes explicit that the error stripe migrates from column 1 (eyebrow mode) to column 4 (chip mode), and that the 3-cell chip column on the left + 1-cell red stripe on the right reads as two parallel vertical bands — chip-pattern + error-pattern — separated by the verb-or-error column. Annotate that chip mode never carries the freshest gutter, so the freshest row's failure reads via SEV_ERROR + Tier-2-on-row-0 only.",
+      "Patch the §Source position rules with one extra clause: `if run == 1 AND adjacent rows share agent-code (e.g. cc + cc with different threadids), force eyebrow mode for the run instead of chip mode — chip mode collapses to indistinguishable agent-code stripes when threadid is the disambiguating signal.` Show this as a 3-row mock fragment (`cc 15c8` eyebrow / `r build.ts` / `cc 9a01` eyebrow / `r types.ts`) so the reader sees that the run-length rule is overridden by an agent-code-adjacency rule. This costs a row per same-agent switch but is the only way the chip stripe stays informative.",
+      "Add one sentence to §Verb-glyph column or §Glyph palette confirming that `●` (U+F05CB record) and the verb-glyph cell render with one column-cell each at adjacent positions, and that the renderer relies on the nerd-font's standard intra-glyph padding for visual separation — no inter-column whitespace cell is inserted. This closes the `●r` / `●✗` micro-typography question without adding chrome.",
+      "Optional micro-touch: in the §States preamble, note that the four (now five) mocks plus the chip-vs-eyebrow rule together cover seven of the eight realistic state intersections (steady single, steady multi, idle, errored single, errored multi, source-change, same-agent multi-thread). The eighth — sustained idle with one fresh blip — is implicitly covered by the `●` gutter on row 0 of an otherwise Tier-3 description column, but listing it makes the coverage matrix legible to the reader."
+    ],
+    "why_this_lens": "The Terminal-UX Pragmatist grades on real working-session behaviour, not single-state mocks. Iteration 1 already drew the four primary states and pinned the unfocus rule — the recovery is real. The remaining lens-relevant edges are the *intersections* (chip × error) and *near-edges* (same-agent multi-thread) that a user will hit within the first week of real use. Both are mockable, both close with a single coherent refinement, and neither disturbs the strong core (sparkline contract, dictionary closure, codepoint pinning).",
+    "expected_score_lift": {
+      "hud-fidelity": "+0 (already 9; both tests pass, primitive ceiling holds; the new mock just makes existing rules visible)",
+      "four-questions": "+0 to +1 (chip-mode-error mock would make the Latest-in-chip-mode story slightly more concrete by showing freshest+failed in chip layout)",
+      "terminal-feasibility": "+1 (closes the last two intersection edges and the micro-typography question; brings score from 8 to 9)"
+    },
+    "single_focused": true,
+    "scope_notes": "Spec-only; no source code, no vocab.ts changes, no new glyphs (the 6-glyph budget is preserved — the patch reuses SEV_ERROR and verb glyphs already pinned). The same-agent rule patch is a renderer-side ordering rule, no producer dependency."
+  }
+}

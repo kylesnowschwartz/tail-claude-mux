@@ -1,0 +1,75 @@
+{
+  "lens": "information-designer",
+  "iteration": 1,
+  "phase": 2,
+  "artifact": "docs/simmer/activity-zone/iteration-1-candidate.md",
+  "phase1_scores": { "hud-fidelity": 9, "four-questions": 9, "terminal-feasibility": 9, "composite": 9.0 },
+  "deliberation": {
+    "hud-fidelity": {
+      "verdict": "hold-9",
+      "agree_with": [
+        "Pragmatist 9: spellcheck and sparkline tests both pass, primitive ceiling holds at 3, '7/min' data-ink offence retired by name.",
+        "Pragmatist's chip-`│` observation: structural chrome on every multi-source row. From this lens it is part of the chip-block primitive (agentcode + separator reads as one cell-block), not a fourth primitive. Defensible and I noted it implicitly via my §State 3 read."
+      ],
+      "challenge": [
+        "Realist 8 cites two demerits I weighed but did not punish: (a) chip-mode forfeits the freshest gutter — true but the candidate explicitly recovers latest via position+Tier-2-step; the design loses one redundant encoding, not the answer to the question. (b) Top-row error case shows BOTH ● and ✗ in cols 0–1 — the candidate flags this in §State 4 as the worst-case 'latest also failed' reading, which is exactly the row a HUD wants salient. Neither is a hud-fidelity break under this lens."
+      ],
+      "concede": [],
+      "what_i_caught_others_did_not": [
+        "Freshest is double-encoded under the lens's own logic: gutter ● (binary, freshest only) AND description Tier-2-vs-Tier-3 (binary, freshest vs older). The candidate rejects a recency-rank gradient gutter in §Open Q2 on the ground that 'description Tier 2 → 3 already encodes recency' without noticing the same logic indicts the kept gutter+Tier-step pairing. This is a calibration call, not a closure — held back as Tufte secondary, not the ASI.",
+        "Sparkline empty-state breaks closure on the no-logs case (band collapses entirely). Case (ii) window-empty already does the right thing (▁▁▁▁▁▁▁▁); case (i) should be unified. This is my ASI and stays the strongest information-design move on the table."
+      ],
+      "revised_score": 9
+    },
+    "four-questions": {
+      "verdict": "hold-9",
+      "agree_with": [
+        "Pragmatist 9 with 'latest' as weakest question (chip mode forfeits gutter glyph — convention-dependent rather than glyph-explicit). Same observation I made.",
+        "Realist's stuck-vs-idle conflation under window-empty (▁▁▁▁▁▁▁▁ reads identically whether wedged or idle) is a real partial-conflation under the Pattern question. I treated this implicitly as part of my (a) 'liveness unrepresented in no-logs' demerit; realist surfaces it as a separate Pattern issue, which is correct."
+      ],
+      "challenge": [
+        "Realist 8: I do not think the conflation drops to 8. The verb-glyph stripe below the sparkline IS the second pattern instrument the lens asks for — under stuck-but-recent the wedged tool's most-recent verb still sits at row 0 with the freshest gutter, and the rest of the column shows the tool's history; under idle-since-decay the freshest gutter is on a row whose ts is far back. The disambiguation is present but secondary. 9 with caveat, not 8."
+      ],
+      "concede": [],
+      "what_i_caught_others_did_not": [
+        "Verb-glyph column shifts position across modes: col 1 in eyebrow mode (State 2), col 4 in chip mode (State 3). Within a source-run the column is stable, but the eye cannot read verb-shape across an eyebrow→chip→eyebrow transition. This is a small-multiples-discipline cost of the hybrid source rule that neither other panelist named. Probably the right trade for 30-col degradation but worth acknowledging."
+      ],
+      "revised_score": 9
+    },
+    "terminal-feasibility": {
+      "verdict": "concede-to-8",
+      "agree_with": [
+        "Realist 8: three concrete, code-verified findings I missed — (1) ActivityZone wraps content in paddingLeft=1 paddingRight=1 (index.tsx:286, verified), so at 30-col panel the inner content area is 28 cells; the candidate's stated ≤27 (eyebrow) / ≤24 (chip) description max-widths are actually ≤25 / ≤22; (2) the 'existing focused-session timer' the sparkline 1Hz tick depends on does not exist — only spinTimer at 120ms (index.tsx:593) — the renderer needs a new setInterval(1000); (3) splitOutcome() at index.tsx:210 currently parses '(passed)/(failed)' suffixes and the spec is silent on whether it should be removed, kept-and-unused, or rewired to set tone='error' so the verb-glyph rule-1 fires. These are real local fix-ups, not foundational gaps, but the spec-as-written has factual errors against the codebase.",
+        "Realist's system-tag chip mode gap: [bell] is not a 2-char agent code; chip-mode rendering is undefined for system tags. This is exactly the seed's 'system-tagged source rule absent' foundational gap, only half-closed (eyebrow case fine, chip case undefined).",
+        "Pragmatist 8 with two state-intersection concerns: (a) chip-mode + error (states 3 ∩ 4) — implied by rules but not mocked, and the column-1 stripe shifts from col 1 (eyebrow mode) to col 4 (chip mode), which a real working session will hit; (b) same-agent multi-thread (pi 15c8 vs pi 9a01) renders as `pi│ pi│ pi│` in chip mode — threadid suffix is dropped, two pi worktrees become indistinguishable. The second is a missing rule patch (~3 lines), not a design break.",
+        "Pragmatist's micro-typography concern (●r and ●✗ adjacency at cols 0–1, no inter-cell pad) — this is in scope for the information-designer lens. PUA glyphs typically ship with intra-glyph padding so adjacent rendering is usually fine, but the spec doesn't confirm. One-line confirmation closes it."
+      ],
+      "challenge": [
+        "I held 9 in phase 1 on the strength of the EAW-pinning and codepoint discipline (genuinely strong) plus the four 30-col mocks. Realist's verified code-level findings are real, and from this lens the column-accounting error is a sparkline-integrity concern (does the band fit? are descriptions truncating where the spec says?). Conceding to 8."
+      ],
+      "concede": [
+        "Drop terminal-feasibility from 9 to 8. The off-by-2 column math (real), the missing 1Hz timer (real), the undefined system-tag chip rendering (real), the orphaned splitOutcome bridge (real), and the unexplained 9-cell sparkline mock (real) collectively are 'passes with concrete fixes needed,' not 'passes cleanly.'"
+      ],
+      "what_i_caught_others_did_not": [],
+      "revised_score": 8
+    }
+  },
+  "revised_scores": {
+    "hud-fidelity": 9,
+    "four-questions": 9,
+    "terminal-feasibility": 8,
+    "composite": 8.67
+  },
+  "asi_candidate": {
+    "summary": "Make the sparkline a closed instrument: render flat `▁▁▁▁▁▁▁▁` in the no-logs empty state, the same way §Sparkline contract case (ii) already renders it for window-empty. The band's top row never disappears.",
+    "actionable_change": "In §Sparkline contract (line 146), unify empty-state cases (i) and (ii): both render flat `▁▁▁▁▁▁▁▁` across all eight cells. Drop the 'sparkline row suppressed entirely' branch; the no-logs case becomes the most-extreme version of window-empty, not a special case. Update §State 1 — empty (lines 287–294) to show the flat baseline at the top of the band, then the air row, then `(no recent activity)` beneath in Tier 4 (or drop the text entirely — the flat shape carries 'nothing happening' as cleanly as the phrase). Add one line to §Sparkline contract under Empty states stating the rule: 'the sparkline is a closed instrument — its eight cells render in every state of the band, including no-logs. Calm reads as a continuous flat line, not as absence of the band.' The contract already does the work for case (ii); extending to case (i) is one clause and one mockup change, no glyph-budget impact, no producer-side change.",
+    "why_this_lens": "The judge brief's information-designer lens explicitly rewards 'closed instruments (column-1 always populated, sparkline always rendering meaningful shape).' The candidate's §Sparkline contract gets five of six empty-state decisions right and then breaks the closure on case (i): when logs[] is empty, the sparkline row is suppressed and the band collapses to a text message. That is the design becoming a dialog ('no recent activity' as a sentence the user reads) rather than a HUD ('the band is alive and the agent is silent' as a shape the user perceives). The fix is internally consistent (case (ii) already does it), it strengthens the four-questions liveness answer in the one state where it currently fails, and it replaces a TEXT primitive with a SHAPE primitive — exactly what the lens scores on. Realist's stuck-vs-idle conflation under window-empty is a separate concern (a second instrument is needed, beyond closure), and pragmatist's chip-mode concerns sit in feasibility — neither displaces this as the canonical Tufte ASI.",
+    "scope": "Single-section edit to docs/simmer/activity-zone/iteration-1-candidate.md: rewrite the Empty-states row of the §Sparkline contract table to unify cases (i) and (ii); rewrite §State 1 — empty to render the flat sparkline; add one prose line stating the 'closed instrument' rule. No glyph additions, no producer-side changes, no impact on the other three state mockups."
+  },
+  "notes_for_synthesis": [
+    "Strongest cross-panel agreement: spec is a real recovery from seed, with three concrete demerits all panelists effectively share — chip-mode latest forfeits the gutter (pragmatist & realist), system-tag/multi-thread chip behaviour is undefined (pragmatist & realist), and the freshest-row error case piles two glyphs at cols 0–1 (realist; I read this as defensible). My closed-instrument fix is orthogonal to all three and lands cheaply.",
+    "Realist did the code-level homework I did not (off-by-2 padding math, 1Hz-timer non-existence, splitOutcome bridge). This is the right division of labour but I should have caught at least the off-by-2 since it bears on description-truncation budget, which is a sparkline/small-multiples concern under my lens. Conceded terminal-feasibility from 9 to 8.",
+    "Open Tufte secondary not in my ASI: freshest is still double-encoded (gutter ● on row 0 AND description Tier-2-vs-Tier-3). The candidate explicitly rejects a recency-rank gradient gutter in §Open Q2 on the ground that 'description Tier 2 → 3 already encodes recency,' without noticing the same logic indicts its own gutter+Tier-step pairing. A single-encoding (gutter alone, OR Tier-step alone) would be tighter. Worth raising in synthesis if no other panelist flags it; lower priority than the closed-instrument fix because it is a calibration call, not a closure.",
+    "If another lens proposes dropping the entire empty state to a single line ('(no recent activity)' alone, no air, no sparkline), my ASI dies cleanly — the closure either ships or it doesn't; no half-measure."
+  ]
+}

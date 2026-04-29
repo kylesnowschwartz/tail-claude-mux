@@ -1,0 +1,78 @@
+{
+  "lens": "implementation-realist",
+  "iteration": 2,
+  "phase": 1,
+  "artifact": "docs/simmer/activity-zone/iteration-2-candidate.md",
+  "scores": {
+    "hud-fidelity": 8,
+    "four-questions": 8,
+    "terminal-feasibility": 9
+  },
+  "average": 8.33,
+  "calibration_note": "Seed was 7/7/5=6.3; iteration-1 was 8/8/8=8.0. Iteration-2 holds hud-fidelity and four-questions (no design-surface change) and earns +1 on terminal-feasibility (PRIMARY for this lens) by closing two of three flagged buildability stalls cleanly and the third with one residual gap.",
+  "stall_closure": {
+    "system_tag_precedence": {
+      "status": "closed",
+      "evidence": "Line 216 introduces Rule 0 (`entry.source?.startsWith(\"[\")`) branching BEFORE run-length keying; reuses existing severity-glyph vocab entries (no new glyph budget); maps to the already-shipped `sysSourceTone` detection at apps/tui/src/index.tsx:301-307. Line 218 names the failure mode it prevents (`[b│ ...` chip / eyebrow-on-[bell]).",
+      "residual": "Mapping `[bell]` → SEV_WAITING (`nf-md-bell-alert` U+F009C) reuses the rolodex's agent-waiting glyph. In activity-zone context the collision is harmless (severity glyphs don't appear there today), but it is not called out."
+    },
+    "splitOutcome_bridge": {
+      "status": "partially closed",
+      "evidence": "Lines 188-197 cite the function (`apps/tui/src/index.tsx:210`), quote the regex `/^(.*?)(\\s*)(\\((passed|failed)\\))\\s*$/` verbatim (matches index.tsx:211), and specify strip-on-error to prevent double-marking. The (passed) keep-suffix branch is also explicit.",
+      "residual": "Rule 1 still triggers ONLY on `tone === \"error\"` (line 186). A `(failed)` row emitted with `tone: \"neutral\"` (which the existing splitOutcome at index.tsx:215 happily detects from the suffix alone) falls through to Rule 2/3 and renders verb glyph + tone-coloured `(failed)` suffix — i.e. the column-1 SEV_ERROR stripe promised by the State-4 mock would NOT appear. The bridge solved the over-marking case but not the under-marking case. This is the one-line gap my ASI targets."
+    },
+    "column_arithmetic": {
+      "status": "closed",
+      "evidence": "Lines 296-304 explicitly state `pad(1) | content(28) | pad(1)` (verifiable against index.tsx:283 `fullDescWidth = termWidth - PAD - PAD` and index.tsx:286 `paddingLeft={1} paddingRight={1}`), names that the leading space on most rows IS the left pad, and accounts for col-0 displacement under gutter/chip mode. Resolves the 'do mock rulers count chrome?' ambiguity in iteration-1."
+    }
+  },
+  "verifications": {
+    "vocab_codepoints_unchanged": {
+      "checked": true,
+      "result": "vocab.ts contains SEV_ERROR = U+F0028 as cited; SEV_WAITING = U+F009C; structural glyphs unchanged. The 6 proposed new glyphs (record/eye/list/magnify/pencil/play) all sit in U+F0000-U+F1AFF MD-PUA range, single-cell guaranteed by nerd-fonts patcher. No silent re-cite drift since iteration-1."
+    },
+    "splitOutcome_signature_match": {
+      "checked": true,
+      "result": "Function declared at index.tsx:210 with regex on :211. Candidate cite at line 191 says ':210' which anchors the function decl. Slight imprecision (regex is on :211) but acceptable; the regex itself is quoted verbatim and matches."
+    },
+    "mocks_at_30_cols": {
+      "checked": true,
+      "result": "Ruler in State-1 (lines 315-316) reads 0-29 (30 cells). State-2/3/4 sparkline rows are ' ▂▃▄▅▆▆▅▃' = 1 pad + 8 spark cells = 9 cells, leaving 21 unused — clean. Chip rows in State-3 are 'pi│ r build.ts' = 3+1+1+1+8 = 14 cells, well within 28. Column arithmetic annotation lets the reader audit these without re-counting."
+    }
+  },
+  "primitive_count_per_row": {
+    "result": "<=3 maintained",
+    "rows": {
+      "single_source_steady": "gutter + verb-glyph + description = 3",
+      "multi_source_chip": "chip + verb-glyph + description = 3 (chip-block displaces gutter)",
+      "error_heavy_freshest": "gutter + SEV_ERROR-displacement + description = 3 (SEV_ERROR replaces verb-glyph in col 1, doesn't add a primitive)",
+      "system_tag_row": "<system-tag glyph> + description = 2 (Rule 0 strips gutter+verb for that row)"
+    }
+  },
+  "buildability_concerns_remaining": [
+    {
+      "severity": "minor",
+      "issue": "splitOutcome bridge under-marking edge case",
+      "detail": "Rule 1 keys on entry-tone only; an entry with `tone:\"neutral\"` and `(failed)` suffix would miss the column-1 SEV_ERROR stripe. Producer's tone-claim and suffix-fact can disagree. Single-line fix: broaden Rule 1's trigger to (tone===\"error\") OR (splitOutcome.outcome?.tone===\"error\"). This is the ASI."
+    },
+    {
+      "severity": "minor",
+      "issue": "classify.ts is a phantom file",
+      "detail": "Rule 3 (line 199-202) places the regex classifier in '`vocab.ts`-adjacent `classify.ts`'. The brief forbids the spec generator from adding new repo files outside docs/simmer/activity-zone/, but the runtime implementer is free to add it — so this isn't a spec-side defect. However, the same regex could trivially live as an inline `classifyVerb()` helper in index.tsx with zero new files; spec doesn't have to assume a separate module."
+    },
+    {
+      "severity": "deferred-honestly",
+      "issue": "same-agent multi-thread chip collision",
+      "detail": "Open question 3 (line 453-460) flags `pi│ pi│ pi│` interleave for two pi threads. Real concern under multi-threaded sessions. Deferred-not-hidden is acceptable for iteration-2 scope."
+    }
+  ],
+  "asi": {
+    "target": "Verb-glyph column, Rule 1 (line 186-188 of iteration-2 candidate)",
+    "edit": "Broaden Rule 1's trigger from `If tone === \"error\"` to `If tone === \"error\" OR splitOutcome(message).outcome?.tone === \"error\"`. In either case, render SEV_ERROR in col 1 AND strip the `(failed)` suffix per the bridge. Drop the AND-conjunction in the bridge note (line 192-194) since both signals now route through the same trigger.",
+    "why": "The error-heavy mock (State 4) shows a vertical SEV_ERROR stripe — that visual is the design's primary exception-glance answer. Under the current candidate, a producer that emits `(failed)` rows with `tone:\"neutral\"` (entirely possible — splitOutcome auto-detects tone from the suffix at index.tsx:215, independent of entry.tone) would render verb-glyph + tone-coloured suffix, NOT the stripe. Trusting the suffix-fact (which IS the message ground truth) instead of only the producer's tone-claim closes this gap with one OR-clause and zero new primitives. Renderer-side; no producer contract change required.",
+    "cost": "One sentence on line 186, one phrase deletion in the bridge note. No new glyphs, no mock changes, no scope expansion."
+  },
+  "calibration_anchor": {
+    "if_iteration_1_was_8_8_8": "iteration-2 should be 8/8/9 because exactly one criterion (terminal-feasibility, my PRIMARY lens) received targeted edits and they land. hud-fidelity and four-questions did not get design-surface changes — they should not move. The +1 on terminal-feasibility is the result of closing 2.5/3 stalls; full 10 is reserved for closing the splitOutcome under-marking edge too."
+  }
+}

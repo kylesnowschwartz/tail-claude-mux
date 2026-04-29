@@ -1,0 +1,59 @@
+{
+  "iteration": 0,
+  "phase": 1,
+  "judge": "terminal-ux-pragmatist",
+  "artifact_type": "single-file",
+  "candidate_path": "docs/simmer/activity-zone/iteration-0-candidate.md",
+  "lens_summary": "Real-world TUI usage across all four states, narrow widths (~30 cols), unfocus dimming, and a week of repeated use. Reward calm peripheral-first design that survives edges; penalise sunny-mockup designs that hand-wave multi-source bursts, error-heavy windows, or unfocus consistency. The 200ms-glance test governs.",
+  "scores": {
+    "hud-fidelity": {
+      "score": 7,
+      "rationale": "Both terminal tests pass. Sparkline test: explicit ≤8-cell `▁▂▃▄▅▆▇█` row with shared baseline if stacked. Spellcheck test: gutter `●` and end-of-row `✓`/`✗` badges sit on the line of work, not in a popup. Demoting source to an eyebrow gets it out of the description column — HUD-clean for steady runs. Concerns: a freshest row carrying gutter + verb-glyph + bold description + outcome badge is 4 primitives, on the edge of the rubric. Verb-glyph small-multiples is conceptually right (one shape per column-1 cell) but only earns its keep if the alphabet is small and complete; the candidate leaves the dictionary open and admits non-tool events have no natural glyph, which risks a 6th primitive (status glyph in the same slot) and column-1 inconsistency. Eyebrow rows are extra chrome whenever source churns. The bones are right; the per-row primitive ceiling and dictionary closure are the open edges.",
+      "passes_spellcheck_test": true,
+      "passes_sparkline_test": true,
+      "primitives_per_row_worst_case": 4
+    },
+    "four-questions": {
+      "score": 8,
+      "rationale": "Liveness and Pattern are answered together by the top sparkline at peripheral glance — best-in-class for this brief. Latest is answered by the `●` gutter (cleaner than bold-noise alone). Exception is answered by `✗` end-of-row badges and tone colour. The weakness: Exception only fires when an outcome event is emitted; many failures will surface as a tone-coloured description with no badge, so the glance hit relies on colour alone for those. Pattern via verb-glyph small-multiples is real but contingent — it only reads as a shape if the user has internalised the dictionary, which the spec leaves unfinished. So 4-of-4 by glance with two of the four (Exception, Pattern) carrying open contingencies.",
+      "questions_answered_by_glance": ["liveness", "pattern", "exception", "latest"],
+      "weakest_question": "exception"
+    },
+    "terminal-feasibility": {
+      "score": 5,
+      "rationale": "Implementable in OpenTUI in principle: sparkline row is plain text glyphs, gutter is column-0 char, eyebrow is a Tier-4 row, badges are end-of-row glyphs. But this lens grades behaviour across the four states, narrow widths, and unfocus — and the candidate hand-waves four of those edges. (1) Multi-source: open question #5 explicitly says eyebrow approach is 'expensive' under interleaving; with a 5–7 row cap, two agents bursting every 1–2 entries spend 30–50% of vertical budget on eyebrow rows, halving useful capacity — this is exactly the thrash the lens flags. (2) Error-heavy: not mocked; `✗` badge collides with the pre-truncation `…` at row-end (open question #8). (3) Empty: undecided; a flat `▁▁▁▁▁▁▁▁ 0/min` would falsely imply a live instrument when nothing is happening — worse-than-current at the 200ms glance. (4) Narrow ~30 cols: not drawn; sparkline row fits but activity rows leave only ~24 cols for description after gutter+verb-glyph+badge chrome. (5) Unfocus: open question #10 explicitly defers whether sparkline/verb glyphs slide with tiers or bypass like severity — the lens penalises inconsistent focus/unfocus treatment by name. (6) Verb-glyph dictionary: 5 sketched, fallbacks unresolved, non-tool events un-mapped — 'clever but unmemorable' risk over a week of use. The single mockup is good; the candidate names most of the right risks but resolves none of them.",
+      "narrow_width_30_cols_drawn": false,
+      "states_drawn": ["single-source"],
+      "states_handwaved": ["empty", "multi-source", "error-heavy"],
+      "unfocus_consistency_resolved": false,
+      "new_glyphs_proposed_count": 5,
+      "new_glyphs_pinned": false
+    }
+  },
+  "lens_observations": {
+    "two_hundred_ms_glance": "Strong on Liveness/Pattern (sparkline) and Latest (●). Weak on Exception when no outcome event fires. Across a week, the verb-glyph column is the swing factor — if the alphabet stays small and closed, it becomes calm small-multiples; if it grows or has gaps, it becomes the noisiest cell on the row.",
+    "multi_source_thrash": "The eyebrow design is the candidate's most fragile choice under realistic load. With pi+cc interleaving, each source change costs a full row — at sidebar height of 5–7 rows this is unaffordable. The candidate identifies the problem in question #5 but proposes no resolution.",
+    "demands_attention_check": "Sparkline is peripheral by design. ● gutter is single-cell, calm. ✗ end-of-row is calm if rare; under error-heavy bursts it stacks visually with `…` truncation marks at the same column — could read as chrome rather than signal. Bold weight on the freshest row plus ● is mild double-marking but defensible.",
+    "consistency_focus_unfocus": "Unresolved. Sparkline glyphs are text — they should slide with tiers. Verb glyphs in column 1 are decorative; severity-bypass shouldn't apply. Outcome `✗` is severity-coloured so it bypasses. Without an explicit rule the implementation will drift.",
+    "memorability_week_of_use": "Sparkline alphabet is universal (pre-learned). Severity glyphs reuse vocab.ts (pre-learned). Verb glyphs are new and the spec refuses to close the set — this is the memorability liability."
+  },
+  "asi_candidate": {
+    "title": "Pin the four states with mockups, and resolve eyebrow-vs-inline as a hybrid rule keyed on source-run length",
+    "summary": "A single focused refinement to the spec: replace the lone single-source mockup with four mocked states (empty, single-source, multi-source, error-heavy) all drawn at 30 cols, and resolve open question #5 by specifying a hybrid source-position rule that switches between eyebrow and a 3-cell inline source-chip based on whether the source repeats. This directly addresses the lens's flagged failure mode (eyebrow thrash under multi-source bursts) while preserving the clean run-case the candidate already gets right.",
+    "concrete_changes": [
+      "Add a `## States` section with four 30-col ASCII mockups: empty, single-source steady, multi-source interleaving (pi/cc alternating every 1–2 entries), and error-heavy (3+ ✗ rows in window).",
+      "Resolve open question #5: rule = 'if the same source holds for ≥2 consecutive rows, render eyebrow once and omit it from the rows below; if sources interleave (current source ≠ previous source AND previous source ≠ source-before-previous), suppress eyebrows entirely and render a 3-cell column-0 chip `pi│` / `cc│` on each row instead.' This collapses the multi-source case from N eyebrow rows to 0, recovering vertical budget at the price of 3 chars of column-0 width.",
+      "Resolve open question #7: empty state stays as `(no recent activity)` Tier-4 with breathing room — the sparkline row is suppressed entirely (not flat-rendered) so a quiet panel never falsely implies a live instrument at the 200ms glance.",
+      "Resolve open question #8: outcome badges render in a reserved 2-cell right gutter that pre-truncation respects; description never truncates *over* the badge slot. Under error-heavy load the badge column reads as a vertical stripe — the lens-correct outcome.",
+      "Resolve open question #10: sparkline glyphs and verb glyphs slide with tiers on unfocus (they are decorative text, not severity); only severity-bypass colours and the Clawd identity glyph keep full intensity. State this rule in one line so the implementer cannot drift.",
+      "Close the verb-glyph dictionary at exactly 5 entries (read / list / search / edit / run) and specify the fallback: any event without a verb mapping renders column 1 *blank* — never a generic ▶, never a status glyph in the verb slot. Status transitions (waiting/interrupted/error) use the existing severity glyphs in column 1 by displacement, not by overload."
+    ],
+    "why_this_lens": "Every change here closes an edge the lens grades on: multi-source thrash, empty-state honesty, error-heavy collision, focus/unfocus consistency, and dictionary memorability. None of them touch the candidate's strong core (sparkline + gutter + small-multiples) — the refinement is purely about surviving the states the candidate currently hand-waves.",
+    "expected_score_lift": {
+      "hud-fidelity": "+0 to +1 (already passes both tests; tighter primitive ceiling on error-heavy)",
+      "four-questions": "+0 (already 4-of-4)",
+      "terminal-feasibility": "+3 to +4 (the four states and unfocus rule are exactly what this score is gated on)"
+    },
+    "single_focused": true
+  }
+}

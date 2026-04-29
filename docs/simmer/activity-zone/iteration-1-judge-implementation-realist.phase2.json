@@ -1,0 +1,91 @@
+{
+  "lens": "implementation-realist",
+  "iteration": 1,
+  "phase": 2,
+  "artifact": "docs/simmer/activity-zone/iteration-1-candidate.md",
+  "panel_snapshot": {
+    "implementation_realist_phase1": { "hud-fidelity": 8, "four-questions": 8, "terminal-feasibility": 8, "composite": 8.0 },
+    "information_designer_phase1":   { "hud-fidelity": 9, "four-questions": 9, "terminal-feasibility": 9, "composite": 9.0 },
+    "terminal_ux_pragmatist_phase1": { "hud-fidelity": 9, "four-questions": 9, "terminal-feasibility": 8, "composite": 8.7 }
+  },
+  "deliberation": {
+    "hud-fidelity": {
+      "my_score": 8,
+      "designer_score": 9,
+      "pragmatist_score": 9,
+      "agree": [
+        "Designer is right that retiring `7/min` text suffix is the canonical Tufte data-ink reflex applied to the right cell — the spec calls out the offence by name (line 150). My phase-1 understated this; the candidate doesn't just satisfy the no-restating-elsewhere principle, it argues for it.",
+        "Pragmatist is right that the four mocked states each draw a *different* characteristic sparkline shape (gentle hump / sustained mid-high / high-then-decay), which is Pattern-by-glance proven in pixels rather than claimed in prose. That is a stronger sparkline test pass than I credited."
+      ],
+      "challenge": [
+        "Pragmatist scores 9 while flagging the chip's `│` as 'a fourth visible mark per chip-mode row in the strict primitive-counting sense' — that is the same per-row-ceiling concern that kept my score at 8, but they discount it as 'defensible structural chrome'. From the implementation-realist lens the per-row-primitive count is a hard rubric the candidate itself adopts; treating chip+`│` as one structural unit when convenient and as 'calm chrome' when it would otherwise breach the ceiling is the kind of forgiveness this lens exists to withhold.",
+        "Designer scores 9 while flagging two real demerits: (a) freshest is still double-encoded (gutter ● AND description Tier-2-vs-3) — the candidate explicitly rejects a recency-rank gradient gutter on the same logic in §Open Q2 without noticing the indictment of its own kept double-encoding; (b) sparkline no-logs suppression breaks consistency with the window-empty `▁▁▁▁▁▁▁▁` case. Two acknowledged demerits cost more than one rubric notch; designer's 9 is half a notch high under their own reasoning."
+      ],
+      "concede": [
+        "Designer's bold-overuse observation (freshest dropped from Tier 1 to Tier 2) is a real reduction I undercredited in phase-1 — the candidate is genuinely tighter on weight discipline than the seed."
+      ],
+      "revised_score": 8,
+      "revision_rationale": "Holding 8. The designer's two demerits and the pragmatist's chip-`│` concession both cut against their own 9s. The candidate is a strong 8 — primitives compose, claims are earned, edge mocks exist — but chip-mode forfeits the freshest gutter (real degradation of the canonical Latest answer) and the freshest-row error case carries gutter ● AND SEV_ERROR ✗ AND tone-coloured desc, which is the per-row ceiling under load. Both panelists effectively acknowledged these without subtracting for them."
+    },
+    "four-questions": {
+      "my_score": 8,
+      "designer_score": 9,
+      "pragmatist_score": 9,
+      "agree": [
+        "Pragmatist's column-1 stripe-as-shape reading is correct: the State-4 mock proves Exception-by-glance, with the lone surviving non-failed row reading as a diagnostic gap in the stripe. That is shape-as-meaning the seed only gestured at.",
+        "Designer's flag that Liveness is unrepresented in the no-logs empty state (sparkline suppressed → user must read text to know the band is alive) is a sharper version of my own stuck-vs-idle conflation point — same flaw, different state. Both should compound."
+      ],
+      "challenge": [
+        "Designer scores 9 while explicitly flagging (a) Liveness unrepresented in no-logs and (b) verb-glyph column position shifting between modes (col 1 eyebrow → col 4 chip) so verb-shape is unreadable across mode transitions. Two acknowledged failures of glance-readability cost more than one notch; the column-shift is particularly damning under the small-multiples discipline this lens grades on.",
+        "Pragmatist scores 9 while naming Latest as the weakest question (chip-mode forfeits the freshest gutter, recovery via position+Tier-2 is convention-dependent). 'Convention-dependent rather than glyph-explicit' is the four-questions failure mode by definition — it's an answer recovered by reading rather than by glance. That should subtract a notch, not be conceded as 'defensible'."
+      ],
+      "concede": [
+        "Pragmatist's State-4 mock-shape reading is more generous than mine and probably right — the column-1 stripe under cascading failure is genuinely the strongest Exception design move in the search space. I was conservative in phase-1."
+      ],
+      "revised_score": 8,
+      "revision_rationale": "Holding 8. Both panelists' 9s carry acknowledged failures (designer: column-shift across modes + no-logs liveness gap; pragmatist: Latest convention-dependent in chip mode). My phase-1 stuck-vs-idle conflation concern and these compound to a fourth-question that is partially-answered in two of four states. 8 is the honest score; 9 would require either the column-shift fixed (single canonical verb column across modes) or the no-logs sparkline unified with window-empty."
+    },
+    "terminal-feasibility": {
+      "my_score": 8,
+      "designer_score": 9,
+      "pragmatist_score": 8,
+      "agree": [
+        "Pragmatist's same-agent multi-thread catch (`pi 15c8` vs `pi 9a01` collapsing to `pi│ pi│ pi│` in chip mode because threadid is dropped at line 235) is a concrete spec gap I missed. A common parallel-worktrees-with-same-agent layout becomes ambiguous. This is exactly the implementation-realist class of gap — not a polish issue, a buildability issue: the renderer has no rule for 'two simultaneous pi sources' under run-length=1 chip mode.",
+        "Pragmatist's chip-mode-error intersection (states 3 ∩ 4 not mocked, col displaces from 1 to 4) is a real undrawn corner. The unfocus 'bright red spots' pattern shifts column under multi-source, which the implementer needs to know.",
+        "Pragmatist's micro-typography concern (`●r` and `●✗` adjacency at cols 0–1 with no inter-cell pad) is real but minor — PUA glyphs typically ship with intra-glyph padding. I'd weight it lower than they do.",
+        "Designer's 1Hz tick concern overlaps with mine (the existing focused-session timer doesn't tick when logs[] is unchanged, so the right-edge cell-falloff needs a real new setInterval, not a 'driven by existing timer' hand-wave)."
+      ],
+      "challenge": [
+        "Designer scores 9 on terminal-feasibility but their rationale rests almost entirely on spec-completeness signals — 'all glyphs are attainable, all widths are pinned, all four states are mocked, glyph budget at ceiling but not over.' Those are necessary but not sufficient for tomorrow-build. They missed: (1) the off-by-2 column-width arithmetic (paddingLeft+paddingRight=2 means inner content area is 28 not 30 at a 30-col panel, so the spec's `≤24` chip-mode and `≤27` eyebrow-mode description budgets are both wrong by 2 cells); (2) the splitOutcome (index.tsx:210) bridge — existing logs[] entries already carry `(failed)` suffixes that the renderer must route through the new column-1 displacement, and the spec is silent on whether splitOutcome is removed, kept-but-unused, or rewired; (3) the system-tagged source rule absence in chip mode (the foundational seed gap that iteration-1 only half-closes — the run-length classifier has no rule for `source='[bell]'`). All three are concrete renderer stalls that designer's score doesn't reflect. This is the lens-relevant case of spec polish over-rewarded relative to tomorrow-build readiness.",
+        "Designer treats the regex-classifier-in-classify.ts proposal as 'architecture, not file creation' — but classify.ts adjacent to vocab.ts in apps/tui/src/ IS a new file in the renderer's edit surface, and the brief technically scopes the renderer's edits. Worth a notch off."
+      ],
+      "concede": [
+        "Pragmatist's same-agent multi-thread case is a fourth concrete stall I should have caught in phase-1. It expands my unhandled-edge-case list by one but does not change my score (which was already 8 with three known stalls) — the magnitude of the gap is the same."
+      ],
+      "revised_score": 8,
+      "revision_rationale": "Holding 8 with agreement from pragmatist (also 8). Designer's 9 is one notch high under this lens — they reward spec-completeness (codepoint table, four mocks, ruler) without verifying the column-width arithmetic, the splitOutcome bridge, or the system-tag rule. The candidate is genuinely +3 from the seed (5 → 8) because seven of eight foundational gaps closed; the eighth (system-tag in chip mode) plus three buildability stalls (off-by-2, splitOutcome, multi-thread) prevent the 9. This is the implementation-realist position: tomorrow-build readiness is the gate, and the gate is at 8."
+    }
+  },
+  "scores_after_deliberation": {
+    "hud-fidelity": 8,
+    "four-questions": 8,
+    "terminal-feasibility": 8,
+    "composite": 8.0
+  },
+  "scores_changed": false,
+  "panel_disagreement_summary": "Designer's 9/9/9 systematically over-rewards spec polish (closed dictionary, codepoint table, four mocks, ruler) without verifying the implementation math (column-width arithmetic, splitOutcome bridge, 1Hz tick wiring, system-tag chip rule). They flagged real demerits in their own rationale (freshest double-encoded, no-logs liveness gap, column-shift across modes) but did not subtract for them. Pragmatist's 9/9/8 lands at the same terminal-feasibility number I do (8) and converges with my buildability concerns; their 9s on hud-fidelity and four-questions credit shape-by-glance generously but acknowledge real demerits (chip-`│` as fourth mark, Latest convention-dependent). My 8/8/8 is the honest tomorrow-build position — the candidate is a strong, broadly-buildable spec with three known renderer stalls that each block first-PR success. Holding scores.",
+  "asi_candidate_refined": {
+    "summary": "Close the three concrete renderer stalls that prevent iteration-1 from being a tomorrow-build spec: (a) system-tagged source rule absence in chip mode (the foundational seed gap iteration-1 only half-closed), (b) splitOutcome bridge for existing `(failed)` suffixes in the unchanged log stream, (c) off-by-2 column-width arithmetic in the chip/eyebrow description-max annotations.",
+    "actionable_change": "Three localised edits to docs/simmer/activity-zone/iteration-1-candidate.md, all inside existing sections, no new glyphs, no new files, no producer changes. (1) §Source position: prepend a precedence rule BEFORE the run-length classifier — 'If entry.source matches /^\\[.+\\]$/ (system tag, e.g. [bell] / [exit]), force eyebrow mode regardless of run-length. The eyebrow renders the bracketed tag verbatim at Tier 4 muted (no chip, no glyph cost). System-tagged events are inherently event-shaped; routing them through chip mode would require either expanding the agent-code dictionary beyond pi/cc/am/cx (semantic-fit problem) or burning a glyph from the 6-budget on per-tag icons (budget-fit problem). Eyebrow-with-bracketed-text is the only zero-cost, zero-ambiguity rule.' (2) §Verb-glyph column rule 1: extend with a sub-rule — 'If splitOutcome(message).outcome?.tone === \"failed\", treat as tone===\"error\" for precedence purposes AND strip the `(failed)` suffix from the description before pre-truncation. Existing logs[] entries carrying the legacy (passed)/(failed) suffix continue to route through column-1 displacement without an orphaned row-end span.' (3) §Source position chip-layout block: fix the arithmetic — 'description ≤22 cells at 30-col panel (panel 30 minus paddingLeft+paddingRight=2 minus chip-block=6)'; correspondingly fix eyebrow-mode 'description ≤25 cells (28 inner minus 3 for gutter+verb+pad)'; update the State 2/3/4 mock annotations.",
+    "why_this_lens": "Three concrete tomorrow-build stalls, all renderer-side, all single-section edits, all zero-vocab. (1) Without the system-tag rule, source='[bell]' arrives at run-length=1 and the renderer must invent chip behaviour at PR-review time — exactly the 'codepoint widths not pinned' / 'rule absent' class of stall the seed flagged. (2) Without the splitOutcome bridge, the first existing `(failed)` row routed through the new pipeline renders verb-glyph + an orphaned ` (failed)` suffix because the producer is unchanged. (3) Without the off-by-2 fix, the pre-truncate-in-JS truncator (the proven path per the brief) is sized 2 cells too generous on every row and the mock annotations don't match the actual 28-cell inner content area. All three are zero-vocab, zero-producer, single-section edits. They push iteration-1 from 'buildable with three known stalls' into 'buildable straight through' without leaving the search space (no new glyphs, no new OpenTUI features, no producer changes, no scope expansion).",
+    "scope": "Three localised edits inside existing sections, ~25 added lines total. No new section, no new glyphs (already at 6/6 budget), no new files, no new OpenTUI primitives. Producer-side changes remain SHOULD/out-of-scope.",
+    "leaves_search_space": false,
+    "alternatives_considered": [
+      "Adding the same-agent multi-thread case (pragmatist's catch: `pi 15c8` and `pi 9a01` collapsing to `pi│ pi│` in chip mode because threadid is dropped). Concrete and real, but the fix path is not a single rule — it requires either a 3-char tied tier (which doesn't fit the 30-col chip budget), or a 2-char threadid-suffix in the chip (e.g. `p8│`, breaking the agent-code-as-mnemonic discipline), or a fall-through to eyebrow (which then breaks the run-length=1 → chip rule). Each fork is a design call, not an edit; a 4th ASI line would expand scope into design-reasoning territory. Note the gap in iteration-2 instead.",
+      "Sparkline no-logs unification with window-empty (designer's catch: render `▁▁▁▁▁▁▁▁` instead of suppressing the row). Real consistency improvement and would close the Liveness gap in the empty state, but it's a calibration call (ship-the-flat-line vs reserve-vertical-budget), not a stall — the implementor will write whichever the spec says without needing to invent. Lower priority than the stall closures.",
+      "Verb-glyph column-stability across modes (designer's catch: col 1 in eyebrow, col 4 in chip → unreadable across transitions). Could be fixed by moving the chip to row-end (e.g. `r desc                  pi│`), but that breaks the freshest-position read and re-opens row-end-badge collisions. Defer to iteration-2 design.",
+      "Stuck-vs-idle resolution on the sparkline (age-of-newest-entry tick mark). Rejected as a second instrument expanding primitive count and codepoint budget; iteration-1's ▁-floor convention deliberately accepts the conflation."
+    ]
+  },
+  "summary": "Phase-2 deliberation: holding 8/8/8 (composite 8.0). Designer's 9/9/9 over-rewards spec polish — they acknowledge real demerits (freshest double-encoded, no-logs liveness gap, verb-column shifts across modes, 1Hz tick unverified) without subtracting for them, and miss three concrete tomorrow-build stalls (off-by-2 column arithmetic, splitOutcome bridge, system-tag chip rule). Pragmatist's 9/9/8 converges with me on terminal-feasibility and adds one concrete catch I missed (same-agent multi-thread `pi`/`pi` collapse in chip mode); their 9s on the design axes are reasonable but lean generous on shape-by-glance reading. My ASI is unchanged in shape and tightened in framing: three single-section edits (system-tag precedence rule, splitOutcome bridge, off-by-2 column-width fix) close the eighth foundational seed gap and the two existing-code-bridge gaps without leaving the search space. The same-agent multi-thread case is acknowledged as a real iteration-2 concern but not folded into the ASI because its fix is a design call, not an edit."
+}

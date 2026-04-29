@@ -1,0 +1,91 @@
+{
+  "panelist": "information-designer",
+  "lens": "Tufte-school information design — data-ink ratio, micro-typography, primitive choice, sparkline integrity, small-multiples discipline.",
+  "iteration": 2,
+  "phase": 1,
+  "candidate_path": "docs/simmer/activity-zone/iteration-2-candidate.md",
+  "calibration": {
+    "seed_phase2": {"hud_fidelity": 7, "four_questions": 8, "terminal_feasibility": 6, "mean": 7.0},
+    "iteration_1_phase2": {"hud_fidelity": 9, "four_questions": 9, "terminal_feasibility": 8, "mean": 8.7}
+  },
+  "scores": {
+    "hud_fidelity": 9,
+    "four_questions": 9,
+    "terminal_feasibility": 9,
+    "mean": 9.0
+  },
+  "score_rationale": {
+    "hud_fidelity": {
+      "score": 9,
+      "delta_vs_iter1": "+0 (preserved; column-arithmetic prose is genuine micro-typography but doesn't change the test outcomes)",
+      "passes": [
+        "Sparkline test: 8 cells, fixed ▁▂▃▄▅▆▇█ alphabet, no text label (the retired 7/min suffix was the seed's canonical data-ink offence; iter-1 closed it; iter-2 keeps it closed).",
+        "Zero-renders-as-▁ is the right Tufte choice: calm reads as a continuous baseline, not as absence-of-band — presence of low signal ≠ absence of channel.",
+        "Y-axis math `Math.ceil(7 * count / Math.max(localMax, 1))` is honest: floors div-zero and prevents single-event saturation.",
+        "Spellcheck test: column-1 verb glyph and column-1 SEV_ERROR displacement put the marker on the line of work, never in a popup.",
+        "splitOutcome bridge enforces single-signal-per-event: failed rows lose the `(failed)` suffix when col-1 displacement fires, so the same exception is not double-encoded.",
+        "≤3 primitives per row (gutter + verb-glyph + description); tone is colour not a counted primitive; eyebrow is between-row not per-row.",
+        "EAW micro-typography: retired Ambiguous `●`/`✓`/`✗` and Wide `⚠` in favour of PUA Neutral glyphs guaranteed single column-cell. This is the kind of cell-level discipline the lens rewards.",
+        "Small-multiples discipline preserved through closed 5-entry verb dictionary; gaps in the verb-stripe are themselves informative ('non-tool event'), not a fallback embarrassment — sophisticated reading of small-multiples coherence under sparse data.",
+        "Column-arithmetic annotation (panel-outer vs content-inner width, gutter/chip displacing left pad) is real Tufte work — it makes the 30-col mockups reproducible cell-by-cell."
+      ],
+      "demerits": [
+        "Mockups are arithmetically correct but visually uniform — Tier-2 freshest vs Tier-3 dim continuation is asserted in prose, not perceptible in the ASCII. The spec does not yet show its own perceptual hierarchy.",
+        "Chip-mode 'latest by top-row position + Tier-2 weight' recovery is invisible in state-3 because the same uniform-weight ASCII can't render it.",
+        "Heading-absorption (Q1 in Open) still leans on focused-session colour alone with no visible name-tag; this is a deliberate listening choice but leaves the band's identity carried by an off-page channel."
+      ]
+    },
+    "four_questions": {
+      "score": 9,
+      "delta_vs_iter1": "+0 (preserved; splitOutcome bridge marginally tightens Exception)",
+      "by_question": {
+        "liveness": "Pass — sparkline shape carries it.",
+        "pattern": "Pass — hump/sustained/decaying shapes are demonstrated in states 2/3/4 and read directly.",
+        "exception": "Pass — col-1 SEV_ERROR displacement; under load it accumulates as a vertical red stripe (state-4 demonstrates). The splitOutcome bridge eliminates the column+suffix double-mark, so one event = one signal.",
+        "latest": "Pass — gutter `●` on freshest + Tier-2 description on row 0. State-4's combined `●✗` on row 0 is the genuine HUD reading 'the latest thing also failed'."
+      },
+      "demerits": [
+        "Latest is the weakest of the four in chip mode: the gutter is forfeited and the recovery via Tier-2 description weight is invisible in the spec's mockups (see hud-fidelity demerit 1).",
+        "No chip-mode + error mockup — what does multi-source interleave under cascading failure look like? State-3 has no errors, state-4 is single-source. The combined case is implicit."
+      ]
+    },
+    "terminal_feasibility": {
+      "score": 9,
+      "delta_vs_iter1": "+1 (the three iter-2 edits genuinely close build-stalls)",
+      "passes": [
+        "Rule-0 system-tag precedence: explicit branch BEFORE run-length keying. Without it, `[bell]` between two `pi db92` rows would either burn an eyebrow row or produce nonsense `[b│` chip. Reuses existing severity-glyph entries — zero new glyph budget spent.",
+        "splitOutcome bridge: cites concrete `apps/tui/src/index.tsx:210` and the actual regex `/^(.*?)(\\s*)(\\((passed|failed)\\))\\s*$/`; pins the displacement-vs-suffix decision per outcome-tone (failed → strip suffix, rely on col-1; passed → keep suffix, no displacement). This is the kind of edge that would have stalled an implementer at the keyboard.",
+        "Column-arithmetic annotation: panel-outer vs content-inner width, gutter/chip-head displacing left pad. Makes the 30-col ruler arithmetically reproducible.",
+        "All glyphs PUA (U+F0000–U+F1AFF), EAW Neutral, single column-cell — guaranteed to survive sidebar widths.",
+        "6 new glyphs (within ≤6 budget). Box-drawing `│` (U+2502) for chip is already established infrastructure.",
+        "Producer SHOULD with renderer-side regex-classifier fallback (`/^Reading /` etc.) — buildable today with the shipped log shape, no runtime change blocking.",
+        "Four states (empty / single / multi / error-heavy) all rendered at the tightest realistic 30-col width.",
+        "Same-agent multi-thread chip collision explicitly flagged as deferred future work — acknowledged not hand-waved."
+      ],
+      "demerits": [
+        "Chip-mode + error case is left implicit: by the rules in §Verb-glyph and §Source position, col 4 should hold SEV_ERROR in chip mode under `tone === 'error'`, but no mockup demonstrates the fifth combinatorial cell (multi-source × error).",
+        "Empty-state precedence is layered (no-logs / window-empty / active) — three cases is the right number but the spec doesn't show a 'window-empty but logs present' mockup; this is implicit in the contract table, not in §States."
+      ]
+    }
+  },
+  "surgical_check": {
+    "preserved_sections_intact": true,
+    "preserved_evidence": "Sparkline contract table, verb-glyph dictionary (5 entries), hybrid run-length source rule (eyebrow ≥2 / chip =1), unfocus rule table, glyph palette (6 new, EAW retirements), out-of-scope list — all intact verbatim from iter-1's structure.",
+    "three_targeted_edits_landed": {
+      "system_tag_precedence": "Yes — added as Rule 0 in §Source position, branches BEFORE run-length keying, reuses existing severity glyphs (no new budget), explicitly addresses `[bell]` vs eyebrow/chip collision.",
+      "splitOutcome_bridge": "Yes — added as inline note in §Verb-glyph column Rule 1, cites file:line, gives the actual regex, pins behaviour per outcome-tone.",
+      "column_arithmetic": "Yes — added as a paragraph at the head of §States, before State 1, defines panel-outer vs content-inner and gutter/chip displacement of left pad."
+    },
+    "scope_creep": "None detected. No new glyphs introduced (the six are unchanged from iter-1's palette). Open questions reduced from iter-1's count by one resolution and one new deferred-future-work flag (same-agent multi-thread chip), which is honest accounting rather than scope expansion.",
+    "regressions": "None detected. The bones, edges, and four-state mocks are byte-similar to what iter-1 produced; the additions are insertions at well-chosen seams, not rewrites."
+  },
+  "asi_for_iteration_3": {
+    "headline": "Convert the four state mockups from arithmetic to perceptual by adopting an in-mock typographic convention for tier-weight.",
+    "problem": "The spec asserts a Tier-2 freshest / Tier-3 dim / Tier-4 muted-eyebrow hierarchy in prose, but the ASCII rows are visually uniform. A reader cannot perceive — from the spec itself — that row 0 is more salient than row 4, or that the eyebrow recedes. The design's own perceptual claim is therefore unfalsifiable from the spec, which is the canonical Tufte critique: the artifact tells us about the hierarchy instead of showing it. This is the highest-leverage refinement still latent under the information-design lens.",
+    "edit": "In §States, add a one-line legend immediately after the column-arithmetic paragraph: '**bold** = Tier 2 (freshest), plain = Tier 3 (dim continuation), ~muted~ = Tier 4 (eyebrow / chrome). Severity-bypass glyphs render as written (`✗`).' Then re-render the four mockups under that convention — e.g. state-2's row 0 becomes `●r **build.ts**`, rows 1-4 become ` r tsconfig.json` etc., eyebrow becomes ` ~pi db92~`. State-3 demonstrates chip-mode latest-recovery: `pi│ r **build.ts**` on row 0, `cc│ r types.ts` on row 1+. State-4 keeps `✗` literal because severity bypasses tiers.",
+    "why_this_lens": "Tufte's whole project is 'show, don't tell.' A spec whose mockups can't carry the design's perceptual hierarchy fails its own data-ink test at the meta level: the spec-ink isn't earning its rows. Conversely, once the convention is in place, every future iteration's mockups self-validate — a reviewer can see whether 'freshest-row salience' is doing perceptual work or whether it has collapsed into chrome.",
+    "non_goals": "Do not add new glyphs, new sections, or new states. Do not revisit the sparkline contract, the verb dictionary, the run-length rule, or the system-tag/splitOutcome/column-arithmetic prose. The convention is a typographic overlay on existing mocks, not a structural change.",
+    "estimated_size": "≈12 lines added (legend + 4 mock re-renders), ≈0 lines removed."
+  },
+  "summary": "Iteration 2 stays surgical and lands its three targeted build-stall fixes cleanly. Rule-0 system-tag precedence resolves a real `[bell]`-vs-chip collision without spending glyph budget; the splitOutcome bridge cites concrete file:line and pins the displacement-vs-suffix decision per outcome tone, killing a double-mark that would have offended Tufte's single-signal-per-event discipline; the column-arithmetic annotation makes the 30-col mockups reproducible cell-by-cell. None of the iter-1 bones, edges, or mocks are damaged. Scores 9/9/9 = 9.0 (vs iter-1's 8.7). Terminal-feasibility takes the +1 because the edits are precisely buildability work; hud-fidelity and four-questions hold steady at 9 because the surgical edits preserve rather than transform the perceptual profile. The remaining ceiling-blocker — and the ASI for iter-3 — is that the mockups themselves are arithmetically correct but visually uniform: the spec asserts a tier-weight hierarchy in prose but cannot perceive it in its own ASCII. Adopting a typographic convention (`**bold**` Tier-2, plain Tier-3, `~muted~` Tier-4) inside the four state mocks would convert the spec from 'arithmetic' to 'perceptual' — Tufte's 'show, don't tell' applied to the design document itself."
+}

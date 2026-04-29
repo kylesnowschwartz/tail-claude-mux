@@ -1,0 +1,85 @@
+{
+  "panelist": "information-designer",
+  "lens": "Tufte-school information design — data-ink ratio, micro-typography, primitive choice, sparkline integrity, small-multiples discipline.",
+  "iteration": 2,
+  "phase": 2,
+  "candidate_path": "docs/simmer/activity-zone/iteration-2-candidate.md",
+  "calibration": {
+    "seed_phase2": {"hud_fidelity": 7, "four_questions": 8, "terminal_feasibility": 6, "mean": 7.0},
+    "iteration_1_phase2": {"hud_fidelity": 9, "four_questions": 9, "terminal_feasibility": 8, "mean": 8.7},
+    "phase1_self": {"hud_fidelity": 9, "four_questions": 9, "terminal_feasibility": 9, "mean": 9.0},
+    "phase1_panel": {
+      "information_designer": {"hud_fidelity": 9, "four_questions": 9, "terminal_feasibility": 9},
+      "terminal_ux_pragmatist": {"hud_fidelity": 9, "four_questions": 8, "terminal_feasibility": 9},
+      "implementation_realist": {"hud_fidelity": 8, "four_questions": 8, "terminal_feasibility": 9}
+    }
+  },
+  "deliberation": {
+    "hud_fidelity": {
+      "phase1_score": 9,
+      "phase2_score": 9,
+      "movement": "agree-with-self / challenge-realist",
+      "challenger": "implementation-realist (held 8)",
+      "challenger_critique_summary": "Two Tufte hits: (a) freshest+failed `●✗` adjacency at cols 0–1 — two glyphs on the most-attended row; (b) chip `│` separator chrome on every multi-source row.",
+      "my_response": {
+        "on_freshest_plus_failed_adjacency": "Challenge. The cluster encodes two orthogonal signals — gutter `●` = latest (positional/temporal), col-1 `✗` = severity (categorical). These are not the same signal twice; they are two-channel honesty. Tufte's double-encoding critique applies when one fact gets two redundant marks (which is precisely what the splitOutcome bridge eliminates by stripping the `(failed)` suffix). Two adjacent cells encoding two independent dimensions is the dense, legible packing the lens rewards, not the chrome it punishes. Note also that the gutter is conditional (only on the freshest row) and the col-1 displacement is conditional (only on `tone === 'error'`); their co-occurrence is rare and meaningful — `state-4 row 0` literally reads 'the latest thing also failed', which is the canonical four-questions-in-one-cluster reading.",
+        "on_chip_pipe_chrome": "Partial concede. The `│` IS structural chrome — it appears on every row of a multi-source run, which is non-trivial visual cost. But it is the minimum-necessary boundary: without it, `pi r build.ts` parses as a 3-letter source, `pi  r build.ts` collides with the column-2 verb-glyph slot for non-chip rows, and any heavier delimiter (`[pi]`, `pi:`, `pi│ `) costs more cells. The choice is U+2502 box-drawing (one cell, single-stroke, EAW Neutral) — the minimum structural ink for chip-mode legibility. Tufte would call this defensible structure, not chartjunk. I acknowledge the chrome cost but do not concede the score-step: this is the design at its ceiling under the constraint of staying inside the existing primitive budget.",
+        "verdict": "Hold 9. The realist's 8 is a defensible absolute reading; my 9 is a relative reading vs iter-1 (which carried the same two issues and scored 9 from this lens). Both can coexist; my ASI is the right place to push the ceiling, not a score-drop on the same artifact."
+      },
+      "delta_vs_phase1": "+0",
+      "rationale_after_deliberation": "Sparkline integrity (8 cells, fixed alphabet, ▁-floor) and spellcheck discipline (col-1 line-of-work) hold cleanly. The two ceiling-blockers are real Tufte costs but are at-ceiling for this design family — they were present in iter-1 (scored 9) and the iter-2 surgical edits did not touch them. Demoting them now would punish iter-2 for a stable trade-off, not for a regression. The right move under this lens is the ASI (perceptual hierarchy in the mockups themselves), which is the next ceiling-lift available."
+    },
+    "four_questions": {
+      "phase1_score": 9,
+      "phase2_score": 8,
+      "movement": "concede-to-pragmatist",
+      "challenger": "terminal-ux-pragmatist (held 8)",
+      "challenger_critique_summary": "Stuck-vs-idle Pattern conflation: a wedged agent (60s+ Bash hang) and a finished agent both render flat ▁▁▁▁▁▁▁▁ — the sparkline cannot distinguish them. Iter-1 phase-2 already flagged this; iter-2 scoped it out and dropped it from open questions.",
+      "my_response": {
+        "reconsideration": "I gave Pattern a clean pass in phase-1 because the active shapes (hump in state-2, sustained in state-3, decaying in state-4) read directly. I tested the dense-event case and missed the sparse-event collapse-case. The pragmatist's reading is correct: under window-empty (no events in 64s), the sparkline floors to ▁▁▁▁▁▁▁▁ regardless of whether the agent is actively wedged on a long subprocess or has genuinely finished. From the activity-zone-at-rest signature, both states are visually identical — and disambiguation requires context-switching to the agent's pane, which is the exact behaviour the band exists to prevent.",
+        "lens_framing": "This is a four-questions failure that touches both Liveness (is anything happening?) and Pattern (what shape?). Either way the band's promise — 'glance and know' — fails for the wedged-agent case, which is a weekly real-session occurrence (long compiles, slow tests, blocked subprocesses). Tufte's small-multiples discipline says: if two distinct states produce the same mark, the encoding has a hole. The flat-sparkline hole is real.",
+        "verdict": "Concede. Drop from 9 to 8. This is not a regression vs iter-1 (the issue persisted from there) but my phase-1 9 was over-generous because I missed the rare-event collapse-case. The pragmatist's 8 is the correct read."
+      },
+      "delta_vs_phase1": "-1",
+      "rationale_after_deliberation": "Liveness, Exception, and Latest still answer cleanly by glance (sparkline shape, col-1 SEV_ERROR stripe, gutter `●` + Tier-2 weight respectively). Pattern partially answers — active patterns read, but window-empty wedged-vs-finished collapses. The iter-2 surgical scope was correctly tight (three buildability stalls, no design-surface change), so the right deliberation move is to recognise the pre-existing weakness rather than blame iter-2 for it. Score lands at 8: not a regression, an honest read of a persistent gap."
+    },
+    "terminal_feasibility": {
+      "phase1_score": 9,
+      "phase2_score": 9,
+      "movement": "agree-with-panel",
+      "challenger": "(both other panelists also held 9, with the same residual flagged)",
+      "challenger_critique_summary": "splitOutcome under-marking edge: Rule 1 triggers ONLY on `tone === 'error'`. A producer emitting `(failed)` with `tone: 'neutral'` falls through to Rule 2/3 and renders verb-glyph + tone-coloured `(failed)` suffix, silently missing the col-1 SEV_ERROR stripe that State-4 promises. One-OR-clause fix: broaden trigger to `(tone === 'error') || (splitOutcome.outcome?.tone === 'error')`.",
+      "my_response": {
+        "reconsideration": "I missed this in phase-1. My phase-1 prose said the bridge 'pins the displacement-vs-suffix decision per outcome-tone' — but I read 'outcome-tone' as 'the outcome's tone derived from any source', whereas the actual rule keys on entry-tone only. The realist's verification (splitOutcome detects tone from suffix alone, independent of entry.tone) makes the under-marking case concrete: producer's tone-claim and suffix-fact can disagree, and the rule honours the claim, not the fact. Both panelists caught this; I did not.",
+        "score_implication": "Both other panelists held 9 with this residual. The +1 vs iter-1's 8 is earned: stall-a (system-tag precedence) closes cleanly, stall-c (column arithmetic) closes with a cosmetic +1 off-by-one in the per-mode budget prose, stall-b (splitOutcome bridge) closes the over-marking case but leaves the under-marking case open. Net: 2.8/3 stalls closed, which is a clean +1 from a base of 8. Full 10 is reserved for closing the under-marking edge.",
+        "verdict": "Hold 9. Aligned with both other panelists."
+      },
+      "delta_vs_phase1": "+0",
+      "rationale_after_deliberation": "Rule-0 system-tag precedence is the cleanest of the three edits — branches first, reuses existing severity-glyph vocab (no new glyph budget), preserves source-run continuity across `[bell]`, addresses the named failure modes. Column-arithmetic walkthrough makes the 30-col mocks auditable; the +1 off-by-one in description-budget prose is cosmetic. splitOutcome bridge cites file:line, quotes the regex verbatim, kills the over-marking double-mark — but leaves the under-marking edge that both pragmatist and realist independently caught. 9 is the right score; 10 is one OR-clause away."
+    }
+  },
+  "scores_revised": {
+    "hud_fidelity": 9,
+    "four_questions": 8,
+    "terminal_feasibility": 9,
+    "mean": 8.67
+  },
+  "score_movement_summary": {
+    "phase1_mean": 9.0,
+    "phase2_mean": 8.67,
+    "delta": -0.33,
+    "movement_source": "Conceded four-questions 9→8 to the pragmatist on stuck-vs-idle Pattern conflation. Held hud-fidelity at 9 against the realist's 8 (challenged the freshest+failed double-encoding read; partial concede on chip `│` chrome cost without score-step). Held terminal-feasibility at 9 in alignment with both other panelists (acknowledged missing the splitOutcome under-marking edge in phase-1).",
+    "calibration_check": "Phase-2 mean 8.67 sits between iter-1 phase-2 (8.7) and iter-2 phase-1 (9.0). Honest read: iter-2 lands its three surgical edits (terminal-feasibility +1) but inherits a four-questions weakness from iter-1 that I should have priced at 8 in phase-1. Net iteration-over-iteration: +0 hud-fidelity, -1 four-questions (correction, not regression), +1 terminal-feasibility = 8.67 vs iter-1's 8.7."
+  },
+  "asi_for_iteration_3_refined": {
+    "headline": "Convert the four state mockups from arithmetic to perceptual by adopting an in-mock typographic convention for tier-weight.",
+    "problem": "The spec asserts a Tier-2 freshest / Tier-3 dim continuation / Tier-4 muted-eyebrow hierarchy in prose, but the ASCII rows are visually uniform. A reader cannot perceive — from the spec itself — that row 0 is more salient than row 4, or that the eyebrow recedes. The design's own perceptual claim is therefore unfalsifiable from the spec, which is the canonical Tufte critique: the artifact tells us about the hierarchy instead of showing it. Post-deliberation, this remains the highest-leverage information-design refinement still latent: the pragmatist's stuck-vs-idle gap and the realist's splitOutcome under-marking edge are both single-clause runtime fixes, but the perceptual-hierarchy gap is structural to the spec document itself and compounds across every future iteration.",
+    "edit": "In §States, immediately after the column-arithmetic paragraph, add a one-line legend: `**bold** = Tier 2 (freshest), plain = Tier 3 (dim continuation), ~muted~ = Tier 4 (eyebrow / chrome). Severity-bypass glyphs render as written (`✗` etc.) — they bypass tiers in the renderer, so they bypass typographic weight here too.` Then re-render the four state mocks under that convention: state-2's row 0 becomes `●r **build.ts**`, rows 1–4 become ` r tsconfig.json` etc., eyebrow becomes ` ~pi db92~`. State-3 demonstrates chip-mode latest-recovery (the ceiling-blocker the realist and I both flagged): `pi│ r **build.ts**` on row 0, `cc│ r types.ts` on row 1+. State-4 keeps `✗` literal because severity bypasses tiers.",
+    "non_goals": "Do not add new glyphs, new sections, or new states. Do not revisit the sparkline contract, verb dictionary, run-length rule, system-tag/splitOutcome/column-arithmetic prose. Do not attempt to fix stuck-vs-idle (pragmatist's ASI) or splitOutcome under-marking (realist's ASI) — those are non-overlapping, runtime-side, single-clause edits owned by the other lenses. The convention is a typographic overlay on existing mocks, not a structural change.",
+    "non_conflict_clause": "The typographic convention is **meta-spec markup for reviewers**, not a runtime instruction. The renderer continues to use ANSI dim/bright tier-slides exactly as today; `**bold**` and `~muted~` are reading aids that surface the renderer's existing perceptual claim inside the spec document. Markdown viewers render them; raw-text viewers read them as decorated ASCII. Either way, every future iteration's mockups become self-validating: a reviewer can see whether 'freshest-row salience' is doing perceptual work or whether it has collapsed into chrome.",
+    "why_this_lens_after_deliberation": "Tufte's whole project is 'show, don't tell.' A spec whose mockups can't carry the design's perceptual hierarchy fails its own data-ink test at the meta level: the spec-ink isn't earning its rows. The deliberation reinforces this — the realist's chrome critique (chip `│` cost) and the pragmatist's collapse critique (flat-sparkline ambiguity) both ultimately reduce to 'the eye cannot distinguish what the prose claims is distinct.' My ASI installs the discipline that makes future iterations of the spec testable on its own terms: once the convention is in place, perceptual claims are falsifiable in the mockup, not just argued in prose.",
+    "estimated_size": "≈12 lines added (legend + 4 mock re-renders), ≈0 lines removed.",
+    "delta_vs_phase1_asi": "Refined: added explicit non-conflict clause (the convention is meta-spec markup, not a runtime instruction) to pre-empt the implementation-realist's likely concern about renderer coupling; sharpened the why-this-lens framing to connect to deliberation findings (chip-chrome and stuck-vs-idle both reduce to perceptual-falsifiability failures); explicitly disclaimed overlap with the other panelists' iteration-3 ASIs (stuck-vs-idle is pragmatist's, under-marking is realist's, perceptual-hierarchy is mine — three non-overlapping single-edit ASIs)."
+  },
+  "summary": "Phase-2 deliberation moves my mean from 9.0 → 8.67. **Conceded four-questions 9→8** to the pragmatist's stuck-vs-idle catch: a wedged agent and a finished agent both render flat ▁▁▁▁▁▁▁▁, which I missed in phase-1 because I tested the dense-event case but not the sparse-event collapse-case. **Held hud-fidelity at 9** against the realist's 8: challenged the freshest+failed `●✗` reading as two-signal (latest × severity), not double-encoding (the splitOutcome bridge already kills the actual double-mark via suffix-stripping); partial-conceded the chip `│` chrome cost as real Tufte ink but defensible as minimum-necessary structure for chip-mode legibility — the design at its ceiling, not a regression. **Held terminal-feasibility at 9** in alignment with both other panelists, acknowledging I missed the splitOutcome under-marking edge (Rule 1 keys only on `tone:'error'`, not on suffix-derived tone) in phase-1; 9 is right for 2.8/3 stalls closed, 10 reserved for the one-OR-clause fix. **ASI refined**: kept the typographic-convention direction (`**bold**` Tier-2, plain Tier-3, `~muted~` Tier-4 in the four state mocks) but added an explicit non-conflict clause framing the convention as meta-spec markup for reviewers — not a runtime instruction — and disclaimed overlap with the pragmatist's stuck-vs-idle ASI and the realist's under-marking ASI. The three iteration-3 ASIs are non-overlapping single-edit pushes from three different lenses; the perceptual-hierarchy ASI is mine, and post-deliberation it remains the highest-leverage information-design lift available because it makes every future iteration's mockups self-validating rather than self-asserting."
+}

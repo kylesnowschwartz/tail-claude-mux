@@ -1,0 +1,22 @@
+{
+  "iteration": 2,
+  "scores": {
+    "hud-fidelity": {
+      "score": 9,
+      "reasoning": "All three panelists converged at 9 after deliberation (Realist conceded 8→9 once it was clear the column-arithmetic clarification IS a design-surface change tied to truncator widths in apps/tui/src/index.tsx:283). Both terminal tests pass cleanly. Per-row primitives stay ≤3 in eyebrow mode and in the new system-tag mode (2 primitives: tag glyph + description); chip mode brushes 4 only on the freshest+failed cluster, which Designer reads as a defensible cluster encoding two orthogonal signals (recency vs outcome) rather than a redundancy.",
+      "improvement": "Optional 9→10 micro-tightening: drop the gutter `●` on rows where SEV_ERROR already occupies column 1 (the one remaining double-encoding case). Defer if it would force re-mocking §States."
+    },
+    "four-questions": {
+      "score": 8,
+      "reasoning": "Three-way agreement at 8 after deliberation. Liveness, Exception, and Latest answer cleanly by glance. Pattern still conflates 'stuck' (recent burst that decayed during the 64s window — agent is wedged) with 'idle' (post-burst quiet — agent finished). Both render `▁▁▁▁▁▁▁▁` after 64s of no events. The seed-foundational 'idle vs stuck' gap is genuinely unresolved at the design surface — the candidate's window-empty branch labels the state but doesn't visually distinguish wedged from finished. This is the only unresolved watcher-question gap.",
+      "improvement": "Add a minimal age-of-newest-entry annotation on the sparkline's right edge (or as a dim suffix on the eyebrow source) when the 64s window is empty but the all-time-newest entry exists — e.g. `▁▁▁▁▁▁▁▁ ·2m` (newest event 2 min ago = stuck) vs `▁▁▁▁▁▁▁▁` (no entries at all = idle). Single dim-tier annotation, no new primitive, ≤4 cells."
+    },
+    "terminal-feasibility": {
+      "score": 9,
+      "reasoning": "Full panel convergence at 9. The three iteration-1 stalls (system-tag precedence rule, splitOutcome bridge, off-by-2 column arithmetic) are all closed by surgical single-section edits. Realist verified the splitOutcome bridge against apps/tui/src/index.tsx:215 (function signature matches) and the column arithmetic against fullDescWidth() (description column is termWidth-2 after pad-1+pad-1, matching the 28-cell inner annotation). System-tag precedence as Rule 0 prevents nonsense `[b│` chips. Glyph palette unchanged at 6/6. Spec is now 'buildable straight through' for the four resolved states.",
+      "improvement": "Resolve or explicitly defer the same-agent multi-thread chip collision (`pi 15c8` + `pi 9a01` → `pi│ pi│`). Currently flagged as future work in §Open design questions; iteration-3 could add a one-clause tie-breaker rule (e.g. fall through to eyebrow mode when source-collision is detected)."
+    }
+  },
+  "composite": 8.7,
+  "asi": "Iteration-2 closed all three buildability stalls and lifted composite to 8.7 (median 9/8/9 with three-way convergence). The single highest-leverage refinement remaining is the stuck-vs-idle Pattern disambiguation on the four-questions axis — the only watcher question that still requires reading rather than glance. Add a minimal age-of-newest-entry annotation in the §Sparkline contract for the window-empty sub-case: when logs[] is non-empty but the 64s window contains no entries, render the flat `▁▁▁▁▁▁▁▁` followed by a dim ` ·Nm` suffix (e.g. ` ·2m` for newest event 2 min ago). For the no-logs sub-case, render only `▁▁▁▁▁▁▁▁` with no suffix. This visually distinguishes 'stuck/wedged' from 'idle/finished' at a glance without adding a primitive (the suffix is a status-line field within the sparkline row, not a new instrument). Constraints: ≤4 cells, Tier-3 dim, must not push the sparkline row's primitive count over 3, and must update the §States empty-state mock to show both sub-cases. Optional secondary tightening: drop gutter `●` on rows where SEV_ERROR occupies column 1 (avoids the only remaining double-encoding case under error-heavy load). Resolve same-agent multi-thread chip collision: when source-collision is detected (two distinct threadids with the same agentcode), fall through to eyebrow mode instead of chip mode."
+}

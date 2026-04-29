@@ -1,0 +1,84 @@
+{
+  "lens": "information-designer",
+  "iteration": 3,
+  "phase": 1,
+  "artifact": "docs/simmer/activity-zone/iteration-3-candidate.md",
+  "calibration": {
+    "seed_phase2": "7/8/6 = 7.0",
+    "iteration_1_phase2": "9/9/8 = 8.7",
+    "iteration_2_phase2": "9/8/9 = 8.7",
+    "stated_target": "close stuck-vs-idle Pattern conflation in window-empty sparkline sub-case; secondary fixes for freshest+failed double-encoding and same-agent multi-thread chip collision"
+  },
+  "scores": {
+    "hud-fidelity": {
+      "score": 9,
+      "rationale": "The targeted refinement lands cleanly. The case-(ii) `\u00b7Nm` suffix is information-bearing ink, not chrome: it is strictly conditional (suppressed in cases i and iii where the sparkline shape itself carries the answer), Tier-3 dim so it sits visually beneath the cells, ASCII-only (zero codepoint cost), bounded at 4 cells, and explicitly framed as a 'degenerate-case disambiguator' rather than a label like the seed's '7/min'. Row footprint 8 + 1 + 4 = 13 cells inside a 28-cell content area. It reads as a status-line-field primitive within the sparkline row \u2014 not a second instrument \u2014 because it appears only when the sparkline conveys no rate, which is the exact opposite of double-encoding. The \u00a7Sparkline contract's prose ('the case-(ii) suffix is not a rate label \u2014 it is a degenerate-case disambiguator that only renders when the shape carries no rate at all') is precisely the Tufte argument I would have demanded. The dropped-gutter-on-error rule (rule a) is the cleanest move in the iteration: when col 1 already carries `SEV_ERROR`, the col 0 `\u25cf` is suppressed, because freshest+failed is already pinned by 'topmost severity glyph in the stripe' + top-row position + Tier-2 description weight (mirroring chip mode's identical fallback). 'One mark per signal' is preserved across freshest, failed, and freshest+failed \u2014 the same recovery pattern (position + tier weight) covers every gutter-forfeit case, which is the kind of unifying rule Tufte asks for. The same-agent multi-thread tie-breaker is a clean O(n) fall-through to eyebrow mode and prevents the `pi\u2502 pi\u2502` chip-collision that would have collapsed identity. Per-row primitive count audit: sparkline-row case-i = 1 (sparkline only), case-ii = 2 (sparkline + status-line-field suffix), case-iii = 1; eyebrow row = 1 (status-line-field source); activity row eyebrow-mode = 3 (gutter + verb-glyph + description); activity row chip-mode = 3 (chip-prefix + verb-glyph + description); activity row freshest+failed = 2 (severity-glyph + description, gutter dropped). All \u22643. No italic, no decorative chrome, no restated info. Demerits keeping this off 10: (1) the column-1 precedence stack is now five rules deep (system-tag \u2192 error+gutter-drop \u2192 verb-tag \u2192 regex-classifier \u2192 blank) plus an orthogonal chip/eyebrow precedence with a same-agent tie-breaker \u2014 the rules are individually justified but collectively read-the-spec rather than perceive-the-rule, which is Tufte-acceptable but not Tufte-clean. (2) The colour discipline still has one unstated edge: \u00a7Verb-glyph rule 1 strips the `(failed)` text suffix and leans on `SEV_ERROR` for exception, but the candidate never pins how `tone` composes with the Tier-2/Tier-3 description weight on the description text itself \u2014 does a freshest+failed row render description as 'Tier-2 weight + tone red,' or does tone bypass tiers like severity glyphs do? The shipped behaviour is tone-coloured descriptions, but the new tier-weight rule doesn't say which wins on overlap. This is the only remaining hole in the colour spec.",
+      "primitives_per_row_audit": {
+        "sparkline_row_case_i_no_logs": [
+          "sparkline"
+        ],
+        "sparkline_row_case_ii_window_empty": [
+          "sparkline",
+          "status-line-field (\u00b7Nm suffix)"
+        ],
+        "sparkline_row_case_iii_active": [
+          "sparkline"
+        ],
+        "eyebrow_row": [
+          "status-line-field (source label)"
+        ],
+        "activity_row_eyebrow_mode": [
+          "gutter cell",
+          "badge glyph (verb-glyph column)",
+          "description"
+        ],
+        "activity_row_chip_mode": [
+          "chip prefix (status-line-field surrogate, displaces gutter)",
+          "badge glyph (verb-glyph column)",
+          "description"
+        ],
+        "activity_row_freshest_failed": [
+          "severity glyph (column 1 displacement, gutter dropped)",
+          "description"
+        ]
+      },
+      "tests": {
+        "spellcheck_test": "Pass \u2014 verb-glyph in col 1, severity-glyph displacement on failed rows, freshest gutter on row 0, all on the line of work itself; no popup, no side pane.",
+        "sparkline_test": "Pass \u2014 8 cells, fixed `\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588` alphabet, inside an existing line of the band; geometry pinned at 8 cells \u00d7 8 s/bucket = 64 s window with explicit `Math.ceil(7 * count / max)` mapping; case-(ii) suffix is a status-line annotation on the same row, not a second sparkline."
+      }
+    },
+    "four-questions": {
+      "score": 10,
+      "rationale": "Iter 3's stated job is to close the last remaining gap \u2014 pattern in the window-empty sub-case where flat sparkline conflated 'wedged' (recent burst then silence) with 'idle' (no events to date) \u2014 and it does. Liveness: sparkline existence + non-flat shape (active case) or `\u00b7Nm` suffix presence (case ii) signals 'something happened recently or is happening now'; flat-only (case i) signals 'nothing has ever happened.' Pattern: in active case the sparkline shape carries burst/flat/converging/decaying directly (state 4 mock shows the failure-cascade decay shape `\u2586\u2586\u2587\u2586\u2585\u2584\u2583\u2582` reading as 'high then tailing off' without reading); in window-empty case the `\u00b7Nm` suffix carries 'how long since the last event' as a 4-char glance ( `\u00b745s` paused, `\u00b72m` briefly stuck, `\u00b715m` silent, `\u00b71h`/`\u00b73d` likely abandoned); in no-logs case the absence of suffix is itself the signal. Pattern is now glance-perceptible across all three sparkline sub-cases, which is the gap iter 2 left open. Exception: col-1 SEV_ERROR displacement creates a vertical red stripe under load (state 4 mock: 4 of 5 rows red), and gutter-mass exception count is the canonical Tufte 'count without reading' move. The single surviving non-error glyph in row 2 of state 4 is itself diagnostic ('this one passed') \u2014 small-multiples discipline working as intended. Latest: gutter `\u25cf` on freshest in eyebrow mode; in chip mode and freshest+failed the gutter forfeits but latest is recovered by top-row position + Tier-2 description weight on row 0 (same fallback in both edge cases \u2014 consistent rule, not ad-hoc patch). Glance-readability of `\u00b7Nm` is comparable to vim/tmux status-line duration fields \u2014 4-char tokens parse pre-attentively in trained users, well within the 'glance not read' bar.",
+      "per_question_grade": {
+        "liveness": "answered by sparkline existence + shape (active) or suffix presence (window-empty)",
+        "pattern": "answered by sparkline shape in active case; by `\u00b7Nm` suffix duration in window-empty case (closes iter-2 gap); by suffix absence in no-logs case",
+        "exception": "answered by col-1 SEV_ERROR vertical stripe (gutter mass)",
+        "latest": "answered by gutter `\u25cf` on freshest, with consistent position + Tier-2 fallback in chip mode and freshest+failed mode"
+      }
+    },
+    "terminal-feasibility": {
+      "score": 9,
+      "rationale": "Glyph budget: exactly 6 new glyphs (1 freshest gutter `nf-md-record` U+F05CB + 5 verb glyphs U+F0208/F0279/F0349/F03EB/F040A), all in MDI PUA range U+F0000\u2013U+F1AFF guaranteed single-cell EAW Neutral by the nerd-fonts patcher. The seed's EAW-Ambiguous `\u25cf` U+25CF and EAW-Wide `\u26a0` U+26A0 are explicitly retired; the candidate has done the EAW homework. The `\u00b7Nm` suffix introduces zero new codepoints \u2014 pure ASCII (`\u00b7` U+00B7 + digits + s/m/h/d), with explicit fallback to `.` documented if `\u00b7` proves unreliable in a future terminal. The chip separator `\u2502` U+2502 is EAW Neutral and already used by codebase box-drawing. All four states have mockups at exactly 30 cols (the tightest realistic width) \u2014 sparkline 8 cells fits in 28-cell content, chip mode `pi\u2502 ` + pad + verb + pad leaves 24 cells for description (pre-truncated with `\u2026`), eyebrow mode is a single Tier-4 row before a multi-row run. Refresh contract is pinned (logs[] mutation + 1 Hz tick driven by existing focused-session timer \u2014 no new timer infrastructure). Y-axis scaling is given as `Math.ceil(7 * count / Math.max(localMax, 1))` \u2014 division-by-zero guarded explicitly. Producer-side `verb?` tag is correctly flagged SHOULD-not-MUST with a renderer-side regex-classifier fallback (`/^Reading /` \u2192 read, etc.) so the design ships today regardless of producer changes. `splitOutcome()` bridge to the existing shipped renderer is cited with file:line (`apps/tui/src/index.tsx:210`) and the regex is reproduced \u2014 minimum spec for someone implementing this. System-tag rule 0 reuses existing severity-glyph entries (`[bell]` \u2192 `nf-md-bell-alert`) so the budget of 6 covers everything. Two open questions remain (heading absorption colour-only-vs-glyph; gutter gradient under low-volume) but both are explicitly deferred to user testing with documented defaults \u2014 not blockers. Loss to a 10: (1) the `\u00b7` U+00B7 EAW-Ambiguous fallback rationale, while documented, is the one remaining glyph-width assumption \u2014 it relies on iTerm2/Alacritty/kitty/wezterm using single-width policy, which is plausible but not bulletproof across user environments; (2) the description-tier \u00d7 tone composition rule is unstated (see hud-fidelity demerit), which is a renderer-side spec hole an implementor would have to ask about; (3) two open questions still exist, even if non-blocking.",
+      "states_covered": {
+        "empty": "two sub-cases mocked (i no-logs, ii window-empty) at 30 cols",
+        "single_source": "state 2 mocked at 30 cols",
+        "multi_source": "state 3 mocked at 30 cols, chip mode operating across pi/cc interleave",
+        "error_heavy": "state 4 mocked at 30 cols, SEV_ERROR vertical stripe with rule (a) gutter-drop on freshest+failed shown explicitly",
+        "narrow_30_cols": "all four mocks already at 30 cols \u2014 no separate narrow mock needed"
+      },
+      "new_glyphs_count": 6,
+      "ascii_additions": [
+        "\u00b7",
+        "\u00b7Nm format (s/m/h/d units)"
+      ]
+    }
+  },
+  "notes_for_phase_2": [
+    "If another lens proposes simplifying the column-1 precedence stack (rule 0 system-tag \u2192 rule 1 error+gutter-drop \u2192 rule 2 verb-tag \u2192 rule 3 regex \u2192 rule 4 blank), my ASI is non-conflicting \u2014 the colour-composition rule applies regardless of how the column-1 displacement is decided.",
+    "Secondary Tufte concern not in the ASI: the air-row decision is case-by-case (state 2 has one between sparkline and eyebrow; state 3 has none because chip column self-divides). A 10/10 spec would pin air-row as a first-class rule ('air row separates sparkline-band from activity-band when the latter starts with an eyebrow; chip mode supplies its own divider'). Smaller than the colour-composition gap, deferred.",
+    "Tertiary: the case-(ii) `\u00b7Nm` suffix lands left-aligned (immediately after the sparkline cells) rather than right-aligned to the content-area edge. At 30 cols this is correct (right-aligned would leave 15 cells of awkward whitespace between sparkline and suffix); at 60-col widths it would still be correct because the sparkline-as-leading-anchor reads naturally with the suffix adjacent. No change needed, but worth noting if a panelist proposes the alternative.",
+    "Quaternary: the candidate retires the seed's row-end `\u2713`/`\u2717` badges entirely. Worth confirming in synthesis \u2014 implicit success (no glyph) is the right Tufte default, but if any other lens raises 'how do I see a successful test pass land?' the answer is 'tone-coloured (passed) suffix from `splitOutcome()` is preserved per \u00a7Verb-glyph rule 1 last sentence' \u2014 already in the spec, just easy to miss.",
+    "Calibration: my read of 9/10/9 (avg 9.33) is the strongest yet across iterations, fitting the orchestrator's narrative that iter 3 closes the last four-questions gap. The hud-fidelity score holds at 9 because the layered precedence rules (necessary complexity to handle four states cleanly + system-tags + multi-source interleave) are read-the-spec, not perceive-the-rule. A pure 10 on this lens would require simpler primitives, but simpler primitives can't carry the four-states-cleanly burden \u2014 this is a Pareto frontier the candidate sits near."
+  ]
+}

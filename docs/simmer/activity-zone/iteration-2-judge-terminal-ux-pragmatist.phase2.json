@@ -1,0 +1,95 @@
+{
+  "iteration": 2,
+  "phase": 2,
+  "judge": "terminal-ux-pragmatist",
+  "artifact_type": "single-file",
+  "candidate_path": "docs/simmer/activity-zone/iteration-2-candidate.md",
+  "lens_summary": "Real-world TUI usage during real working sessions. Behaviour across all four states (empty, single-source, multi-source, error-heavy) at narrow widths (~30 cols), under unfocus dimming, across a week of repeated use. The 200ms-glance test governs.",
+  "phase1_scores_recap": { "hud-fidelity": 9, "four-questions": 8, "terminal-feasibility": 9, "composite": 8.67 },
+  "panel_scores_seen": {
+    "designer_phase1": { "hud-fidelity": 9, "four-questions": 9, "terminal-feasibility": 9, "mean": 9.0 },
+    "realist_phase1":  { "hud-fidelity": 8, "four-questions": 8, "terminal-feasibility": 9, "mean": 8.33 },
+    "self_phase1":     { "hud-fidelity": 9, "four-questions": 8, "terminal-feasibility": 9, "mean": 8.67 }
+  },
+
+  "deliberation": {
+    "hud_fidelity": {
+      "stance": "hold-at-9",
+      "agree_with": ["designer (9)"],
+      "challenge": ["realist (8)"],
+      "rebuttal_to_realist": "Realist's anchor is continuity with his own iter-1 (8). The orchestrator framed his hold as 'chrome accumulation' but his actual phase-1 rationale was 'no design-surface change → no movement'. I read iter-2 the same way: no new chrome was added. Rule 0 reuses existing SEV_* severity glyphs (no new vocab.ts entry, no new primitive class). The column-arithmetic walkthrough is prose annotation, not a visual. The splitOutcome bridge is a disambiguation rule that REMOVES a double-mark (col-1 stripe AND tone-coloured (failed) suffix on the same row) — it lowers data-ink redundancy, doesn't raise it. ≤3 primitives/row holds across all four states (verified by realist himself: system-tag rows are 2 primitives, chip rows 3, freshest-failed 3). If iter-1 earned a 9 on hud-fidelity (my own phase-2 score), iter-2 cannot be lower because nothing visible regressed and one redundancy (the double-mark) was actively closed. Holding at 9. The two soft demerits I cited in iter-1 (●✗ adjacency, chip │ on every multi-source row) keep this off 10 — same as iter-1.",
+      "agreement_with_designer": "Designer's 9 lands on the same logic: surgical edits preserved rather than transformed the perceptual profile. Her demerit about 'visually uniform mockups' (Tier-2 vs Tier-3 asserted in prose, not perceptible in ASCII) is real and is her ASI candidate; under MY lens it's a documentation-clarity issue rather than a HUD-at-rest defect (the Tier weighting renders correctly in the actual TUI, just not in a markdown spec), so I agree with her score but rank the issue lower in priority than stuck-vs-idle.",
+      "revised_score": 9
+    },
+
+    "four_questions": {
+      "stance": "hold-at-8",
+      "agree_with": ["realist (8)"],
+      "challenge": ["designer (9)"],
+      "rebuttal_to_designer": "Designer's Pattern=Pass argument reads: 'hump/sustained/decaying shapes are demonstrated in states 2/3/4 and read directly.' This is correct for the ACTIVE case — when the sparkline has shape, the shape carries Pattern legibly. It is not correct for the window-empty case. Real working sessions enter window-empty constantly: 60–90s test suites, slow npm installs, long-running Bash, blocked subprocesses. In all of these the sparkline collapses to flat ▁▁▁▁▁▁▁▁ regardless of whether the agent is wedged-on-a-tool-call or finished-and-idle. The user must context-switch away from the activity zone to disambiguate — the exact context switch the band exists to prevent. The four-questions Pattern question is literally 'is the agent cycling, converging, or STUCK?' — 'stuck' is part of the question by name. The design answers cycling and converging via shape; it does not answer stuck because stuck looks identical to idle. This is not an exotic edge case; it is the canonical TUI-during-a-working-day failure mode and it survived from iter-1 phase-2 (where I lowered the score from 9 to 8 on the same catch). Designer's lens (Tufte data-ink) does not weight working-session disambiguation as heavily as mine does — both readings are legitimate within their lenses; I trust mine on this question because it is precisely the lens-signature concern. Holding at 8.",
+      "concession_to_designer": "I concede that within the three drawn states (2 single-source, 3 multi-source, 4 error-heavy), Pattern reads cleanly. The 8-not-7 already reflects this — Liveness, Exception, Latest pass fully, and Pattern passes in 3 of 4 state categories. The deduction is specifically for the window-empty pattern conflation, not a wholesale Pattern failure.",
+      "agreement_with_realist": "Realist's 8 is anchored to iter-1=8 by 'no design-surface change'. We arrive at the same number by different paths: he by continuity, I by the persistence of a specific weakness. Convergent.",
+      "revised_score": 8
+    },
+
+    "terminal_feasibility": {
+      "stance": "hold-at-9",
+      "agree_with": ["designer (9)", "realist (9)"],
+      "convergence_note": "All three panelists land on 9. The reasoning is shared: Rule 0 lands cleanly (zero new glyph budget, branches before run-length keying); column arithmetic resolves the iter-1 'do rulers count chrome?' ambiguity; splitOutcome bridge cites file:line and quotes the regex verbatim, closing the over-marking case but leaving the under-marking edge (Rule 1 triggers ONLY on tone === 'error', misses tone:'neutral' + (failed) suffix). Realist verified vocab codepoints unchanged, splitOutcome signature match, and 30-col mock arithmetic against the actual codebase — that codebase-grounding is the lens cross-check I trust most for this criterion. Same-agent multi-thread chip collision deferred-honestly (acceptable for surgical iteration). 10 is reserved for closing the under-marking edge.",
+      "revised_score": 9
+    }
+  },
+
+  "revised_scores": {
+    "hud-fidelity": 9,
+    "four-questions": 8,
+    "terminal-feasibility": 9,
+    "composite": 8.67
+  },
+
+  "score_movement_vs_phase1": {
+    "hud-fidelity": "+0 (held; designer agrees, realist's 8 reasoned-against)",
+    "four-questions": "+0 (held; designer's 9 reasoned-against on stuck-vs-idle window-empty case; realist agrees)",
+    "terminal-feasibility": "+0 (held; full panel convergence at 9)"
+  },
+
+  "stuck_vs_idle_position_after_deliberation": {
+    "summary": "Did designer's rationale change my mind? No. Designer's argument is correct within her lens (Tufte data-ink: shape carries Pattern when shape exists) but does not address the no-shape case. The pragmatist's working-session frame weights the no-shape case heavily because it is the daily reality of TUI use during long tool calls. The two lenses are reading different sub-questions of 'Pattern' — designer reads 'is trajectory shape legible?', I read 'is wedged-vs-finished disambiguable?'. Both are part of four-questions Pattern; mine is the one the activity zone uniquely fails to answer. Holding at 8 is the right call.",
+    "lens_signature_claim": "This is the pragmatist's distinctive contribution to the panel. Neither designer nor realist surfaces stuck-vs-idle (designer by lens-fit, realist by codebase-fit). Without my hold, the panel would converge to ~8.78 and the working-session weakness would silently roll forward to a third iteration."
+  },
+
+  "revised_asi": {
+    "title": "Close the four-questions Pattern weakness: stuck-vs-idle disambiguation via sparkline tier-step + explicit rolodex-spinner cross-reference",
+    "summary": "A single focused refinement that lifts four-questions from 8 to 9 by closing the stuck-vs-idle Pattern conflation that has persisted across iterations 1 and 2. Two coordinated edits in §Sparkline contract — both spec-only, no new chrome, no new glyphs, no mock changes. The fix is the lens's signature catch and the highest-leverage four-questions improvement available. After deliberation, no other panelist proposed this — designer's ASI is perceptual-hierarchy-in-mocks (typographic markup of Tier weights inside the four state mocks), realist's ASI is splitOutcome under-marking trigger broadening. Both peer ASIs are legitimate; mine is the only one that closes a four-questions weakness rather than a hud-fidelity-clarity or terminal-feasibility-edge weakness, which is why it is the right pragmatist contribution.",
+    "concrete_changes": [
+      "Patch §Sparkline contract empty-states row case (ii) window-empty: render `▁▁▁▁▁▁▁▁` at **Tier 3 dim** (vs Tier 2 for active-but-low-rate). The sparkline gains THREE visual modes: (i) suppressed (no logs ever); (ii) Tier-3 dim flat (logs exist but none in 64s — quiet); (iii) Tier-2 normal active (something in the 64s window). Cleaves 'low-rate active' from 'window-empty quiet' by glance — the user reads bright-flat as 'agent doing slow work' and dim-flat as 'agent quiet'. Free: no glyph budget, no new primitive, just a Tier-class change in the existing render path.",
+      "Add one paragraph to §Sparkline contract (or a new §Cross-band coherence subsection) clarifying the architectural division of labour: the sparkline answers liveness-of-log-stream (have entries arrived in the 64s window?). Liveness-of-current-task (is the agent wedged on a long tool call vs finished and idle?) is answered by the rolodex severity glyph IMMEDIATELY ABOVE the activity zone — working spinner = wedged, ready/stopped = finished. The two signals compose: spinner + dim-flat = 'wedged on a long tool call' (e.g. 90-second test suite); ready + dim-flat = 'finished and idle'. Locks the user's mental model: stuck-vs-idle is a two-band glance, not a one-band failure.",
+      "Optional micro-touch: add stuck-vs-idle to the open-questions list as 'closed in iteration-3' so the trajectory of the four-questions Pattern weakness is legible to readers."
+    ],
+    "why_this_lens": "The Terminal-UX Pragmatist grades on real working-session behaviour during a week of repeated use. The stuck-vs-idle Pattern failure is THE canonical lens edge: every TUI user encounters long-running tools (compiles, tests, slow Bash, blocked subprocesses) and asks 'is this agent wedged or done?' multiple times per day. Iter-1 surfaced it; iter-2 chose buildability over it; iter-3 should close it because it is the only remaining gap on the lens's signature criterion. Phase-2 deliberation reinforced rather than weakened the call — designer's Pattern=9 reasoning explicitly does not engage the no-shape case, leaving this as my distinctive contribution.",
+    "expected_score_lift": {
+      "hud-fidelity": "+0 (already 9; tier-class change adds zero chrome; cross-band paragraph is prose, not a primitive)",
+      "four-questions": "+1 (8 → 9; closes the only remaining Pattern weakness via two-band composition)",
+      "terminal-feasibility": "+0 to +1 (already 9; if the under-marking edge is also patched in the same iteration, +1 toward 10 — but the ASI is single-focused on stuck-vs-idle)"
+    },
+    "single_focused": true,
+    "scope_notes": "Spec-only; no source code changes, no vocab.ts entries, no new glyphs, no new mocks, no producer dependency. The Tier-3-dim render is a class change inside the existing sparkline path. The cross-band paragraph is documentation. Total candidate edit: ~6 lines of prose + one Tier annotation in the sparkline contract table.",
+    "comparison_to_peer_asis": {
+      "designer_asi_perceptual_hierarchy_in_mocks": "Legitimate Tufte-school 'show don't tell' — make Tier weights visible in the markdown ASCII via **bold** / plain / ~muted~ typographic conventions. Lifts hud-fidelity readability of the spec document but does not fix any working-session HUD failure. Compatible with my ASI; both could land in iter-3 as separate patches without conflict.",
+      "realist_asi_splitOutcome_under_marking": "Legitimate codebase-grounded edge: broaden Rule 1 trigger to (tone === 'error') OR (splitOutcome.outcome?.tone === 'error'). One-clause fix. Closes the (b) stall residual and the week-of-use 'red col-1 = exception' rule consistency. Lifts terminal-feasibility from 9 toward 10. Compatible with my ASI; the realist's framing is sharper on the producer-config-disagrees-with-suffix case than mine.",
+      "why_pragmatist_should_carry_stuck_vs_idle": "Designer cannot easily catch it (lens reads Pattern as shape-legibility, not absence-handling). Realist cannot easily catch it (no codebase signal — both wedged and idle render the same, by definition). Only the working-session lens surfaces it. If I concede here, it dies."
+    },
+    "secondary_residual": "splitOutcome under-marking — naturally caught by the realist; one-clause fix; closes (b) stall residual.",
+    "tertiary_residual": "Same-agent multi-thread chip collision (open-question 3) — deferred to user testing per iter-2's reasoning."
+  },
+
+  "panel_consensus_summary": {
+    "convergent_criteria": ["terminal-feasibility (all three at 9)"],
+    "divergent_criteria": [
+      "hud-fidelity: designer 9, pragmatist 9, realist 8 (split 2-1; realist's anchor is continuity with iter-1=8 not a fresh objection; no new chrome was added)",
+      "four-questions: designer 9, pragmatist 8, realist 8 (split 1-2; designer's higher score reads Pattern via shape-legibility in active states; pragmatist+realist hold at 8, pragmatist on stuck-vs-idle, realist on continuity)"
+    ],
+    "panel_mean_after_phase1": "(9+9+9 + 9+9+8 + 8+8+9) / 9 = 78/9 = 8.67 panel-mean",
+    "expected_iteration_3_lift_if_my_asi_lands": "four-questions 8→9 across pragmatist (definite) and possibly realist (likely follows on stuck-vs-idle clarification); designer already at 9. Composite movement: pragmatist 8.67 → 9.0; realist 8.33 → 8.67; designer 9.0 → 9.0. Panel mean 8.67 → ~8.89."
+  }
+}

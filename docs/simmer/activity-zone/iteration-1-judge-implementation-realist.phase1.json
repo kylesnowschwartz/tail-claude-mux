@@ -1,0 +1,94 @@
+{
+  "lens": "implementation-realist",
+  "iteration": 1,
+  "phase": 1,
+  "artifact": "docs/simmer/activity-zone/iteration-1-candidate.md",
+  "seed_baseline": {
+    "scores": { "hud-fidelity": 7, "four-questions": 7, "terminal-feasibility": 5, "composite": 6.3 },
+    "foundational_gaps": [
+      "sparkline contract entirely unspecified",
+      "codepoint budget hand-waved",
+      "verb-glyph parser not sourced",
+      "multi-source eyebrow thrash",
+      "system-tagged source rule absent",
+      "outcome×truncation undefined",
+      "unfocus deferred",
+      "no four-state mocks"
+    ]
+  },
+  "what_changed_vs_seed": [
+    "§Sparkline contract added: alphabet U+2581–U+2588, geometry 8×8s=64s window, scaling Math.ceil(7*count/max(localMax,1)), refresh on logs[] mutation + 1Hz tick, three empty-state cases (no-logs / window-empty / active), unfocus rule (slide).",
+    "§Verb-glyph column closed at exactly 5 entries with codepoints (eye/list/magnify/pencil/play); explicit 4-rule precedence (tone===error → SEV_ERROR; verb? key → glyph; regex fallback; else single space). Rule 4 reframed as informative gap, preserving small-multiples discipline.",
+    "§Source position committed to a hybrid run-length rule: run≥2 → eyebrow, run==1 → 3-cell chip (agentcode + U+2502). Closes the seed's eyebrow-thrash on multi-source interleave.",
+    "§Glyph palette table: 6 new MD-PUA codepoints with EAW Neutral guarantee; explicit retirement of seed's EAW-Ambiguous ●/✓/✗ and EAW-Wide ⚠. Reuses existing SEV_ERROR U+F0028 for failed-row column-1 displacement (no budget cost).",
+    "Outcome×truncation closed: retire row-end badges entirely, errors render via column-1 displacement (no truncation collision).",
+    "§Unfocus rule pinned in a table: sparkline/gutter/verb/eyebrow all slide; SEV_ERROR bypasses. Closes seed Q10.",
+    "Four mocks drawn at exactly 30 cols (empty / single-source / multi-source / error-heavy) with ruler.",
+    "Open questions reduced from 10 to 2 (heading-absorption, gutter-gradient)."
+  ],
+  "phase1_scores": {
+    "hud-fidelity": {
+      "score": 8,
+      "rationale": "Both terminal tests now pass cleanly. Spellcheck: column-1 SEV_ERROR displacement marks failed work on the line of work itself (and accumulates as a vertical red stripe under load — the Tufte 'small multiples' gutter-mass reading the seed gestured at, here delivered). Sparkline test: U+2581–U+2588, 8 cells, single-cell-safe, fixed alphabet, with the ▁-floor making zero a visible baseline rather than an absence-of-band. Per-row primitive count holds at ≤3 across all four mocks (gutter+verb+desc in eyebrow mode; chip+verb+desc in chip mode; sparkline alone in band header). Restating-elsewhere is gone — the '7/min' label was correctly killed as data-ink-offence. Two soft demerits keep this off 9: (1) chip mode forfeits the freshest gutter, so 'latest' falls back to position+tier weight on the top row — defensible but a primitive removed under the multi-source state; (2) the freshest-row error-heavy case has BOTH gutter ● AND SEV_ERROR ✗ in cols 0/1 (4 visual elements counting tone-coloured desc), which the candidate calls out as intentional but does push the row to the per-row ceiling the rubric counts."
+    },
+    "four-questions": {
+      "score": 8,
+      "rationale": "All four answerable by glance with the iteration-1 contract. Liveness: sparkline shape with ▁-floor distinguishes 'idle but rendering' from 'panel collapsed' — a real upgrade over seed's stuck/idle conflation, since seed's open-Q7 left empty-state alphabet unresolved. Pattern: sparkline carries burst/decay/flat shapes coherently; the verb-glyph stripe gives a second pattern instrument (read-rate vs edit-burst). Exception: column-1 SEV_ERROR displacement is foregrounded, severity-bypass keeps it bright at unfocus, gutter-mass under cascading failures is the canonical HUD pattern. Latest: gutter ● + Tier 2 desc weight in eyebrow mode (over-encoded but unambiguous); position+tier-only in chip mode (slightly weaker). One concern keeps this off 9: 'pattern' still partially conflates 'stuck' (recent-but-unchanging within window) with 'idle' (recent burst that decayed) — the sparkline shape ▁▁▁▁▁▁▁▁ in the candidate's window-empty case reads identically whether the agent is wedged or simply finished. A second instrument (e.g. age-of-newest-entry tick on the sparkline) would resolve, but iteration-1 doesn't add one."
+    },
+    "terminal-feasibility": {
+      "score": 8,
+      "rationale": "Implementable in OpenTUI today. All six new codepoints verified against MD-PUA range (U+F0001–U+F1AFF): nf-md-record U+F05CB, nf-md-eye U+F0208, nf-md-format-list-bulleted U+F0279, nf-md-magnify U+F0349, nf-md-pencil U+F03EB, nf-md-play U+F040A — all valid MD names at the claimed codepoints, all single-cell EAW Neutral, all in budget. SEV_ERROR U+F0028 reuse is correct (vocab.ts:23). Sparkline glyphs U+2581–U+2588 are EAW Neutral (the only Unicode block that's universally single-cell — correct call). EAW analysis is sharp: seed's ●/✓/✗ are EAW Ambiguous and ⚠ is EAW Wide; iteration-1 retires all four. Sparkline math (Math.ceil(7*count/max(localMax,1))) is correct and division-by-zero safe. Run-length hybrid for source position is computable from logs[] alone — no producer change required. Six concerns prevent a 9: (1) OFF-BY-2 in column accounting — ActivityZone wraps content in paddingLeft={1} paddingRight={1} (index.tsx:286), so at 30-col panel the inner content area is 28 cells, not 30; chip-mode 'description ≤24 cells at 30-col panel' is actually 22, eyebrow-mode 'description ≤27 cells' is actually 25. Sub-blocker, but the pre-truncate-in-JS pipeline needs the correct number. (2) SYSTEM-TAG SOURCE in chip mode is undefined — the candidate names [bell] in §Constraints but the chip is a hard-2-char agent code with U+2502; what does chip mode emit when source='[bell]'? The seed flagged this exact gap and iteration-1 only half-closed it (eyebrow case is ambient text, fine; chip case has no rule). (3) The 1 Hz sparkline tick is described as 'driven by the existing focused-session timer' — there is no 1Hz focused-session timer in index.tsx; the only existing timer is spinTimer at 120ms (line 593). The renderer needs a new setInterval(1000), which is trivial but factually misnamed. (4) The regex-classifier proposed for 'classify.ts adjacent to vocab.ts' would be a new source file in apps/tui/src/, which the brief technically scopes outside the generator's edit surface — fine as a producer-side recommendation, less fine as a renderer fallback the spec depends on for 'buildable today'. (5) Existing splitOutcome (index.tsx:210) parses '(passed)/(failed)' suffixes; the candidate retires row-end badges but doesn't say whether splitOutcome should be removed, kept-but-unused, or rewired to set tone='error' so rule-1 of the verb-glyph precedence fires. Without that bridge, an existing '(failed)' row in the log stream renders the verb glyph plus a now-orphaned suffix. (6) Sparkline row carries an unexplained leading-pad cell (' ▂▃▄▅▆▆▅▃' = 9 chars, not 8) in mocks; whether that's deliberate (1 cell of left-air for visual rhythm) or a typo isn't said."
+    }
+  },
+  "primitive_audit": {
+    "sparkline_row": { "primitives": 1, "implementation": "8 spans of single U+2581–U+2588 chars, optional fg=focused-session colour, computed by client-side bucketer on logs[].ts" },
+    "eyebrow_row": { "primitives": 1, "implementation": "single <text> at Tier 4 muted, source string verbatim, no separator" },
+    "activity_row_eyebrow_mode": { "primitives": 3, "implementation": "col 0: gutter ● (Tier 2, freshest only) | col 1: verb glyph (Tier 2) or single space | col 2: pad | col 3+: pre-truncated description" },
+    "activity_row_chip_mode": { "primitives": 3, "implementation": "cols 0-2: agentcode+U+2502 chip (Tier 4 muted) | col 3: pad | col 4: verb glyph | col 5: pad | col 6+: pre-truncated description" },
+    "activity_row_failed": { "primitives": 3, "implementation": "col 0: gutter ● if freshest | col 1: SEV_ERROR U+F0028 (severity-bypass) | col 2: pad | col 3+: description" }
+  },
+  "codepoint_verification": [
+    { "codepoint": "U+F05CB", "name": "nf-md-record", "valid": true, "eaw": "Neutral", "single_cell": true, "in_budget": true },
+    { "codepoint": "U+F0208", "name": "nf-md-eye", "valid": true, "eaw": "Neutral", "single_cell": true, "in_budget": true },
+    { "codepoint": "U+F0279", "name": "nf-md-format-list-bulleted", "valid": true, "eaw": "Neutral", "single_cell": true, "in_budget": true },
+    { "codepoint": "U+F0349", "name": "nf-md-magnify", "valid": true, "eaw": "Neutral", "single_cell": true, "in_budget": true },
+    { "codepoint": "U+F03EB", "name": "nf-md-pencil", "valid": true, "eaw": "Neutral", "single_cell": true, "in_budget": true },
+    { "codepoint": "U+F040A", "name": "nf-md-play", "valid": true, "eaw": "Neutral", "single_cell": true, "in_budget": true },
+    { "codepoint": "U+F0028", "name": "nf-md-alert-circle (SEV_ERROR, reused)", "valid": true, "eaw": "Neutral", "single_cell": true, "in_budget": "no-cost (already in vocab.ts:23)" },
+    { "codepoint": "U+2502", "name": "BOX DRAWINGS LIGHT VERTICAL (chip separator)", "valid": true, "eaw": "Neutral", "single_cell": true, "in_budget": "no-cost (box-drawing infrastructure)" },
+    { "codepoint": "U+2581..U+2588", "name": "BLOCK glyph alphabet (sparkline)", "valid": true, "eaw": "Neutral", "single_cell": true, "in_budget": "no-cost" }
+  ],
+  "edge_cases_handled": [
+    "Sparkline empty-state: three sub-cases pinned (no-logs collapses band, window-empty renders ▁▁▁▁▁▁▁▁, active renders shape).",
+    "Sparkline divide-by-zero: Math.max(localMax, 1) floor.",
+    "Multi-source thrash: run-length hybrid converts pi/cc/pi/cc interleave from 50% eyebrow-row tax to a chip stripe.",
+    "Outcome×truncation: row-end badges retired entirely; column-1 displacement reserves col 1 BEFORE description truncation.",
+    "Unfocus: explicit table covering all five new visual elements; SEV_ERROR bypass preserved.",
+    "EAW: all proposed glyphs verified Neutral; seed's ambiguous/wide glyphs retired."
+  ],
+  "edge_cases_unhandled": [
+    "System-tagged source ([bell], [exit], etc.) in chip mode — iteration's hybrid forces chip when run-length=1, but [bell] is not a 2-char agent code; behaviour undefined. (This is exactly the 'system-tagged source rule absent' foundational gap the seed flagged.)",
+    "Off-by-2 in column-width accounting: chip-mode description-max stated as ≤24 at 30-col panel, actual is 22 (panel minus paddingLeft+paddingRight=2 minus chip-block=6). Same off-by-2 in eyebrow mode (≤27 stated, 25 actual).",
+    "splitOutcome (index.tsx:210) handling of '(failed)' suffixes during the transition window — does the renderer rewire splitOutcome to set tone='error', strip the suffix, both, or leave it for the producer? Spec is silent.",
+    "1Hz sparkline tick described as 'driven by the existing focused-session timer' — that timer doesn't exist; renderer needs a new setInterval. Trivially fixable, but factually wrong as written.",
+    "Sparkline row's leading 1-cell pad in mocks (9 chars total) is unexplained — is the band 9 cells wide here?",
+    "Stuck-vs-idle conflation under sparkline: a long-running tool that emits no events for 60s+ produces ▁▁▁▁▁▁▁▁ identical to a fully-idle agent. Pattern question 50%-answered for this case."
+  ],
+  "asi_candidate": {
+    "summary": "Close the system-tagged-source chip-mode rule (the one foundational gap the seed flagged that iteration-1 only half-resolved) by routing all system-tagged events ([bell], [exit], etc.) through eyebrow mode regardless of run-length, and bridge splitOutcome into the new column-1 precedence so existing '(failed)' rows in logs[] route through SEV_ERROR rather than orphan a row-end suffix.",
+    "actionable_change": "Edit §Source position to add a precedence rule BEFORE the run-length classifier: 'If entry.source matches /^\\[.+\\]$/ (system tag), force eyebrow mode regardless of run-length. The eyebrow renders the bracketed tag verbatim at Tier 4 muted (no chip, no glyph, no glyph budget cost). System-tagged events are inherently event-shaped (one-shot bell/exit/etc.) and routing them through chip mode would either require expanding the agent-code dictionary beyond pi/cc/am/cx (semantic-fit problem) or burning a glyph from the 6-budget on per-tag icons (budget-fit problem). Eyebrow-with-bracketed-text is the only zero-cost zero-ambiguity rule and reads correctly at 30 cols.' Then edit §Verb-glyph column rule 1 to add a sub-rule: 'If splitOutcome(message).outcome?.tone === \"failed\", treat as tone===\"error\" for precedence purposes AND strip the (failed) suffix from the description before pre-truncation. Existing logs[] entries carrying the legacy (passed)/(failed) suffix continue to route through column-1 displacement without an orphaned row-end span.' Finally, fix the §States column-width math: at 30-col panel with paddingLeft={1} paddingRight={1} the inner content area is 28; eyebrow-mode description max is 25 (not 27), chip-mode description max is 22 (not 24); update the State 2/3/4 mocks' truncation behaviour and the chip layout's '≤24' annotation.",
+    "why_this_lens": "From the implementation-realist lens, the iteration-1 candidate is genuinely buildable — codepoints valid, sparkline math sound, primitives composable in OpenTUI today — with three concrete gaps that would each stall a tomorrow-build: (1) source='[bell]' arrives at the run-length classifier with no rule, the renderer must invent one; (2) splitOutcome already extracts (failed) suffixes from the existing log stream and the new design has no bridge, so the first '(failed)' row produced by the unchanged producer would render verb-glyph + a now-orphaned ' (failed)' span; (3) the column-width arithmetic in the mocks doesn't match the actual 28-cell inner content area, so the pre-truncate-in-JS pipeline (the proven path per the brief) would be sized wrong on every row. (1) is the foundational seed gap whose closure is overdue; (2) is the bridge between existing implementation and new design; (3) is the concrete number the truncator needs. All three are zero-vocab, zero-producer, single-section edits — they push iteration-1 from 'buildable with three known stalls' into 'buildable straight through' without leaving the search space (no new glyphs, no new OpenTUI features, no producer changes, no scope expansion). Phase-2 deliberation in the seed converged that the implementation-realist axis weights buildability over spec-completeness; this ASI is the smallest edit that maximally improves buildability.",
+    "scope": "Three localised edits to docs/simmer/activity-zone/iteration-1-candidate.md, all inside existing sections: (a) prepend system-tag rule to §Source position run-length classifier; (b) extend §Verb-glyph column rule 1 with the splitOutcome bridge; (c) fix the off-by-2 in §Source position chip-layout column accounting and the State 2/3/4 mock annotations. No new section. No new glyphs. No new files. Roughly 25 added lines.",
+    "leaves_search_space": false,
+    "alternatives_considered": [
+      "Adding stuck-vs-idle resolution to the sparkline (e.g. age-of-newest-entry tick mark). Rejected as a second instrument that expands primitive count and codepoint budget; the iteration-1 ▁-floor convention already accepts the conflation as a deliberate trade. Defer to iteration 2.",
+      "Replacing the regex-classifier-in-classify.ts with an inline message classifier in ActivityZone. Rejected as scope-creep into the renderer's structure; the candidate's regex-classifier proposal is buildable as written, just slightly larger than 'this iteration's ASI' should attempt.",
+      "Pinning the sparkline 1Hz tick implementation. Rejected as too small for an ASI — it's a one-line setInterval the implementor will write correctly regardless of spec wording."
+    ]
+  },
+  "summary_vs_seed": {
+    "hud-fidelity": { "seed_phase2": 7, "iteration1_phase1": 8, "delta": "+1, both terminal tests now pass cleanly with concrete contracts; sparkline empty-state alphabet resolved" },
+    "four-questions": { "seed_phase2": 7, "iteration1_phase1": 8, "delta": "+1, exception now foregrounded as column-1 displacement with severity-bypass; pattern strengthened by closed verb-dictionary" },
+    "terminal-feasibility": { "seed_phase2": 5, "iteration1_phase1": 8, "delta": "+3, sparkline contract pinned + EAW issues retired + multi-source resolved + unfocus committed + four 30-col mocks; remaining demerits are local fix-ups, not foundational gaps" }
+  }
+}

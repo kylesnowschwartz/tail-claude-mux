@@ -1,0 +1,64 @@
+{
+  "lens": "information-designer",
+  "iteration": 3,
+  "phase": 2,
+  "artifact": "docs/simmer/activity-zone/iteration-3-candidate.md",
+  "deliberation": {
+    "outlier_question": "four-questions",
+    "phase_1_panel": {
+      "information-designer": 10,
+      "terminal-ux-pragmatist": 9,
+      "implementation-realist": 9
+    },
+    "challenge_considered": {
+      "from": "implementation-realist",
+      "argument": "Doesn't reach 10 because the value of N (45s vs 15m vs 3d) requires reading to discriminate degrees of stuck-ness; the binary disambiguation glances, the magnitude reads.",
+      "convergence_with_pragmatist": "Pragmatist's question (a) lands on the same cleavage independently: 'yes-for-binary-question-no-for-magnitude.' Two panelists from different lenses arriving at the identical glance/read boundary on the same artifact is the strongest possible signal that the boundary is real, not a lens-bias artifact."
+    },
+    "self_audit": "My phase-1 rationale said `·Nm` parses pre-attentively 'in trained users.' That hedge is the tell — Tufte's glance bar is pre-attentive WITHOUT training. A 4-char token requires foveal fixation for value-decoding even when brief; only the presence/absence is parafoveal. The candidate cleanly answers the BINARY Pattern question (is it stuck?) at glance, but the MAGNITUDE component of 'degrees of stuck-ness' lands in the read tier, not the glance tier.",
+    "could_candidate_have_done_better": "Examined three alternatives, all rejected on other Tufte-discipline grounds: (1) chromatic gradient on suffix — breaks Tier-3 dim calmness, adds chrome on a calm-by-default row; (2) bar-length-scaled idle indicator (e.g., grow a single low-bar with elapsed time) — breaks the pure-flat-bars structural cleavage that makes case-i vs case-ii parafoveally distinct; (3) per-duration-tier gutter glyph (•/◦/·) — adds 2 codepoints to a budget held at 6 and reintroduces double-encoding (gutter + suffix saying the same thing). Conclusion: the candidate sits at the Pareto frontier of the 'magnitude glanceable AND no other rule violated' problem. But the frontier itself does not deliver glanceable magnitude. That's a 9, not a 10.",
+    "decision": "concede",
+    "concession": {
+      "from": 10,
+      "to": 9,
+      "rationale": "Lift from iter-2's 8 is real and earned: the binary stuck-vs-idle gap that survived two iterations is genuinely closed. The second lift to 10 is not earned: magnitude reads, not glances. 9 is the rigorous Tufte-school score."
+    },
+    "asi_decision": "hold-with-refinement",
+    "asi_refinement_note": "ASI focus unchanged — description-tier × tone composition is the single colour-spec gap and is independent of the magnitude-glance discussion. Tightening recommended-rule prose and adding a concrete State 4 row-by-row colour annotation."
+  },
+  "scores": {
+    "hud-fidelity": {
+      "score": 9,
+      "rationale": "Unchanged from phase-1. Targeted refinements land cleanly: case-(ii) `·Nm` suffix is conditional information-bearing ink (suppressed in cases i and iii); Tier-3 dim, ASCII-only, 4-cell bounded; framed as degenerate-case disambiguator not as rate label. Rule (a) gutter-drop on freshest+failed unifies with chip-mode's identical position+tier-weight fallback — one mark per signal preserved across all three gutter-forfeit cases. Same-agent chip tie-breaker is O(n) and scope-clean. Per-row primitive count holds at ≤3 across all states. Demerits keeping this off 10: (1) column-1 precedence stack is now five rules deep, individually justified but collectively read-the-spec; (2) description-tier × tone composition rule is unstated — implementor has to ask whether freshest+failed renders Tier-2 weight + tone red, or whether tone bypasses tiers like severity glyphs do. The latter is my ASI."
+    },
+    "four-questions": {
+      "score": 9,
+      "rationale": "REVISED from phase-1's 10 after deliberation. Pattern's binary stuck-vs-idle question is now glance-answerable in all three sparkline sub-cases (closed via case-ii suffix presence) — a real +1 lift from iter-2's 8 and the iteration's headline win. Liveness, Exception, and Latest carry from iter-2 phase-2 with rule (a) reinforcing Latest's position+colour+tier fallback consistently with chip-mode's. The score does not push to 10 because the suffix's value (`·45s` vs `·15m` vs `·3d`) requires foveal fixation to discriminate — the binary disambiguation glances, the magnitude reads. The candidate sits at the Pareto frontier of 'magnitude glanceable without breaking other Tufte rules' (chromatic gradient, bar-scaling, and per-tier glyphs all fail one or more discipline check), but the frontier itself does not deliver glanceable magnitude. Tufte's 'degrees of stuck-ness' is half-answered: kind-of-stuck reads, is-it-stuck glances. Solid 9.",
+      "per_question_grade": {
+        "liveness": "answered by sparkline existence + shape (active) or suffix presence (window-empty)",
+        "pattern": "BINARY answered by sparkline shape (active) or suffix presence (window-empty); MAGNITUDE of idle duration requires foveal read of `·Nm` value — half-glance, half-read",
+        "exception": "answered by col-1 SEV_ERROR vertical stripe (gutter mass)",
+        "latest": "answered by gutter `●` on freshest with consistent position + Tier-2 fallback in chip mode and freshest+failed mode"
+      }
+    },
+    "terminal-feasibility": {
+      "score": 9,
+      "rationale": "Unchanged from phase-1. Glyph budget exactly 6, all in MDI PUA EAW Neutral range. Seed's EAW-Ambiguous `●` U+25CF and EAW-Wide `⚠` U+26A0 retired. `·Nm` suffix introduces zero new codepoints — pure ASCII (U+00B7 already shipped at index.tsx:282 per realist's verification, so the EAW hedge is overcautious). All four states mocked at exactly 30 cols. Refresh contract pinned, Y-axis scaling formula pinned with division-by-zero guarded. Producer-side `verb?` tag is SHOULD-not-MUST with regex-classifier fallback. Loss to 10: (1) realist's catch on row-cost arithmetic in §Source position (claimed +1 row per collision pair, true cost is +2 under single-row eyebrow fallback) — descriptive slip not buildability blocker; (2) pragmatist's catch on pairwise-vs-first-pair-only ambiguity in chained-collision case; (3) description-tier × tone composition rule unstated. All buildable today."
+    }
+  },
+  "composite_phase_2": 9.0,
+  "asi_final": {
+    "summary": "Pin the description-text colour-composition rule explicitly: state how `tone` (info/warn/error/success) composes with the freshest-Tier-2 / older-Tier-3 description weight, especially on the multi-failure stripe in State 4.",
+    "actionable_change": "Add a §Description colour subsection (~5 sentences) inside §Proposed direction stating the composition rule. Recommended rule: 'Description text follows tier weight (Tier-2 full weight on freshest, Tier-3 faint on older) AND is modulated by tone independently. When `tone` is non-neutral, the description renders in the tone-mapped foreground at the tier's weight: a freshest+failed row reads as tone-red at Tier-2 weight; an older+failed row reads as tone-red at Tier-3 weight (faint applied). Severity glyphs in column 1 bypass tiers (already established); description text does NOT bypass tiers — tone and tier compose independently.' Then add a one-line annotation under the State 4 mock: 'Row 0 description: Tier-2 weight + tone red. Rows 1, 2, 4, 5 description: Tier-3 dim + tone red. Vertical stripe = 5 red glyphs in col 1; descriptions still carry recency rank within the stripe.' Total edit ≈ 6 sentences across two locations in iteration-4-candidate.md.",
+    "why_this_lens": "On the multi-failure stripe — exactly the state where Tufte's 'gutter mass for exception count' move pays off — the implementor needs to know whether all four red rows render at identical saturation (which would erase recency rank within the stripe and reduce State 4 to a one-axis 'count of errors' read) or composed with tier weight (which preserves the dual-axis read: count via gutter mass, recency via description weight). The brief explicitly penalises designs where the same instrument is unevenly applied across rows; uneven tone-vs-tier composition would be a subtle violation. This is the smallest single edit that completes the colour-discipline spec.",
+    "scope": "Single edit to docs/simmer/activity-zone/iteration-4-candidate.md: add ~5 sentences inside §Proposed direction (new §Description colour subsection) + 1-line State 4 mock annotation. No new sections, no new glyphs, no rule changes — purely closing a colour-composition spec hole.",
+    "non_conflict_with_other_lenses": "Pragmatist's lens-signature concern is chained-collision burst behaviour in same-agent tie-breaker (chip→eyebrow degradation under 3+ same-agent threads); realist's ASI is row-cost arithmetic in §Source position. Both target §Source position / chip-mode rules. My ASI targets §Description colour, an orthogonal subsection. All three ASIs can land in iter-4 simultaneously without rule conflicts."
+  },
+  "notes_for_synthesis": [
+    "Concession on four-questions 10→9 brings the panel to consensus 9/9/9 = 9.0. Three lenses converging on identical scores is a strong calibration signal — iter-3 is at the local optimum across the panel's three concerns and movement to 10 on any axis would require a structural redesign rather than a refinement.",
+    "Pareto-frontier framing for four-questions: the candidate sits at 'best feasible Pattern-answerability without violating other Tufte rules.' Magnitude-of-idle-duration could be made glanceable but only at cost of chromatic chrome on a calm row, breaking the bar-shape cleavage, or expanding glyph budget. Each costs more than it gains. 9 is not a complaint — it's a recognition that the frontier itself excludes 10 here.",
+    "If iter-4 wants to push four-questions to 10, the high-leverage move is NOT in the sparkline row — it is in pinning Pattern's other half-questions (cycling vs converging vs decay) explicitly to specific sparkline shape signatures. State 4's `▆▆▇▆▅▄▃▂` is annotated as 'failure-cascade decay' but the full shape→pattern dictionary is implicit. A small-multiples table mapping 4–6 canonical shapes to 4–6 named patterns would make Pattern fully glanceable across all sub-cases.",
+    "Holding ASI on description-tier × tone composition. Pragmatist and realist ASIs target different sections (chip-mode rules and §Source position arithmetic respectively); my ASI targets §Description colour. All three can land orthogonally. Synthesis can adopt all three as iter-4 scope without conflict.",
+    "Calibration check: my phase-1 panel position was 9/10/9. After deliberation: 9/9/9. Pragmatist phase-1: 9/9/9 (no change expected). Realist phase-1: 9/9/9 (no change expected). Panel converges at 9/9/9 = 9.0 on consensus."
+  ]
+}
