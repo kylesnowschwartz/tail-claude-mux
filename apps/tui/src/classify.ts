@@ -7,13 +7,18 @@
  * column rule (b) — but until the producer ships it, the renderer derives
  * the verb client-side via the regex classifier below).
  *
- * Five verbs match the closed dictionary in vocab.ts:
+ * Ten verbs match the closed dictionary in vocab.ts:
  *
- *   read   — "Reading file.ts", "Read package.json"
- *   list   — "Listing src", "Listing dir"
- *   search — "Searching for foo", "Grep ...", "Glob ..."
- *   edit   — "Editing file.ts", "Wrote ...", "Patched ..."
- *   run    — "ran bun test", "Running pytest", "Bash ..."
+ *   read     — "Reading file.ts", "Read package.json"
+ *   list     — "Listing src", "Listing dir"
+ *   search   — "Searching for foo", "Grep ...", "Glob ..."
+ *   edit     — "Editing file.ts", "Wrote ...", "Patched ..."
+ *   run      — "ran bun test", "Running pytest", "Bash ..."
+ *   web      — "WebFetch ...", "Fetching ...", "https://..."
+ *   task     — "Task ...", "Agent ...", "Delegating ..."
+ *   skill    — "Skill ...", "Invoking skill ..."
+ *   thinking — "Thinking ...", "Reasoning ..."
+ *   error    — "Error: ...", "Failed to ..."
  *
  * Misclassification degrades gracefully: rule 4 in §Verb-glyph column renders
  * a single space when the classifier returns undefined. Gaps in the verb
@@ -26,7 +31,17 @@
  * reading docs` is not).
  */
 
-export type Verb = "read" | "list" | "search" | "edit" | "run";
+export type Verb =
+  | "read"
+  | "list"
+  | "search"
+  | "edit"
+  | "run"
+  | "web"
+  | "task"
+  | "skill"
+  | "thinking"
+  | "error";
 
 interface Rule {
   re: RegExp;
@@ -59,6 +74,26 @@ const RULES: Rule[] = [
   { re: /^run\b/i, verb: "run" },
   { re: /^bash\b/i, verb: "run" },
   { re: /^executing\b/i, verb: "run" },
+
+  { re: /^web(fetch|search)?\b/i, verb: "web" },
+  { re: /^fetching\b/i, verb: "web" },
+  { re: /^https?:\/\//i, verb: "web" },
+
+  { re: /^task\b/i, verb: "task" },
+  { re: /^agent\b/i, verb: "task" },
+  { re: /^delegat(ing|ed)\b/i, verb: "task" },
+  { re: /^spawn(ing|ed)\b/i, verb: "task" },
+
+  { re: /^skill\b/i, verb: "skill" },
+  { re: /^invoking skill\b/i, verb: "skill" },
+
+  { re: /^thinking\b/i, verb: "thinking" },
+  { re: /^reasoning\b/i, verb: "thinking" },
+
+  // Error rules use a colon or word-boundary so we don't false-match
+  // "erroneously", "failed login" in a status sentence, etc.
+  { re: /^error[:\s]/i, verb: "error" },
+  { re: /^failed\s+to\b/i, verb: "error" },
 ];
 
 /**

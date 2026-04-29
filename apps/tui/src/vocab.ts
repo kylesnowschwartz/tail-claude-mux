@@ -3,10 +3,19 @@
  *
  * Source of truth for codepoints.
  *
- * All glyphs are single column-cell wide. Material Design Icons (`nf-md-*`)
- * are the default family; exceptions are brand letterforms (π/▲/♦),
- * the vendored Clawd glyph, and brail spinners. (The branch glyph used to
- * be Powerline U+E0A0; it now resolves into the MD family as well.)
+ * All glyphs are single column-cell wide. The palette intentionally mixes
+ * three nerd-fonts families chosen for semantic fit, not visual purity:
+ *
+ *   nf-md  (Material Design Icons, U+F0000–U+F1FFF) — default modern set
+ *   nf-fa  (Font Awesome 4, U+F000–U+F2E0)         — used where MD lacks a
+ *                                                     better fit (e.g.
+ *                                                     pen-nib for Edit,
+ *                                                     lightbulb for Thinking,
+ *                                                     cross for Error).
+ *   nf-fae (Font Awesome Extension, U+E200–U+E2A9)  — used for book-open Read.
+ *
+ * Plus brand letterforms (π/▲/♦), the vendored Clawd glyph, brail
+ * spinners, and Powerline branch (legacy fallback).
  *
  * This module is consumed by render code; never compose glyphs ad-hoc in
  * components — import them from here so the design stays auditable.
@@ -17,7 +26,7 @@
 // Working is animated via SEV_WORKING_SPINNER frames (legacy brail spinner,
 // kept for visual continuity from the redesign vocabulary).
 export const SEV_WORKING_SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
-export const SEV_WAITING = "\u{F009C}";   // nf-md-bell-alert
+export const SEV_WAITING = "\u{F0178}";   // nf-md-bell-alert (matches tail-claude-hud)
 export const SEV_READY = "\u{F05E1}";     // nf-md-check-circle-outline
 export const SEV_STOPPED = "\u{F0667}";   // nf-md-stop-circle
 export const SEV_ERROR = "\u{F0028}";     // nf-md-alert-circle
@@ -44,16 +53,30 @@ export const WRAP_UP = "\u{F0143}";          // nf-md-chevron-up (rolodex top)
 export const WRAP_DOWN = "\u{F0140}";        // nf-md-chevron-down (rolodex bottom)
 
 // ── Activity-zone glyphs (sparkline + gutter + verb stripe) ──
-// All Material Design Icons in the PUA range U+F0000–U+F1AFF — the nerd-fonts
-// patcher guarantees these render as a single column-cell, EAW Neutral.
-// See docs/simmer/activity-zone/result.md §Glyph palette for rationale.
+// Verb glyphs come from three nerd-fonts families (see header). The palette
+// is aligned with tail-claude-hud's tool-category icons so a reader who
+// learns one app's vocabulary recognises the other.
 //
-// The activity-zone sparkline alphabet is plain Unicode block characters
-// (U+2581–U+2588) which are also EAW Neutral and need no glyph budget; they
-// are inlined where they're used.
+// The sparkline alphabet is plain Unicode block characters (U+2581–U+2588)
+// which are EAW Neutral and need no glyph budget; they're inlined where used.
+//
+// See docs/simmer/activity-zone/result.md §Glyph palette for rationale.
 export const ACTIVITY_GUTTER_FRESH = "\u{F05CB}"; // nf-md-record (filled small disc — "now")
-export const ACTIVITY_VERB_READ   = "\u{F0208}"; // nf-md-eye
-export const ACTIVITY_VERB_LIST   = "\u{F0279}"; // nf-md-format-list-bulleted
-export const ACTIVITY_VERB_SEARCH = "\u{F0349}"; // nf-md-magnify
-export const ACTIVITY_VERB_EDIT   = "\u{F03EB}"; // nf-md-pencil
-export const ACTIVITY_VERB_RUN    = "\u{F040A}"; // nf-md-play
+
+// ── Verb glyphs (col 1, the verb stripe) ──
+// Five core verbs are derived client-side by classify.ts. The remaining
+// glyphs are wired into VERB_GLYPHS for forward-compatibility with watchers
+// that emit web/task/skill/thinking events.
+export const ACTIVITY_VERB_READ     = "\u{E22B}";  // nf-fae-book-open-o (was nf-md-eye)
+export const ACTIVITY_VERB_LIST     = "\u{F0279}"; // nf-md-format-list-bulleted (kept; hud has no list)
+export const ACTIVITY_VERB_SEARCH   = "\u{F0968}"; // nf-md-folder-search (was nf-md-magnify)
+export const ACTIVITY_VERB_EDIT     = "\u{EE75}";  // nf-fa-pen-nib (was nf-md-pencil)
+export const ACTIVITY_VERB_RUN      = "\u{F0BE0}"; // nf-md-wrench-outline (was nf-md-play)
+export const ACTIVITY_VERB_WEB      = "\u{F059F}"; // nf-md-web
+export const ACTIVITY_VERB_TASK     = "\u{F167A}"; // nf-md-robot-outline (sub-agent / Task tool)
+export const ACTIVITY_VERB_SKILL    = "\u{F0BE0}"; // nf-md-wrench-outline (alias of RUN by design)
+export const ACTIVITY_VERB_THINKING = "\u{F0EB}";  // nf-fa-lightbulb (thinking-block content)
+// Stripe-internal error glyph (col 1) — distinct from gutter SEV_ERROR (col 0).
+// Both can co-exist on an error row: gutter signals severity, stripe signals
+// "this row's tool failed" in the verb column.
+export const ACTIVITY_VERB_ERROR    = "\u{F00D}";  // nf-fa-cross

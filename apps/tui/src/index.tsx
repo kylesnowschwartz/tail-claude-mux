@@ -40,6 +40,11 @@ import {
   ACTIVITY_VERB_SEARCH,
   ACTIVITY_VERB_EDIT,
   ACTIVITY_VERB_RUN,
+  ACTIVITY_VERB_WEB,
+  ACTIVITY_VERB_TASK,
+  ACTIVITY_VERB_SKILL,
+  ACTIVITY_VERB_THINKING,
+  ACTIVITY_VERB_ERROR,
 } from "./vocab";
 import { tier } from "./tiers";
 import { classifyVerb, type Verb } from "./classify";
@@ -333,13 +338,18 @@ function systemTagGlyph(source: string): string {
   return SEV_WAITING;
 }
 
-/** 5-entry verb glyph dictionary. See vocab.ts and classify.ts. */
+/** 10-entry verb glyph dictionary. See vocab.ts and classify.ts. */
 const VERB_GLYPHS: Record<Verb, string> = {
-  read:   ACTIVITY_VERB_READ,
-  list:   ACTIVITY_VERB_LIST,
-  search: ACTIVITY_VERB_SEARCH,
-  edit:   ACTIVITY_VERB_EDIT,
-  run:    ACTIVITY_VERB_RUN,
+  read:     ACTIVITY_VERB_READ,
+  list:     ACTIVITY_VERB_LIST,
+  search:   ACTIVITY_VERB_SEARCH,
+  edit:     ACTIVITY_VERB_EDIT,
+  run:      ACTIVITY_VERB_RUN,
+  web:      ACTIVITY_VERB_WEB,
+  task:     ACTIVITY_VERB_TASK,
+  skill:    ACTIVITY_VERB_SKILL,
+  thinking: ACTIVITY_VERB_THINKING,
+  error:    ACTIVITY_VERB_ERROR,
 };
 
 /**
@@ -572,93 +582,99 @@ function ActivityZone(props: {
       }>
         <For each={entries()}>
           {(entry, i) => {
-            const idx = i();
-            const mode = rowModes()[idx]!;
-            const isFreshest = idx === 0;
+            // SOLID GOTCHA: For reuses DOM nodes when items shift in the array.
+            // The render function runs ONCE at row creation; `i` is a signal
+            // accessor that updates when the row's index changes. Anything
+            // that depends on the index must be reactive (memo or inline JSX).
+            //
+            // History: an earlier version captured `const idx = i()` once,
+            // which made every row believe it was at its initial index forever.
+            // The result was that every row rendered as freshest+anchor and
+            // emitted its own eyebrow line, producing the multi-`pi xxxx`
+            // visual that prompted this fix.
+            const mode = createMemo(() => rowModes()[i()]!);
+            const isFreshest = createMemo(() => i() === 0);
 
-            // splitOutcome bridge: when tone===error AND a trailing (failed)
-            // marker is present, strip the suffix from the displayed
-            // description (column-1 SEV_ERROR carries the signal). For
-            // (passed), keep the suffix render — success is the unmarked
-            // default; the suffix is its sole carrier.
+            // Per-entry static values — entry identity is stable under For.
             const split = splitOutcome(entry.message);
             const isFailed = entry.tone === "error" && split.outcome?.tone === "error";
             const displayMain = isFailed ? split.main.trimEnd() : split.main.trimEnd();
             const renderPassedSuffix = !!split.outcome && split.outcome.tone === "success";
-
-            // Column-1 glyph + style precedence (per §Verb-glyph column).
             const verbHint = (entry as { verb?: Verb }).verb;
             const verb = verbHint ?? classifyVerb(entry.message);
-            let colOneGlyph: string;
-            let colOneStyle: { fg: string; attributes?: number };
-            let suppressGutter = false; // freshest+failed/sys-tag double-encoding override
 
-            if (mode.kind === "system-tag") {
-              colOneGlyph = mode.tagGlyph;
-              colOneStyle = tagStyleFor(mode.tagTone);
-              suppressGutter = true;
-            } else if (isFailed) {
-              colOneGlyph = SEV_ERROR;
-              colOneStyle = sevErrorStyle();
-              suppressGutter = true;
-            } else if (verb) {
-              colOneGlyph = VERB_GLYPHS[verb];
-              colOneStyle = verbStyle();
-            } else {
-              colOneGlyph = " ";
-              colOneStyle = blankPlaceholder();
-            }
+            // Column-1 glyph + style precedence (§Verb-glyph column).
+            // Reactive on `mode` so a row that flips between chip and
+            // eyebrow modes (e.g. when a same-source neighbour appears or
+            // disappears) updates correctly.
+            const colOne = createMemo<{ glyph: string; style: { fg: string; attributes?: number }; suppressGutter: boolean }>(() => {
+              const m = mode();
+              if (m.kind === "system-tag") {
+                return { glyph: m.tagGlyph, style: tagStyleFor(m.tagTone), suppressGutter: true };
+              }
+              if (isFailed) {
+                // Stripe-internal error glyph (cross). Distinct from gutter
+                // SEV_ERROR (alert-circle): col 0 is severity, col 1 is the
+                // per-row tool-failure mark. Mirrors tail-claude-hud's
+                // tool category icon → error replacement on failed tools.
+                return { glyph: ACTIVITY_VERB_ERROR, style: sevErrorStyle(), suppressGutter: true };
+              }
+              if (verb) {
+                return { glyph: VERB_GLYPHS[verb], style: verbStyle(), suppressGutter: false };
+              }
+              return { glyph: " ", style: blankPlaceholder(), suppressGutter: false };
+            });
 
-            // Per-row leading character — pad-space, gutter, or chip-char.
-            const showFreshGutter = isFreshest && !suppressGutter && mode.kind !== "chip";
-            const dStyle = isFreshest ? freshDescStyle() : oldDescStyle();
+            const showFreshGutter = createMemo(
+              () => isFreshest() && !colOne().suppressGutter && mode().kind !== "chip",
+            );
+            const dStyle = createMemo(() => (isFreshest() ? freshDescStyle() : oldDescStyle()));
 
             // Description budget — outcome reservation only applies to (passed).
             const reserved = renderPassedSuffix ? split.outcome!.text.length + 1 : 0;
-            const widthBudget = mode.kind === "chip" ? descWidthChip() : descWidthEyebrow();
-            const mainAvail = Math.max(0, widthBudget - reserved);
-            const truncatedMain = truncateText(displayMain, mainAvail);
+            const widthBudget = createMemo(() => (mode().kind === "chip" ? descWidthChip() : descWidthEyebrow()));
+            const truncatedMain = createMemo(() => truncateText(displayMain, Math.max(0, widthBudget() - reserved)));
 
             return (
               <>
-                <Show when={mode.emitEyebrow && mode.kind === "eyebrow-anchor"}>
+                <Show when={mode().kind === "eyebrow-anchor" && mode().emitEyebrow}>
                   <text truncate>
                     <span>{" "}</span>
-                    <span style={eyebrowStyle()}>{(mode as Extract<RowMode, { kind: "eyebrow-anchor" }>).eyebrow}</span>
+                    <span style={eyebrowStyle()}>{(mode() as Extract<RowMode, { kind: "eyebrow-anchor" }>).eyebrow}</span>
                   </text>
                 </Show>
                 <text truncate>
                   {/* Column 0 — pad / gutter / chip-char-1 */}
-                  <Show when={mode.kind === "chip"} fallback={
-                    <Show when={showFreshGutter} fallback={<span>{" "}</span>}>
+                  <Show when={mode().kind === "chip"} fallback={
+                    <Show when={showFreshGutter()} fallback={<span>{" "}</span>}>
                       <span style={gutterStyle()}>{ACTIVITY_GUTTER_FRESH}</span>
                     </Show>
                   }>
-                    <span style={chipStyle()}>{(mode as Extract<RowMode, { kind: "chip" }>).agentCode[0]}</span>
+                    <span style={chipStyle()}>{(mode() as Extract<RowMode, { kind: "chip" }>).agentCode[0]}</span>
                   </Show>
-                  {/* Column 1 — verb glyph / SEV_ERROR / system-tag glyph / blank,
+                  {/* Column 1 — verb glyph / error / system-tag glyph / blank,
                       OR chip-char-2 in chip mode */}
-                  <Show when={mode.kind === "chip"} fallback={
-                    <span style={colOneStyle}>{colOneGlyph}</span>
+                  <Show when={mode().kind === "chip"} fallback={
+                    <span style={colOne().style}>{colOne().glyph}</span>
                   }>
-                    <span style={chipStyle()}>{(mode as Extract<RowMode, { kind: "chip" }>).agentCode[1]}</span>
+                    <span style={chipStyle()}>{(mode() as Extract<RowMode, { kind: "chip" }>).agentCode[1]}</span>
                   </Show>
                   {/* Column 2 — chip separator (chip mode only) */}
-                  <Show when={mode.kind === "chip"}>
+                  <Show when={mode().kind === "chip"}>
                     <span style={chipStyle()}>{"\u2502"}</span>
                   </Show>
-                  {/* Chip mode: separator + verb glyph + separator before description */}
-                  <Show when={mode.kind === "chip"}>
+                  {/* Chip mode: separator + verb glyph before description */}
+                  <Show when={mode().kind === "chip"}>
                     <span>{" "}</span>
-                    <span style={colOneStyle}>{colOneGlyph}</span>
+                    <span style={colOne().style}>{colOne().glyph}</span>
                   </Show>
                   {/* Pre-description separator */}
                   <span>{" "}</span>
                   {/* Description */}
-                  <span style={dStyle}>{truncatedMain}</span>
+                  <span style={dStyle()}>{truncatedMain()}</span>
                   {/* (passed) suffix kept inline; (failed) stripped (see bridge). */}
                   <Show when={renderPassedSuffix}>
-                    <span style={{ fg: toneColor(split.outcome!.tone, props.palette), attributes: dStyle.attributes }}>{" "}{split.outcome!.text}</span>
+                    <span style={{ fg: toneColor(split.outcome!.tone, props.palette), attributes: dStyle().attributes }}>{" "}{split.outcome!.text}</span>
                   </Show>
                 </text>
               </>
