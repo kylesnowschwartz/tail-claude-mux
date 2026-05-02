@@ -255,44 +255,103 @@ describe("planTmuxHeaderSync", () => {
     expect(out.newWindows.get("@1")?.glyph).toBe(AGENT_GLYPHS["generic"]!);
   });
 
-  test("E3: empty sessions clears prev windows", () => {
+  test("E3: empty sessions + window still alive emits cleanup", () => {
+    // @1 is still a live tmux window (it has a pane in paneToWindow), but no
+    // longer hosts an agent. Cleanup fires.
     const prevWindows: SyncedState = new Map([["@1", { glyph: "X", fg: "#fff", agent: "claude-code" }]]);
     const prevPalette: PaletteState = { themeName: THEME_NAME, values: new Map([["base", "#000"]]) };
-    const out = planTmuxHeaderSync(emptyInput({ sessions: [], paneToWindow: new Map(), prevWindows, prevPalette }));
+    const paneToWindow = new Map([["%shell", "@1"]]);
+    const out = planTmuxHeaderSync(emptyInput({ sessions: [], paneToWindow, prevWindows, prevPalette }));
     const cleanups = out.commands.filter((c) => c[0] === "set-option" && c[1] === "-wu" && c[3] === "@1");
     expect(cleanups.length).toBe(3); // @tcm-agent, @tcm-agent-fg, @tcm-agent-type
     expect(out.newWindows.size).toBe(0);
   });
 
-  test("E1: agent pane destroyed before sync — windowId stays in prev, cleanup fires", () => {
-    const sessions = [makeSession("s1", [makeAgent({ agent: "claude-code", session: "s1", paneId: "%dead" })])];
+  test("E1a: window closed in tmux — no cleanup emitted (would error 'no such window')", () => {
+    // Regression: cleanup commands for windows tmux no longer knows about
+    // used to abort the whole chained command, wedging lastWindows /
+    // lastPalette indefinitely. The planner must filter cleanup against
+    // live windows (i.e. paneToWindow.values()).
+    const sessions = [makeSession("s1", [makeAgent({ agent: "claude-code", session: "s1", paneId: "%10" })])];
+    const prevWindows: SyncedState = new Map([
+      ["@deadWin", { glyph: AGENT_GLYPHS["claude-code"]!, fg: BLUE, agent: "claude-code" }],
+      ["@liveWin", { glyph: AGENT_GLYPHS["claude-code"]!, fg: BLUE, agent: "claude-code" }],
+    ]);
+    // @liveWin still has a pane (the agent has just moved off it); @deadWin
+    // has no panes at all — the window itself is gone.
+    const paneToWindow = new Map([
+      ["%10", "@newWin"],
+      ["%shell", "@liveWin"],
+    ]);
+    const out = planTmuxHeaderSync(emptyInput({
+      sessions,
+      paneToWindow,
+      prevWindows,
+      prevPalette: { themeName: THEME_NAME, values: new Map() },
+    }));
+    expect(out.commands.filter((c) => c[1] === "-wu" && c[3] === "@deadWin")).toEqual([]);
+    expect(out.commands.filter((c) => c[1] === "-wu" && c[3] === "@liveWin").length).toBe(3);
+  });
+
+  test("E1b: agent pane destroyed but its window is gone — no cleanup", () => {
+    // The original E1 case (pane vanished, window also vanished). Cleanup
+    // would error with "no such window".
     const prevWindows: SyncedState = new Map([
       ["@deadWin", { glyph: AGENT_GLYPHS["claude-code"]!, fg: BLUE, agent: "claude-code" }],
     ]);
-    // paneToWindow has no entry for %dead — pane is gone from tmux.
     const out = planTmuxHeaderSync(emptyInput({
-      sessions,
+      sessions: [],
       paneToWindow: new Map(),
       prevWindows,
       prevPalette: { themeName: THEME_NAME, values: new Map() },
     }));
-    const cleanups = out.commands.filter((c) => c[1] === "-wu" && c[3] === "@deadWin");
-    expect(cleanups.length).toBe(3);
+    expect(out.commands.filter((c) => c[1] === "-wu" && c[3] === "@deadWin")).toEqual([]);
     expect(out.newWindows.size).toBe(0);
   });
 
-  test("E5: pane moves to a different window — old window cleared, new window set", () => {
+  test("E5: pane moves to a different window — old window cleared if alive, new window set", () => {
+    // Old window survives because it still has a sibling pane; new window is
+    // where the agent now lives. Both must be in paneToWindow.values() for
+    // the planner's live-window filter to keep them.
     const sessions = [makeSession("s1", [makeAgent({ agent: "claude-code", session: "s1", paneId: "%10" })])];
     const prevWindows: SyncedState = new Map([
       ["@oldWin", { glyph: AGENT_GLYPHS["claude-code"]!, fg: BLUE, agent: "claude-code" }],
     ]);
     const prevPalette: PaletteState = { themeName: THEME_NAME, values: new Map() };
-    const paneToWindow = new Map([["%10", "@newWin"]]);
+    const paneToWindow = new Map([
+      ["%10", "@newWin"],
+      ["%sibling", "@oldWin"],
+    ]);
     const out = planTmuxHeaderSync(emptyInput({ sessions, paneToWindow, prevWindows, prevPalette }));
     const cleared = out.commands.filter((c) => c[1] === "-wu" && c[3] === "@oldWin");
     expect(cleared.length).toBe(3);
     const setOnNew = out.commands.filter((c) => c[1] === "-w" && c[3] === "@newWin");
     expect(setOnNew.length).toBe(3);
+  });
+
+  test("S5e: same themeName but different palette values still re-emits @tcm-thm-*", () => {
+    // Regression: the diff used to key only on themeName. A user editing a
+    // theme JSON in place — or the-themer regenerating the same-named theme
+    // with tweaked colours — would update the panel but not the tmux header.
+    const prevPalette: PaletteState = {
+      themeName: "catppuccin-mocha",
+      values: new Map([
+        ["base", "#000000"], ["text", "#ffffff"], ["blue", "#0000ff"],
+        ["surface0", "#111111"], ["surface2", "#222222"], ["overlay0", "#333333"],
+        ["yellow", "#ffff00"], ["red", "#ff0000"], ["green", "#00ff00"],
+      ]),
+    };
+    // Same name, different palette — the user re-applied a theme whose
+    // colours have shifted under it.
+    const out = planTmuxHeaderSync(emptyInput({
+      sessions: [],
+      theme: resolveTheme("catppuccin-mocha"),
+      themeName: "catppuccin-mocha",
+      prevPalette,
+    }));
+    const paletteWrites = out.commands.filter((c) => typeof c[2] === "string" && c[2].startsWith("@tcm-thm-"));
+    expect(paletteWrites.length).toBeGreaterThan(0);
+    expect(out.newPalette.values.get("base")).toBe(BUILTIN_THEMES["catppuccin-mocha"]!.palette.base);
   });
 
   test("agents with liveness !== alive are ignored", () => {
@@ -526,29 +585,75 @@ describe("syncTmuxHeaderOptions (X1)", () => {
     expect(calls[calls.length - 1]?.[0]).toBe("list-panes");
   });
 
-  test("X2: shellTmux throws after list-panes — error caught, cache not corrupted", () => {
+  test("X2: shellTmux throws on write — error caught, cache reset to self-heal", () => {
+    // Write-side failures reset lastWindows/lastPalette so the next broadcast
+    // re-emits the full state. This is the safety net for the cleanup-poison
+    // bug: even if a regression sneaks a "no such window" into the chain,
+    // the sync recovers next tick instead of wedging until process restart.
     __resetTmuxHeaderSyncStateForTests();
     const calls: string[][] = [];
-    let listPanesReturn = "%10|@1";
+    let throwOnWrite = true;
     const deps: SyncDeps = {
       shellTmux: (args) => {
         calls.push(args);
-        if (args[0] === "list-panes") return listPanesReturn;
-        // The chained set-option call throws.
-        throw new Error("write failed");
+        if (args[0] === "list-panes") return "%10|@1";
+        if (throwOnWrite) throw new Error("write failed");
+        return "";
       },
       log: () => {},
     };
     const sessions = [makeSession("s1", [makeAgent({ agent: "claude-code", session: "s1", paneId: "%10" })])];
     syncTmuxHeaderOptions({ sessions, theme: THEME, themeName: THEME_NAME, enabled: true }, deps);
-    // Both list-panes and the failing set-option were attempted.
     expect(calls.length).toBe(2);
+    expect(calls[1]?.[0]).toBe("set-option");
 
-    // Next call: cache was NOT updated, so the sync retries — list-panes plus
-    // the same set-option chain.
+    // Now writes work. Cache was reset, so the sync re-emits the full state
+    // (palette + agent options for @1) — proving we self-healed rather than
+    // skipping work.
+    throwOnWrite = false;
     syncTmuxHeaderOptions({ sessions, theme: THEME, themeName: THEME_NAME, enabled: true }, deps);
     expect(calls.length).toBe(4);
     expect(calls[3]?.[0]).toBe("set-option");
+    const chain = calls[3]!;
+    expect(chain.some((arg) => typeof arg === "string" && arg.startsWith("@tcm-thm-"))).toBe(true);
+    expect(chain).toContain("@tcm-agent");
+  });
+
+  test("X3: read-side throw preserves cache (transient list-panes flake)", () => {
+    // Distinct from X2: failures of `list-panes` itself don't tell us
+    // anything about tmux state, so we must not nuke cache.
+    __resetTmuxHeaderSyncStateForTests();
+    const calls: string[][] = [];
+    let throwOnRead = false;
+    const deps: SyncDeps = {
+      shellTmux: (args) => {
+        calls.push(args);
+        if (args[0] === "list-panes") {
+          if (throwOnRead) throw new Error("list-panes flake");
+          return "%10|@1";
+        }
+        return "";
+      },
+      log: () => {},
+    };
+    const sessions = [makeSession("s1", [makeAgent({ agent: "claude-code", session: "s1", paneId: "%10" })])];
+
+    // Prime cache.
+    syncTmuxHeaderOptions({ sessions, theme: THEME, themeName: THEME_NAME, enabled: true }, deps);
+    expect(calls.length).toBe(2);
+
+    // Read flakes. No write call, no state mutation.
+    throwOnRead = true;
+    syncTmuxHeaderOptions({ sessions, theme: THEME, themeName: THEME_NAME, enabled: true }, deps);
+    expect(calls.length).toBe(3);
+    expect(calls[2]?.[0]).toBe("list-panes");
+
+    // Read recovers. Cache was preserved, so this is a true no-op (only
+    // list-panes runs, no set-option chain).
+    throwOnRead = false;
+    syncTmuxHeaderOptions({ sessions, theme: THEME, themeName: THEME_NAME, enabled: true }, deps);
+    expect(calls.length).toBe(4);
+    expect(calls[3]?.[0]).toBe("list-panes");
   });
 
   test("non-throwing: shellTmux that throws is caught and logged", () => {

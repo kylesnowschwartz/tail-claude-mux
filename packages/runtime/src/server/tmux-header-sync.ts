@@ -128,12 +128,22 @@ export function planTmuxHeaderSync(input: PlanInput): PlanOutput {
   const newWindows = computeWindowStates(input);
   const commands: string[][] = [];
 
-  // Palette + statusline glyphs: write whenever theme changes or palette has
-  // never been written. The statusline glyphs (`@tcm-last-window-glyph`,
-  // `@tcm-shell-glyph`) don't actually vary with theme, but lumping them in
-  // here costs nothing — these writes are idempotent and the palette block is
-  // already the "global server options" cycle.
-  if (!input.prevPalette || input.prevPalette.themeName !== newPalette.themeName) {
+  // Live windows: every tmux window has at least one pane, so the value-set
+  // of paneToWindow is the set of windows currently alive in the server. Used
+  // below to skip cleanup writes for windows that have already been closed —
+  // those would error with "no such window: @N", aborting the chained tmux
+  // call and preventing lastWindows/lastPalette from advancing. One stuck
+  // dead-window id used to wedge the sync forever (until process restart).
+  const liveWindows = new Set(input.paneToWindow.values());
+
+  // Palette + statusline glyphs: write whenever any palette value differs
+  // from the previously-applied state, or the palette has never been written.
+  // Diffing on themeName alone misses same-name palette rewrites (e.g. a user
+  // edits a theme JSON in place, or the-themer regenerates a theme with the
+  // same name but tweaked colours). The statusline glyphs
+  // (`@tcm-last-window-glyph`, `@tcm-shell-glyph`) don't vary with theme but
+  // lumping them in here costs nothing — these writes are idempotent.
+  if (!input.prevPalette || !paletteValuesEqual(input.prevPalette, newPalette)) {
     for (const [token, value] of newPalette.values) {
       commands.push(["set-option", "-g", `@tcm-thm-${token}`, value]);
     }
@@ -150,15 +160,28 @@ export function planTmuxHeaderSync(input: PlanInput): PlanOutput {
     commands.push(["set-option", "-w", "-t", windowId, "@tcm-agent-type", next.agent]);
   }
 
-  // Cleanup: windows that had a glyph but no longer do.
+  // Cleanup: windows that had a glyph but no longer do. Skip windows that
+  // are no longer alive in tmux — `set-option -wu -t @N` errors with "no
+  // such window" and aborts the whole chained command, which used to
+  // permanently wedge the sync (the stale id stayed in prevWindows forever
+  // because lastWindows is only advanced on a successful chain).
   for (const windowId of input.prevWindows.keys()) {
     if (newWindows.has(windowId)) continue;
+    if (!liveWindows.has(windowId)) continue;
     commands.push(["set-option", "-wu", "-t", windowId, "@tcm-agent"]);
     commands.push(["set-option", "-wu", "-t", windowId, "@tcm-agent-fg"]);
     commands.push(["set-option", "-wu", "-t", windowId, "@tcm-agent-type"]);
   }
 
   return { commands, newWindows, newPalette };
+}
+
+function paletteValuesEqual(a: PaletteState, b: PaletteState): boolean {
+  if (a.values.size !== b.values.size) return false;
+  for (const [token, value] of a.values) {
+    if (b.values.get(token) !== value) return false;
+  }
+  return true;
 }
 
 function buildPaletteState(theme: Theme, themeName: string | undefined): PaletteState {
@@ -267,19 +290,22 @@ export function syncTmuxHeaderOptions(args: SyncArgs, deps: SyncDeps): void {
       return;
     }
 
-    const paneToWindow = readPaneToWindow(deps);
+    let paneToWindow: Map<string, string>;
+    try {
+      paneToWindow = readPaneToWindow(deps);
+    } catch (err) {
+      // Read-side failure (list-panes flake): preserve cache. The next
+      // successful scan will recompute against the correct prior state.
+      // Clearing here would (a) leak stale per-window options when the
+      // recovery scan re-emitted writes against an empty cache, and
+      // (b) clear lastWindows but not lastPalette, leaving the bar on
+      // fallback colours after a tmux server restart wiped @tcm-thm-*.
+      deps.log("sync read failed", { error: String(err) });
+      return;
+    }
     if (paneToWindow.size === 0) {
-      // Empty result is ambiguous: a transient `tmux list-panes` failure
-      // (now non-throwing thanks to shellStatus, but still possible for
-      // genuinely empty servers) is indistinguishable from a no-windows
-      // state. Either way, do NOT clear caches. If windows really vanished,
-      // the next successful scan will see an empty cache+empty world, no-op.
-      // If the panes recover, we still hold the prior state and can compute
-      // a correct cleanup diff. Clearing the cache here used to (a) leak
-      // stale per-window options when the recovery scan re-emitted writes
-      // against an empty cache, and (b) clear lastWindows but not
-      // lastPalette, leaving the bar on fallback colours after a tmux
-      // server restart that wiped @tcm-thm-* options.
+      // Empty list-panes is ambiguous (transient flake vs genuinely empty
+      // server). Same reasoning as above — preserve cache.
       return;
     }
 
@@ -294,7 +320,22 @@ export function syncTmuxHeaderOptions(args: SyncArgs, deps: SyncDeps): void {
     });
 
     if (plan.commands.length > 0) {
-      runTmuxCommands(plan.commands, deps);
+      try {
+        runTmuxCommands(plan.commands, deps);
+      } catch (err) {
+        // Write-side failure: the chained tmux command aborted at an
+        // unknown point, so we don't know which writes landed. Reset cache
+        // so the next broadcast re-emits the full state (palette + every
+        // alive window's agent options, no cleanup) and self-heals.
+        // The cleanup-against-live-windows filter in the planner should
+        // make this branch unreachable in practice, but it's the safe
+        // fallback if a future regression — or a window closing in the
+        // race window between list-panes and set-option — pokes a hole.
+        deps.log("sync write failed", { error: String(err) });
+        lastWindows = new Map();
+        lastPalette = null;
+        return;
+      }
     }
 
     lastWindows = plan.newWindows;
