@@ -887,6 +887,50 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     }, 150);
   }
 
+  /** Spawn a sidebar in every active window across every sidebar-capable
+   *  provider. Used by the cold-boot autospawn (killFirst: false) and the
+   *  /restart reload cycle (killFirst: true). Idempotent on a per-window
+   *  basis — ensureSidebarInWindow no-ops if a sidebar already exists. */
+  function respawnAllActiveSidebars(opts: { killFirst: boolean }): void {
+    const providers = getProvidersWithSidebar();
+    if (providers.length === 0) {
+      log("respawn", "no sidebar-capable providers");
+      return;
+    }
+
+    // Prune stash-session orphans (panes whose title drifted away from
+    // `tcm-sidebar` because their TUI process exited and tmux re-derived
+    // the title) before either branch. Without this they accumulate forever
+    // and confuse future spawnSidebar restore-from-stash attempts.
+    for (const p of providers) p.pruneStashOrphans?.();
+
+    if (opts.killFirst) {
+      for (const p of providers) {
+        const panes = p.listSidebarPanes();
+        for (const pane of panes) {
+          log("respawn", "killing sidebar pane", { paneId: pane.paneId, session: pane.sessionName });
+          p.killSidebarPane(pane.paneId);
+        }
+        p.cleanupSidebar();
+      }
+      invalidateSidebarPaneCache();
+      // Small delay so tmux processes the kills before we spawn replacements.
+      setTimeout(() => spawnInEveryActiveWindow(providers), 300);
+    } else {
+      spawnInEveryActiveWindow(providers);
+    }
+  }
+
+  function spawnInEveryActiveWindow(providers: ReturnType<typeof getProvidersWithSidebar>): void {
+    for (const p of providers) {
+      for (const w of p.listActiveWindows()) {
+        ensureSidebarInWindow(p, { session: w.sessionName, windowId: w.id });
+      }
+    }
+    enforceSidebarWidth();
+    server.publish("sidebar", JSON.stringify({ type: "re-identify" }));
+  }
+
   function quitAll(): void {
     log("quit", "killing all sidebar panes");
     for (const p of getProvidersWithSidebar()) {
@@ -1795,48 +1839,50 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   // in lockstep.
   if (mux.name === "tmux") verifyTmuxHooksInstalled();
 
-  // Detect pre-existing sidebar panes (e.g. after a server restart while
-  // TUI sidebars are still running and reconnecting)
+  // Sidebar bootstrap. Three cases on bun-server boot:
+  //   (a) Existing sidebar panes detected (e.g. /restart kept TUIs alive while
+  //       the server cycled). Adopt them and skip the spawn dance.
+  //   (b) Existing sidebars + TCM_RELOAD_TUI=1 (set by the /restart endpoint).
+  //       Kill and respawn fresh so the TUI picks up new code.
+  //   (c) Zero existing sidebars (cold boot — normal case after tmux
+  //       kill-server now that bun lifecycle is tied to tmux). Auto-spawn
+  //       in every active window across all sessions, so a fresh attach
+  //       lands with the panel already visible — no `prefix+o,s` needed.
+  //       This was the user-visible "side-panel doesn't persist across
+  //       panes" symptom: hooks were missing AND first-paint spawn was
+  //       absent, so window switches landed on bare windows.
   {
     let existingSidebars = 0;
     for (const { panes } of listSidebarPanesByProvider()) {
       existingSidebars += panes.length;
     }
-    if (existingSidebars > 0) {
+
+    const reloadRequested = process.env.TCM_RELOAD_TUI === "1";
+    if (reloadRequested) delete process.env.TCM_RELOAD_TUI;
+
+    if (existingSidebars > 0 && !reloadRequested) {
+      // (a) Adopt existing sidebars.
       sidebarVisible = true;
       log("bootstrap", "detected existing sidebar panes", { count: existingSidebars });
       enforceSidebarWidth();
-
-      // Reload TUI: kill all sidebar panes (and stash) then respawn fresh.
-      // Triggered by /restart (default) — opt out with ?reload-tui=false.
-      // Note: the old toggle cycle (hide/show) didn't work because tmux's
-      // spawnSidebar restores stashed panes instead of spawning fresh processes.
-      if (process.env.TCM_RELOAD_TUI === "1") {
-        delete process.env.TCM_RELOAD_TUI;
-        log("bootstrap", "reloading TUI — killing and respawning sidebars");
-        setTimeout(() => {
-          const providers = getProvidersWithSidebar();
-          for (const p of providers) {
-            const panes = p.listSidebarPanes();
-            for (const pane of panes) {
-              log("bootstrap", "killing sidebar pane for reload", { paneId: pane.paneId, session: pane.sessionName });
-              p.killSidebarPane(pane.paneId);
-            }
-            p.cleanupSidebar();
-          }
-          invalidateSidebarPaneCache();
-          // Respawn fresh sidebars in all active windows
-          setTimeout(() => {
-            for (const p of providers) {
-              for (const w of p.listActiveWindows()) {
-                ensureSidebarInWindow(p, { session: w.sessionName, windowId: w.id });
-              }
-            }
-            enforceSidebarWidth();
-            server.publish("sidebar", JSON.stringify({ type: "re-identify" }));
-          }, 300);
-        }, 500);
-      }
+    } else if (existingSidebars > 0 && reloadRequested) {
+      // (b) /restart cycle: kill, then spawn fresh after a beat to let the
+      // tmux server settle. Note: the old toggle cycle (hide/show) didn't
+      // work because tmux's spawnSidebar restores stashed panes instead of
+      // spawning fresh processes.
+      sidebarVisible = true;
+      log("bootstrap", "reloading TUI — killing and respawning sidebars");
+      setTimeout(() => respawnAllActiveSidebars({ killFirst: true }), 500);
+    } else {
+      // (c) Cold boot. tcm.tmux just installed hooks (so window switches will
+      // auto-spawn); seed every active window now so the first paint after
+      // attach is the panel-visible state. No-op if no providers expose a
+      // sidebar capability or no active windows yet.
+      sidebarVisible = true;
+      log("bootstrap", "first-paint sidebar autospawn");
+      // Defer slightly so the `tmux source-file` writes from applyPaletteToTmux
+      // settle and the panel pane sees the populated palette options on launch.
+      setTimeout(() => respawnAllActiveSidebars({ killFirst: false }), 200);
     }
   }
 

@@ -133,10 +133,32 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
   }
 
   cleanupSidebar(): void {
-    // Kill the stash session used for hiding sidebar panes
+    // Kill the stash session used for hiding sidebar panes.
     try {
       Bun.spawnSync(["tmux", "kill-session", "-t", STASH_SESSION], { stdout: "pipe", stderr: "pipe" });
     } catch {}
+  }
+
+  /** Prune any pane in the stash session whose title isn't `tcm-sidebar`.
+   *  These accumulate when a TUI process exits and tmux's automatic-rename
+   *  re-derives the title from the running command (often the user's
+   *  hostname). Without this prune they linger forever, taking up stash
+   *  space and confusing future spawnSidebar restore attempts.
+   *  Runs as a side-effect of every hideSidebar / spawnSidebar restore
+   *  attempt and at server startup. */
+  pruneStashOrphans(): void {
+    let stashPanes;
+    try {
+      stashPanes = tmux.listPanes({ scope: "session", target: STASH_SESSION });
+    } catch {
+      return; // stash session doesn't exist — nothing to prune
+    }
+    for (const p of stashPanes) {
+      if (p.title !== SIDEBAR_PANE_TITLE) {
+        plog("pruneStashOrphans", { paneId: p.id, title: p.title });
+        try { tmux.killPane(p.id); } catch {}
+      }
+    }
   }
 
   listSidebarPanes(sessionName?: string): SidebarPane[] {
@@ -226,6 +248,11 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
 
   hideSidebar(paneId: string): void {
     this.ensureStash();
+    // Prune orphan panes (titles that drifted away from `tcm-sidebar`)
+    // before adding a new one. Stops the stash from accumulating cruft
+    // across hide/restore cycles — the previous tcm-sidebar pane whose
+    // TUI process exited could end up with the user's hostname as title.
+    this.pruneStashOrphans();
     // Ensure the stash window is large enough to accept another pane.
     // join-pane fails with "pane too small" when stash panes fill up.
     rawTmux(["resize-window", "-t", `${STASH_SESSION}:`, "-x", "200", "-y", "200"]);

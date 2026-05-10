@@ -74,6 +74,11 @@ export interface SidebarCapable {
   resizeSidebarPane(paneId: string, width: number): void;
   /** Kill sidebar panes that are the only pane left in their window (orphaned). */
   killOrphanedSidebarPanes(): void;
+  /** Prune stash-session panes whose title isn't the sidebar marker. These
+   *  accumulate when a TUI process exits and tmux's automatic-rename
+   *  re-derives the title from the running command. Optional — providers
+   *  that don't use a stash session should leave this undefined. */
+  pruneStashOrphans?(): void;
   cleanupSidebar(): void;
 }
 
