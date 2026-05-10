@@ -12,6 +12,7 @@ import { SessionMetadataStore } from "./metadata-store";
 import { loadConfig, saveConfig } from "../config";
 import { resolveTheme, loadExternalTheme, type PartialTheme } from "../themes";
 import { syncTmuxHeaderOptions } from "./tmux-header-sync";
+import { writePaletteFile } from "./tmux-palette-file";
 import {
   clampSidebarWidth,
   computeMinSidebarWidth,
@@ -305,7 +306,10 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     if (existsSync(watchDir)) {
       externalThemeWatcher = watch(watchDir, (_event, filename) => {
         if (filename !== "active-theme.json") return;
-        if (reloadExternalTheme("file-change")) broadcastState();
+        if (reloadExternalTheme("file-change")) {
+          applyPaletteToTmux("external-theme-change");
+          broadcastState();
+        }
       });
     }
   } catch (err) {
@@ -342,6 +346,21 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   }
   function tmuxHeaderLog(msg: string, data?: Record<string, unknown>): void {
     log("tmux-header", msg, data);
+  }
+
+  // Apply the active theme to the palette file. Idempotent on body content;
+  // safe to call repeatedly. Called at server boot, when the user runs
+  // `set-theme`, and when ~/.config/tcm/active-theme.json changes on disk.
+  // `tmux source-file` runs inline so the change applies live without
+  // waiting for the next TPM init or `prefix+r`.
+  function applyPaletteToTmux(reason: string): void {
+    const theme = resolveTheme(effectiveThemeConfig());
+    const themeName = effectiveThemeName();
+    log("palette-file", "apply", { reason, themeName });
+    writePaletteFile(theme, themeName, {
+      shellTmux: tmuxHeaderShell,
+      log: (msg, data) => log("palette-file", msg, data),
+    });
   }
 
   // Bootstrap active sessions
@@ -604,7 +623,6 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
       {
         sessions: lastState.sessions,
         theme: resolveTheme(effectiveThemeConfig()),
-        themeName: effectiveThemeName(),
         enabled: headerEnabled,
       },
       { shellTmux: tmuxHeaderShell, log: tmuxHeaderLog },
@@ -1369,6 +1387,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
       case "set-theme":
         currentTheme = cmd.theme;
         saveConfig({ theme: cmd.theme });
+        applyPaletteToTmux("set-theme");
         broadcastState();
         break;
       case "quit":
@@ -1835,6 +1854,12 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     broadcastState();
   }
 
+  // Apply the active palette before the first broadcast. tcm.tmux already
+  // sourced the palette file at TPM init (or the vendored fallback if this is
+  // the first-ever attach), but we may have been triggered by a theme change
+  // that landed via the-themer between TPM init and now — re-write to be
+  // sure tmux's options match the resolved theme.
+  applyPaletteToTmux("server-boot");
   broadcastState();
   floorWidthToContent();
   startPaneScan();

@@ -69,14 +69,15 @@ export function pickAgentForWindow(agents: string[]): string {
   return agents[0] ?? "generic";
 }
 
-// --- Palette tokens propagated to per-server tmux options ---
-
-const PALETTE_TOKENS = [
-  "base", "text", "blue", "surface0", "surface2",
-  "overlay0", "yellow", "red", "green",
-] as const satisfies readonly (keyof Theme["palette"])[];
-
 // --- Sync state ---
+//
+// As of fix/tmux-cold-start-determinism the per-window agent state is the only
+// thing this module emits per broadcast. Palette and statusline glyphs are
+// written declaratively to ~/.config/tcm/palette-active.tmux.conf by
+// tmux-palette-file.ts (catppuccin pattern); tcm.tmux sources that file at
+// TPM init and the bun server re-runs `tmux source-file` on theme change.
+// Removing the palette diff path here closes the cache-divergence bug that
+// used to wedge palette tokens after `tmux kill-server`.
 
 export interface WindowState {
   glyph: string;
@@ -86,43 +87,30 @@ export interface WindowState {
 
 export type SyncedState = Map<string, WindowState>;
 
-export interface PaletteState {
-  themeName: string | undefined;
-  values: Map<string, string>;
-}
-
 export interface PlanInput {
   sessions: SessionData[];
   theme: Theme;
-  themeName: string | undefined;
   enabled: boolean;
   paneToWindow: Map<string, string>;
   prevWindows: SyncedState;
-  prevPalette: PaletteState | null;
 }
 
 export interface PlanOutput {
   commands: string[][];
   newWindows: SyncedState;
-  newPalette: PaletteState;
 }
 
 // --- Pure planner ---
 
-/** Compute the desired window state and palette from server state, diff against
- *  the previous values, and emit the minimal set of tmux invocations needed to
- *  reach the new state. */
+/** Compute the desired per-window agent state from server state, diff against
+*  the previous values, and emit the minimal set of tmux invocations needed
+*  to reach the new state. Palette + statusline glyphs are emitted via
+*  tmux-palette-file.ts at boot / theme change — not from this hot path. */
 export function planTmuxHeaderSync(input: PlanInput): PlanOutput {
-  const newPalette = buildPaletteState(input.theme, input.themeName);
-
   if (!input.enabled) {
-    // Gate off: produce no commands; carry forward state so a later enable
-    // does not falsely claim "no diff".
-    return {
-      commands: [],
-      newWindows: new Map(),
-      newPalette: { themeName: undefined, values: new Map() },
-    };
+    // Gate off: produce no commands. Empty newWindows resets the diff cache
+    // so a later enable does a full re-emit.
+    return { commands: [], newWindows: new Map() };
   }
 
   const newWindows = computeWindowStates(input);
@@ -132,24 +120,9 @@ export function planTmuxHeaderSync(input: PlanInput): PlanOutput {
   // of paneToWindow is the set of windows currently alive in the server. Used
   // below to skip cleanup writes for windows that have already been closed —
   // those would error with "no such window: @N", aborting the chained tmux
-  // call and preventing lastWindows/lastPalette from advancing. One stuck
-  // dead-window id used to wedge the sync forever (until process restart).
+  // call and preventing lastWindows from advancing. One stuck dead-window id
+  // used to wedge the sync forever (until process restart).
   const liveWindows = new Set(input.paneToWindow.values());
-
-  // Palette + statusline glyphs: write whenever any palette value differs
-  // from the previously-applied state, or the palette has never been written.
-  // Diffing on themeName alone misses same-name palette rewrites (e.g. a user
-  // edits a theme JSON in place, or the-themer regenerates a theme with the
-  // same name but tweaked colours). The statusline glyphs
-  // (`@tcm-last-window-glyph`, `@tcm-shell-glyph`) don't vary with theme but
-  // lumping them in here costs nothing — these writes are idempotent.
-  if (!input.prevPalette || !paletteValuesEqual(input.prevPalette, newPalette)) {
-    for (const [token, value] of newPalette.values) {
-      commands.push(["set-option", "-g", `@tcm-thm-${token}`, value]);
-    }
-    commands.push(["set-option", "-g", "@tcm-last-window-glyph", STATUSLINE_LAST_WINDOW]);
-    commands.push(["set-option", "-g", "@tcm-shell-glyph", STATUSLINE_SHELL]);
-  }
 
   // Per-window diffs.
   for (const [windowId, next] of newWindows) {
@@ -173,26 +146,13 @@ export function planTmuxHeaderSync(input: PlanInput): PlanOutput {
     commands.push(["set-option", "-wu", "-t", windowId, "@tcm-agent-type"]);
   }
 
-  return { commands, newWindows, newPalette };
-}
-
-function paletteValuesEqual(a: PaletteState, b: PaletteState): boolean {
-  if (a.values.size !== b.values.size) return false;
-  for (const [token, value] of a.values) {
-    if (b.values.get(token) !== value) return false;
-  }
-  return true;
-}
-
-function buildPaletteState(theme: Theme, themeName: string | undefined): PaletteState {
-  const values = new Map<string, string>();
-  for (const token of PALETTE_TOKENS) values.set(token, toTmuxColour(theme.palette[token]));
-  return { themeName, values };
+  return { commands, newWindows };
 }
 
 /** Translate an tcm palette value to a tmux-renderable colour.
  *  The "transparent" theme stores the literal string "transparent" for base
- *  surfaces; tmux understands "default" but not "transparent". */
+ *  surfaces; tmux understands "default" but not "transparent". Mirrors
+ *  toTmuxColour() in tmux-palette-file.ts — keep the two in lockstep. */
 function toTmuxColour(value: string): string {
   return value === "transparent" ? "default" : value;
 }
@@ -267,17 +227,14 @@ export interface SyncDeps {
 }
 
 let lastWindows: SyncedState = new Map();
-let lastPalette: PaletteState | null = null;
 
 export function __resetTmuxHeaderSyncStateForTests(): void {
   lastWindows = new Map();
-  lastPalette = null;
 }
 
 export interface SyncArgs {
   sessions: SessionData[];
   theme: Theme;
-  themeName: string | undefined;
   enabled: boolean;
 }
 
@@ -286,7 +243,6 @@ export function syncTmuxHeaderOptions(args: SyncArgs, deps: SyncDeps): void {
   try {
     if (!args.enabled) {
       lastWindows = new Map();
-      lastPalette = null;
       return;
     }
 
@@ -296,10 +252,8 @@ export function syncTmuxHeaderOptions(args: SyncArgs, deps: SyncDeps): void {
     } catch (err) {
       // Read-side failure (list-panes flake): preserve cache. The next
       // successful scan will recompute against the correct prior state.
-      // Clearing here would (a) leak stale per-window options when the
-      // recovery scan re-emitted writes against an empty cache, and
-      // (b) clear lastWindows but not lastPalette, leaving the bar on
-      // fallback colours after a tmux server restart wiped @tcm-thm-*.
+      // Clearing here would leak stale per-window options when the recovery
+      // scan re-emitted writes against an empty cache.
       deps.log("sync read failed", { error: String(err) });
       return;
     }
@@ -312,11 +266,9 @@ export function syncTmuxHeaderOptions(args: SyncArgs, deps: SyncDeps): void {
     const plan = planTmuxHeaderSync({
       sessions: args.sessions,
       theme: args.theme,
-      themeName: args.themeName,
       enabled: args.enabled,
       paneToWindow,
       prevWindows: lastWindows,
-      prevPalette: lastPalette,
     });
 
     if (plan.commands.length > 0) {
@@ -324,22 +276,15 @@ export function syncTmuxHeaderOptions(args: SyncArgs, deps: SyncDeps): void {
         runTmuxCommands(plan.commands, deps);
       } catch (err) {
         // Write-side failure: the chained tmux command aborted at an
-        // unknown point, so we don't know which writes landed. Reset cache
-        // so the next broadcast re-emits the full state (palette + every
-        // alive window's agent options, no cleanup) and self-heals.
-        // The cleanup-against-live-windows filter in the planner should
-        // make this branch unreachable in practice, but it's the safe
-        // fallback if a future regression — or a window closing in the
-        // race window between list-panes and set-option — pokes a hole.
+        // unknown point. Reset cache so the next broadcast re-emits the full
+        // per-window state and self-heals.
         deps.log("sync write failed", { error: String(err) });
         lastWindows = new Map();
-        lastPalette = null;
         return;
       }
     }
 
     lastWindows = plan.newWindows;
-    lastPalette = plan.newPalette;
   } catch (err) {
     deps.log("sync failed", { error: String(err) });
   }
