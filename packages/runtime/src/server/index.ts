@@ -1516,7 +1516,12 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
       externalThemeWatcher = null;
     }
     try { unlinkSync(PID_FILE); } catch {}
-    mux.cleanupHooks();
+    // Hooks are owned by tcm.tmux at TPM init, not by the bun-server lifetime.
+    // We deliberately do NOT call mux.cleanupHooks() here — the /restart
+    // endpoint cycles the bun process, and uninstalling hooks during that
+    // cycle would leave the new bun server with no hooks (since it no longer
+    // calls setupHooks()). uninstall.sh removes hooks explicitly when the
+    // user is going away for good.
   }
 
   // --- Start server ---
@@ -1852,6 +1857,15 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   //       panes" symptom: hooks were missing AND first-paint spawn was
   //       absent, so window switches landed on bare windows.
   {
+    // Prune stash orphans regardless of which bootstrap branch fires below.
+    // These accumulate when a TUI process exits and tmux's automatic-rename
+    // re-derives the pane title from the running command (often $USER), so
+    // legitimate hide/restore cycles eventually leave dead panes in the
+    // stash session that survive across bun-server lifetimes.
+    for (const provider of getProvidersWithSidebar()) {
+      provider.pruneStashOrphans?.();
+    }
+
     let existingSidebars = 0;
     for (const { panes } of listSidebarPanesByProvider()) {
       existingSidebars += panes.length;
