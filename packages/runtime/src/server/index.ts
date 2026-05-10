@@ -1516,12 +1516,11 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
       externalThemeWatcher = null;
     }
     try { unlinkSync(PID_FILE); } catch {}
-    // Hooks are owned by tcm.tmux at TPM init, not by the bun-server lifetime.
-    // We deliberately do NOT call mux.cleanupHooks() here — the /restart
-    // endpoint cycles the bun process, and uninstalling hooks during that
-    // cycle would leave the new bun server with no hooks (since it no longer
-    // calls setupHooks()). uninstall.sh removes hooks explicitly when the
-    // user is going away for good.
+    // Hook lifecycle is owned by tmux config (install-hooks.sh at TPM init,
+    // uninstall.sh on tear-down) — not by the bun process. The MuxProviderV1
+    // contract no longer has setupHooks/cleanupHooks; both used to live here
+    // and would have run on /restart, leaving the next bun server with no
+    // hooks since the runtime no longer reinstalls them.
   }
 
   // --- Start server ---
@@ -1830,12 +1829,12 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   // --- Bootstrap ---
 
   // Tmux hooks are installed declaratively by tcm.tmux at TPM init (see
-  // integrations/tmux-plugin/scripts/install-hooks.sh). The bun server no
-  // longer calls mux.setupHooks() because that used to be the only install
-  // path — if the bun server outlived the tmux server (e.g. across
-  // tmux kill-server), hooks were never re-installed even though the bun
-  // process was still alive and serving requests. Catppuccin/tmux pattern:
-  // statics belong to TPM init, dynamics belong to the daemon.
+  // integrations/tmux-plugin/scripts/install-hooks.sh). The MuxProviderV1
+  // contract no longer has setupHooks/cleanupHooks because their bun-server-
+  // owned lifetime created the cache-divergence bug across `tmux kill-server`:
+  // hooks would never be reinstalled if the bun process outlived the tmux
+  // process. Catppuccin/tmux pattern: statics belong to TPM init, dynamics
+  // belong to the daemon.
   //
   // We still call verifyTmuxHooksInstalled() because (a) tcm.tmux's install
   // is fire-and-forget shell, so a silent failure there should be visible in

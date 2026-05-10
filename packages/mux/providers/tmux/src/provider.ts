@@ -73,50 +73,13 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     tmux.killSession(name);
   }
 
-  setupHooks(serverHost: string, serverPort: number): void {
-    const base = `http://${serverHost}:${serverPort}`;
-    const hookPost = (path: string, data?: string) => {
-      const body = data ? ` -d '${data}'` : "";
-      return `run-shell -b "curl -s -o /dev/null -X POST ${base}${path}${body} >/dev/null 2>&1 || true"`;
-    };
-    // tmux expands #{} formats at hook-fire time — no need for $(tmux display-message)
-    // Use | as field separator (safe for session names, window IDs, TTYs)
-    const focusCmd = hookPost("/focus", "#{client_tty}|#{session_name}|#{window_id}");
-    const refreshCmd = hookPost("/refresh");
-    const ensureCmd = hookPost("/ensure-sidebar", "#{client_tty}|#{session_name}|#{window_id}");
-
-    const clientResizedCmd = hookPost("/client-resized");
-
-    // client-session-changed: update focus AND ensure sidebar in the new session's window
-    tmux.setGlobalHook("client-session-changed", `${focusCmd} ; ${ensureCmd}`);
-    tmux.setGlobalHook("session-created", refreshCmd);
-    tmux.setGlobalHook("session-closed", refreshCmd);
-    tmux.setGlobalHook("after-select-window", ensureCmd);
-    tmux.setGlobalHook("after-new-window", ensureCmd);
-    // client-resized: terminal window changed size — enforce stored width back
-    tmux.setGlobalHook("client-resized", clientResizedCmd);
-    // Kill orphaned sidebar panes when a pane closes. Two hooks needed:
-    //   pane-exited (window-level, -gw): process inside pane exits naturally
-    //   after-kill-pane (server-level, -g): pane killed via kill-pane command
-    const paneExitedCmd = hookPost("/pane-exited");
-    tmux.setGlobalWindowHook("pane-exited", paneExitedCmd);
-    tmux.setGlobalHook("after-kill-pane", paneExitedCmd);
-    // pane-focus-in: notify sidebar TUIs which pane has focus
-    const paneFocusCmd = hookPost("/pane-focus", "#{pane_id}");
-    tmux.setGlobalWindowHook("pane-focus-in", paneFocusCmd);
-  }
-
-  cleanupHooks(): void {
-    tmux.unsetGlobalHook("client-session-changed");
-    tmux.unsetGlobalHook("session-created");
-    tmux.unsetGlobalHook("session-closed");
-    tmux.unsetGlobalHook("after-select-window");
-    tmux.unsetGlobalHook("after-new-window");
-    tmux.unsetGlobalHook("client-resized");
-    tmux.unsetGlobalWindowHook("pane-exited");
-    tmux.unsetGlobalHook("after-kill-pane");
-    tmux.unsetGlobalWindowHook("pane-focus-in");
-  }
+  // setupHooks / cleanupHooks were removed in fix/tmux-cold-start-determinism.
+  // Hooks are now installed by integrations/tmux-plugin/scripts/install-hooks.sh
+  // at TPM init, and uninstalled by integrations/tmux-plugin/scripts/uninstall.sh.
+  // Removing them from this provider eliminates the fourth lockstep copy of the
+  // hook list (Codex review F3) — the install/uninstall shell scripts plus the
+  // EXPECTED_TMUX_*_HOOKS verifier list in packages/runtime/src/server/index.ts
+  // are now the only source of truth.
 
   getAllPaneCounts(): Map<string, number> {
     return tmux.getAllPaneCounts();

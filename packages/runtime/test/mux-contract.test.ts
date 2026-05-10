@@ -28,8 +28,7 @@ describe("Mux Contract", () => {
       getClientTty: () => "",
       createSession: (_name?: string, _dir?: string) => {},
       killSession: (_name: string) => {},
-      setupHooks: (_serverHost: string, _serverPort: number) => {},
-      cleanupHooks: () => {},
+
     };
 
     expect(mock.name).toBe("test-mux");
@@ -50,8 +49,7 @@ describe("Mux Contract", () => {
       getClientTty: () => "",
       createSession: () => {},
       killSession: () => {},
-      setupHooks: () => {},
-      cleanupHooks: () => {},
+
       listSidebarPanes: () => [],
       spawnSidebar: () => null,
       hideSidebar: () => {},
@@ -79,8 +77,7 @@ describe("Mux Contract", () => {
       getClientTty: () => "",
       createSession: () => {},
       killSession: () => {},
-      setupHooks: () => {},
-      cleanupHooks: () => {},
+
     };
 
     expect(isWindowCapable(minimal)).toBe(false);

@@ -44,9 +44,12 @@ export interface MuxProviderV1 {
   createSession(name?: string, dir?: string): void;
   killSession(name: string): void;
 
-  // Hooks
-  setupHooks(serverHost: string, serverPort: number): void;
-  cleanupHooks(): void;
+  // Tmux hook installation lives in tcm.tmux (TPM init) and uninstall.sh
+  // — not on the provider. The runtime no longer calls setupHooks /
+  // cleanupHooks; both methods used to be required here, but their bun-server-
+  // owned lifetime created the cache-divergence bug after `tmux kill-server`
+  // (see fix/tmux-cold-start-determinism). Hooks are static curl POSTs that
+  // tmux config installs declaratively; the daemon never touches them.
 }
 
 /**

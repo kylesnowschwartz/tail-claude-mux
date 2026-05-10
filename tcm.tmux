@@ -75,8 +75,26 @@ tmux set-environment -g TCM_WIDTH "$WIDTH"
 # Persistent state worth keeping (theme, sidebar width, session order, agent
 # metadata) lives on disk under ~/.config/tcm/*.json and rehydrates on the
 # fresh boot — only ephemeral in-memory caches are lost.
+# Verify the PID file actually points at our bun server before killing.
+# /tmp is per-boot on macOS, but Linux keeps it around — a stale PID file
+# from a previous crash could now point at someone else's process whose PID
+# was reused. Match against the server entry path so we only kill our own.
+SERVER_ENTRY="$CURRENT_DIR/apps/server/src/main.ts"
 if [ -f /tmp/tcm.pid ]; then
-  kill "$(cat /tmp/tcm.pid)" 2>/dev/null || true
+  OLD_PID="$(cat /tmp/tcm.pid 2>/dev/null)"
+  if [ -n "$OLD_PID" ] && ps -p "$OLD_PID" -o command= 2>/dev/null | grep -qF "$SERVER_ENTRY"; then
+    kill "$OLD_PID" 2>/dev/null || true
+    # Wait up to 1s for the kill to actually release port 7391. `kill` is
+    # async; without this wait the OLD process is still answering on the
+    # port and the spawn below would skip via ensure_server's alive-check,
+    # leaving us with hooks installed but no daemon (Codex review F1).
+    i=0
+    while [ "$i" -lt 20 ]; do
+      kill -0 "$OLD_PID" 2>/dev/null || break
+      sleep 0.05
+      i=$((i + 1))
+    done
+  fi
   rm -f /tmp/tcm.pid
 fi
 rm -f /tmp/tcm.version  # legacy version-file no longer used; clean up if present
@@ -97,12 +115,17 @@ fi
 sh "$SCRIPTS_DIR/install-hooks.sh" >/dev/null 2>&1 || true
 
 # --- Bootstrap: spawn the bun server in the background ---
-# Fire-and-forget: ensure_server() inside server-common.sh exits silently if
-# bun is unavailable. The server boots ~50–100ms after this returns; until
-# then any tmux hook fires above land on a closed port, which is fine — curl
-# returns nonzero, the `|| true` in install-hooks.sh swallows it, and the next
-# user-driven event (window switch, etc.) will retry.
-( . "$SCRIPTS_DIR/server-common.sh" && ensure_server ) >/dev/null 2>&1 &
+# Spawn directly rather than going through ensure_server's alive-check.
+# We just killed the previous server above, but its port may not be released
+# until the kernel finishes the FIN/CLOSE_WAIT cycle (a few ms after the
+# process exits). ensure_server's `server_alive` probe could see a stale
+# response and decline to spawn, which is wrong here — we KNOW we want a
+# fresh server. Other call sites (focus.sh, toggle.sh) keep using
+# ensure_server because they don't know whether one is running.
+BUN_PATH="$(command -v bun 2>/dev/null || echo "$HOME/.bun/bin/bun")"
+if [ -x "$BUN_PATH" ] && [ -f "$SERVER_ENTRY" ]; then
+  "$BUN_PATH" run "$SERVER_ENTRY" >/dev/null 2>&1 &
+fi
 
 # --- Bind tmux shortcuts ---
 
