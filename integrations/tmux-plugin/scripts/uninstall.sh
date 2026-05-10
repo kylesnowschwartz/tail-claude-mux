@@ -10,10 +10,11 @@ set -e
 echo "tcm: uninstalling..."
 
 # --- Remove global hooks ---
-# Keep this list in lockstep with packages/mux/providers/tmux/src/provider.ts
-# -> setupHooks(): every hook installed there must be unset here, with the
-# matching scope (-gu vs -guw). The runtime's verifyTmuxHooksInstalled()
-# helper expects the same set on the install side.
+# Keep this list in lockstep with
+#   integrations/tmux-plugin/scripts/install-hooks.sh
+#   packages/runtime/src/server/index.ts -> EXPECTED_TMUX_GLOBAL_HOOKS / EXPECTED_TMUX_WINDOW_HOOKS
+# Every hook installed there must be unset here with the matching scope
+# (-gu vs -guw). The runtime's verifyTmuxHooksInstalled() smoke-tests both sides.
 for hook in \
   client-session-changed \
   session-created \
@@ -79,6 +80,17 @@ echo "  ✓ removed keybindings"
 tmux set-environment -gu TCM_DIR 2>/dev/null || true
 tmux set-environment -gu TCM_WIDTH 2>/dev/null || true
 echo "  ✓ removed environment variables"
+
+# --- Remove palette options + active palette file ---
+# tcm.tmux re-applies these on every TPM init via source-file. Unset them so
+# a stale palette doesn't linger across an uninstall → reinstall cycle.
+for tok in base text blue surface0 surface2 overlay0 yellow red green; do
+  tmux set-option -gu "@tcm-thm-$tok" 2>/dev/null || true
+done
+tmux set-option -gu @tcm-shell-glyph 2>/dev/null || true
+tmux set-option -gu @tcm-last-window-glyph 2>/dev/null || true
+rm -f "$HOME/.config/tcm/palette-active.tmux.conf"
+echo "  ✓ removed palette options and active palette file"
 
 echo "tcm: uninstall complete. You can now remove the plugin files."
 echo "  If using TPM: remove the line from .tmux.conf and run prefix + alt + u"

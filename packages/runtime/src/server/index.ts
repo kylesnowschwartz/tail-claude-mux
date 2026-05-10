@@ -53,10 +53,11 @@ function shell(cmd: string[]): string {
 
 // --- Tmux hook install verifier ---
 //
-// setupHooks() is fire-and-forget today: each tmux command silently swallows
-// errors. After install we ask tmux directly which hooks are populated and
-// log any expected hook that came back empty. This catches both genuine
-// install failures and "a previous uninstall.sh forgot to clear me" drift.
+// Hooks are installed by tcm.tmux via integrations/tmux-plugin/scripts/install-hooks.sh
+// at TPM init (catppuccin pattern — statics owned by tmux config). After bun-
+// server boot we re-check tmux directly and log any expected hook that's
+// missing. This catches both fire-and-forget shell failures in install-hooks.sh
+// and "the install script and this list drifted apart" — keep them in lockstep.
 const EXPECTED_TMUX_GLOBAL_HOOKS = [
   "client-session-changed",
   "session-created",
@@ -229,8 +230,14 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   const sessionOrderPath = join(home, ".config", "tcm", "session-order.json");
   const sessionOrder = new SessionOrder(sessionOrderPath);
 
-  // Clear previous log on server start
-  try { writeFileSync(DEBUG_LOG, ""); } catch {}
+  // Note on log truncation: the truncate is deferred until AFTER Bun.serve()
+  // returns, because if a stale bun process is still alive on this port the
+  // new process will throw on Bun.serve and crash. Truncating up-front would
+  // wipe the live server's log on every duplicate-spawn race (e.g. an
+  // ensure_server() probe that timed out at 200ms but found the port reused).
+  // Pre-Bun.serve log entries are speculative; they survive only if startup
+  // fails before we own the port (helpful for postmortem) and otherwise get
+  // discarded together with the previous log.
   log("server", "starting", { providers: [mux.name] });
 
   // Load initial theme from config
@@ -1449,10 +1456,10 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     mux.cleanupHooks();
   }
 
-  // --- Write PID + start server ---
-
-  writeFileSync(PID_FILE, String(process.pid));
-
+  // --- Start server ---
+  // PID file write is deferred until AFTER Bun.serve() succeeds. Same reason
+  // as the log truncate (see below): if a stale process is still bound to
+  // this port, we throw and exit, leaving the live server's PID file intact.
   const server = Bun.serve({
     port: SERVER_PORT,
     hostname: SERVER_HOST,
@@ -1745,22 +1752,29 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     },
   });
 
+  // We own the port. Now safe to truncate the previous log + claim the PID
+  // file. Pre-Bun.serve entries written above are discarded with the prior
+  // log. Re-emit a startup marker so the fresh log has a recognisable head.
+  try { writeFileSync(DEBUG_LOG, ""); } catch {}
+  writeFileSync(PID_FILE, String(process.pid));
+  log("server", "listening", { host: SERVER_HOST, port: SERVER_PORT, mux: mux.name, pid: process.pid });
+
   // --- Bootstrap ---
 
-  // Install per-provider tmux hooks. We log around the call (and verify
-  // installation for the tmux provider) because setupHooks() is fire-and-
-  // forget today: a silent tmux failure here is the difference between
-  // "agents update live" and "sidebar feels frozen". See docs in
-  // packages/mux/providers/tmux/src/provider.ts -> setupHooks().
-  log("bootstrap", "installing hooks", { provider: mux.name });
-  let setupOk = true;
-  try {
-    mux.setupHooks(SERVER_HOST, SERVER_PORT);
-  } catch (err) {
-    log("bootstrap", "setupHooks threw", { provider: mux.name, error: err instanceof Error ? err.message : String(err) });
-    setupOk = false;
-  }
-  if (setupOk && mux.name === "tmux") verifyTmuxHooksInstalled();
+  // Tmux hooks are installed declaratively by tcm.tmux at TPM init (see
+  // integrations/tmux-plugin/scripts/install-hooks.sh). The bun server no
+  // longer calls mux.setupHooks() because that used to be the only install
+  // path — if the bun server outlived the tmux server (e.g. across
+  // tmux kill-server), hooks were never re-installed even though the bun
+  // process was still alive and serving requests. Catppuccin/tmux pattern:
+  // statics belong to TPM init, dynamics belong to the daemon.
+  //
+  // We still call verifyTmuxHooksInstalled() because (a) tcm.tmux's install
+  // is fire-and-forget shell, so a silent failure there should be visible in
+  // /tmp/tcm-debug.log, and (b) the verifier doubles as a smoke test that
+  // the hook list in install-hooks.sh and EXPECTED_TMUX_*_HOOKS below stayed
+  // in lockstep.
+  if (mux.name === "tmux") verifyTmuxHooksInstalled();
 
   // Detect pre-existing sidebar panes (e.g. after a server restart while
   // TUI sidebars are still running and reconnecting)

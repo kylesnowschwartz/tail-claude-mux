@@ -1,9 +1,26 @@
-# tcm tmux header — passive reader of @tcm-thm-* and @tcm-agent* options
-# written by the tcm server. See docs/specs/tmux-header.md.
+# tcm tmux header — declarative status-line.
 #
-# This file applies status-line variables only. The server is the single
-# writer of theme tokens (@tcm-thm-*) and per-window agent state (@tcm-agent*).
-# Sourced by tcm.tmux when @tcm-header == "on".
+# Boot order:
+#   1. tcm.tmux runs at TPM init (cold start, kill-server restart, prefix+r)
+#   2. tcm.tmux populates @tcm-thm-* options by sourcing the palette tmux.conf
+#      — active if ~/.config/tcm/palette-active.tmux.conf exists, vendored
+#      fallback otherwise (themes/default-palette.tmux.conf).
+#   3. tcm.tmux sources THIS file (when @tcm-header == "on"), which sets the
+#      status-line format strings. Options are already populated, so the
+#      first repaint reads correct colours — no flicker.
+#
+# Two writers feed this file's option reads:
+#   • Palette + statusline glyphs: written declaratively (catppuccin pattern)
+#     by the palette tmux.conf sourced from tcm.tmux. The bun server
+#     overwrites ~/.config/tcm/palette-active.tmux.conf on every theme
+#     change and runs `tmux source-file` to apply live; cold start re-runs
+#     tcm.tmux which sources the same file.
+#   • Per-window agent state (@tcm-agent, @tcm-agent-fg, @tcm-agent-type):
+#     bun server writes these via `set-option -w` on every agent event. They
+#     are genuinely high-frequency and stay in the runtime's diff-emit path
+#     (packages/runtime/src/server/tmux-header-sync.ts).
+#
+# Spec: docs/specs/tmux-header.md.
 
 # Status-line position and justification.
 set -g status-position top

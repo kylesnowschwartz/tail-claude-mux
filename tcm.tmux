@@ -61,17 +61,25 @@ bind_global_index_keys() {
 tmux set-environment -g TCM_DIR "$CURRENT_DIR"
 tmux set-environment -g TCM_WIDTH "$WIDTH"
 
-# --- Bootstrap: kill stale server if version or install path changed ---
-VERSION_FILE="/tmp/tcm.version"
-CURRENT_VERSION="${CURRENT_DIR}:$(grep -o '"version": *"[^"]*"' "$CURRENT_DIR/package.json" 2>/dev/null | head -1 | cut -d'"' -f4)"
-RUNNING_VERSION=""
-[ -f "$VERSION_FILE" ] && RUNNING_VERSION=$(cat "$VERSION_FILE" 2>/dev/null)
-
-if [ "$CURRENT_VERSION" != "$RUNNING_VERSION" ] && [ -f /tmp/tcm.pid ]; then
+# --- Bootstrap: tie bun-server lifetime to tmux-server lifetime (1:1) ---
+#
+# Why unconditional: the bun server holds in-memory caches (palette diff,
+# sidebar visibility, sessionProviders map) that are only valid for the tmux
+# server it bootstrapped against. After `tmux kill-server`, those caches
+# diverge from the new tmux server's empty option store — hooks gone, palette
+# tokens gone — and the long-lived bun process refuses to re-emit because its
+# diff cache says "already wrote that". Killing on every TPM init guarantees
+# the bun server boots fresh whenever tmux does, mirroring the catppuccin/tmux
+# pattern where TPM init = source of truth.
+#
+# Persistent state worth keeping (theme, sidebar width, session order, agent
+# metadata) lives on disk under ~/.config/tcm/*.json and rehydrates on the
+# fresh boot — only ephemeral in-memory caches are lost.
+if [ -f /tmp/tcm.pid ]; then
   kill "$(cat /tmp/tcm.pid)" 2>/dev/null || true
   rm -f /tmp/tcm.pid
 fi
-echo -n "$CURRENT_VERSION" > "$VERSION_FILE"
+rm -f /tmp/tcm.version  # legacy version-file no longer used; clean up if present
 
 # --- Bootstrap: install deps if needed ---
 if [ ! -d "$CURRENT_DIR/node_modules" ]; then
@@ -81,15 +89,19 @@ if [ ! -d "$CURRENT_DIR/node_modules" ]; then
   fi
 fi
 
-# --- Bootstrap: spawn the server in the background ---
-# Without this, the TCM server only starts when the user presses prefix+o,
-# s/t — meaning a fresh tmux-server attach has no agent watcher and no tmux
-# hooks installed (the server installs them via setupHooks() at boot).
-# Result: agents would not appear in the sidebar until the first keypress,
-# and switching sessions would not auto-spawn the sidebar in new windows.
-#
-# Fire-and-forget: ensure_server() inside server-common.sh bails fast if the
-# server is already alive, and exits silently if bun is unavailable.
+# --- Bootstrap: install tmux hooks declaratively (catppuccin pattern) ---
+# Hooks are static curl POSTs; they don't need the bun server to be alive at
+# install time — curl fails-soft until the server boots. Installing them here
+# (rather than from the bun server's setupHooks()) removes the "tmux ready /
+# bun not booted" race that used to leave new tmux servers without hooks.
+sh "$SCRIPTS_DIR/install-hooks.sh" >/dev/null 2>&1 || true
+
+# --- Bootstrap: spawn the bun server in the background ---
+# Fire-and-forget: ensure_server() inside server-common.sh exits silently if
+# bun is unavailable. The server boots ~50–100ms after this returns; until
+# then any tmux hook fires above land on a closed port, which is fine — curl
+# returns nonzero, the `|| true` in install-hooks.sh swallows it, and the next
+# user-driven event (window switch, etc.) will retry.
 ( . "$SCRIPTS_DIR/server-common.sh" && ensure_server ) >/dev/null 2>&1 &
 
 # --- Bind tmux shortcuts ---
@@ -118,10 +130,15 @@ bind_global_key "$FOCUS_GLOBAL_KEY" "sh '$SCRIPTS_DIR/focus.sh'"
 bind_global_index_keys
 
 # --- Status-line header (opt-in) ---
-# When @tcm-header == "on", apply the tcm theme + agent
-# glyphs to tmux's status line. The tcm server writes @tcm-thm-*
-# and @tcm-agent* options that header.sh reads. See docs/specs/tmux-header.md.
+# When @tcm-header == "on", populate the palette options first (so the format
+# strings paint correctly on first repaint) and then source the header.
+# Active palette wins over vendored fallback; both are sourced with `-q` so a
+# missing file doesn't error — first-ever attach hits the fallback only.
 HEADER_ENABLED=$(get_option "@tcm-header" "off")
 if [ "$HEADER_ENABLED" = "on" ]; then
+  THEMES_DIR="$CURRENT_DIR/integrations/tmux-plugin/themes"
+  ACTIVE_PALETTE="$HOME/.config/tcm/palette-active.tmux.conf"
+  tmux source-file -q "$THEMES_DIR/default-palette.tmux.conf"
+  [ -f "$ACTIVE_PALETTE" ] && tmux source-file -q "$ACTIVE_PALETTE"
   tmux source-file "$SCRIPTS_DIR/header.tmux"
 fi
