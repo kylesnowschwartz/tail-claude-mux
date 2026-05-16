@@ -421,34 +421,53 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
     } catch { return undefined; }
   }
 
-  /** Refresh `state.subagent` from sessions/<pid>.json. On any failure
-   *  (missing file, parse error, no matching sessionId) `state.subagent` is
-   *  reset to undefined — the tracker is responsible for preserving the prior
-   *  value across emit calls that lack subagent context. */
+  /** Refresh `state.subagent` from sessions/<pid>.json.
+   *
+   *  PID resolution precedence:
+   *    1. state.pid set by main's process-ancestry walker (preferred — uses the
+   *       hook's $PPID + process_snapshot, doesn't depend on sessions/ files).
+   *    2. Fall back to walking ~/.claude/sessions/*.json for a sessionId match.
+   *
+   *  PID-reuse detection: the file's sessionId must match this thread's id. If
+   *  it mismatches, the OS reused the pid for a different CC process — clear
+   *  the cache and re-resolve next hook. A *missing* file is NOT treated as
+   *  reuse: the file may be transiently unavailable (tests, race) and we
+   *  shouldn't clobber main's resolved pid on that signal alone. */
   private refreshSubagent(threadId: string, state: ThreadState): void {
     try {
-      // If we already have a cached PID, verify it still points at the same CC
-      // process (procStart match). Cheap: one file read.
-      if (state.pid !== undefined) {
-        const cached = this.readSessionFile(state.pid);
-        if (cached && cached.sessionId === threadId && String(cached.procStart ?? "") === (state.procStart ?? "")) {
-          state.subagent = typeof cached.agent === "string" ? cached.agent : undefined;
+      // (1) Acquire pid via sessions/-walk only if main didn't already set one.
+      if (state.pid === undefined) {
+        const resolved = this.resolvePidFromSessions(threadId);
+        if (!resolved) {
+          state.subagent = undefined;
           return;
         }
-        // Cached PID is stale (file gone, sessionId mismatch, or procStart drift).
-        state.pid = undefined;
-        state.procStart = undefined;
+        state.pid = resolved.pid;
+        state.procStart = resolved.procStart;
       }
 
-      const resolved = this.resolvePidFromSessions(threadId);
-      if (!resolved) {
+      const cached = this.readSessionFile(state.pid);
+
+      // Missing file → don't clear state.pid (main may have set it correctly;
+      // file may be transient). Just clear subagent.
+      if (!cached) {
         state.subagent = undefined;
         return;
       }
-      state.pid = resolved.pid;
-      state.procStart = resolved.procStart;
-      const fresh = this.readSessionFile(resolved.pid);
-      state.subagent = fresh && typeof fresh.agent === "string" ? fresh.agent : undefined;
+
+      // sessionId mismatch is the authoritative PID-reuse signal — clear cache.
+      if (cached.sessionId !== threadId) {
+        state.pid = undefined;
+        state.procStart = undefined;
+        state.subagent = undefined;
+        return;
+      }
+
+      // Opportunistically record procStart if not yet known.
+      if (!state.procStart && cached.procStart) {
+        state.procStart = String(cached.procStart);
+      }
+      state.subagent = typeof cached.agent === "string" ? cached.agent : undefined;
     } catch {
       state.subagent = undefined;
     }
