@@ -150,17 +150,13 @@ interface ThreadState {
   threadName?: string;
   projectDir: string;
   nameResolved: boolean;
-  /** Resolved long-lived agent pid. Set on first hook for this thread (via
-   *  ancestor walk against the hook's process_snapshot) and used by the
-   *  tracker's liveness sweep. */
+  /** Resolved long-lived agent pid. Set on first hook for this thread either
+   *  via ancestor walk against the hook's process_snapshot (preferred) or via
+   *  refreshSubagent's sessions/-walk fallback. Used by the tracker's liveness
+   *  sweep and by refreshSubagent to key into sessions/<pid>.json. */
   pid?: number;
   /** Last tool description from PreToolUse/PermissionRequest — cleared on non-tool events */
   lastToolDescription?: string;
-  /** PID of the Claude Code process serving this thread.
-   *  Resolved on-demand by walking ~/.claude/sessions/*.json and matching sessionId.
-   *  Cached across hook events; refreshed when the cached file's procStart no longer
-   *  matches (i.e. the PID was reused by a different CC process). */
-  pid?: number;
   /** procStart string from sessions/<pid>.json. Pairs with `pid` to detect PID
    *  reuse: if a re-read shows a different procStart, the cached PID is stale. */
   procStart?: string;

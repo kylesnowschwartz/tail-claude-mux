@@ -99,6 +99,10 @@ export class AgentTracker {
       event.paneId = event.paneId ?? prev.paneId;
       event.liveness = event.liveness ?? prev.liveness;
     }
+    // Preserve subagent across PostToolUse-style events that don't re-read sessions/
+    if (event.subagent === undefined && prev?.subagent !== undefined) {
+      event.subagent = prev.subagent;
+    }
     // Stamp first-seen timestamp once per instance so getAgents() sort is
     // stable across subsequent status updates.
     event.firstSeenTs = prev?.firstSeenTs ?? event.ts;

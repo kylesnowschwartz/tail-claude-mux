@@ -856,4 +856,27 @@ describe("AgentTracker", () => {
       t.stopLivenessCheck(); // no-op
     });
   });
+
+  // --- subagent preservation ---
+
+  describe("subagent preservation", () => {
+    test("preserves prior subagent when incoming event has undefined", () => {
+      const t = new AgentTracker();
+      t.applyEvent(event({ session: "sess-1", threadId: "t1", status: "running", subagent: "rb-orchestrator" }));
+
+      // PostToolUse-style event with subagent absent — should not blank the field
+      t.applyEvent(event({ session: "sess-1", threadId: "t1", status: "running" }));
+
+      const agents = t.getAgents("sess-1");
+      expect(agents[0]!.subagent).toBe("rb-orchestrator");
+    });
+
+    test("overwrites subagent when incoming event provides a new value", () => {
+      const t = new AgentTracker();
+      t.applyEvent(event({ session: "sess-1", threadId: "t1", status: "running", subagent: "rb-orchestrator" }));
+      t.applyEvent(event({ session: "sess-1", threadId: "t1", status: "running", subagent: "doc-writer" }));
+
+      expect(t.getAgents("sess-1")[0]!.subagent).toBe("doc-writer");
+    });
+  });
 });
