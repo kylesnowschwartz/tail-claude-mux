@@ -31,6 +31,7 @@ export {
   stripNonPrintingControlChars,
   truncateToWidth,
 } from "./text";
+export { glowPhase, lerpHex } from "./glow";
 export { loadConfig, saveConfig } from "./config";
 export type { TcmConfig } from "./config";
 export { resolveTheme, BUILTIN_THEMES, DEFAULT_THEME } from "./themes";

@@ -17,6 +17,10 @@ import {
   SERVER_HOST,
   BUILTIN_THEMES,
   resolveTheme,
+  sanitizeForDisplay,
+  truncateToWidth,
+  glowPhase,
+  lerpHex,
 } from "@tcm/runtime";
 import { TmuxClient } from "@tcm/mux-tmux";
 import {
@@ -99,7 +103,11 @@ function formatDir(dir: string | undefined): { project: string; parent: string }
 }
 
 function sanitizeThreadName(raw: string): string {
-  const firstLine = raw.split("\n")[0];
+  // Belt-and-braces: watchers already sanitize at their boundary, but the
+  // server→TUI WebSocket is another trust boundary so we re-run the cheap
+  // pass here. Idempotent.
+  const cleaned = sanitizeForDisplay(raw);
+  const firstLine = cleaned.split("\n")[0];
   return firstLine.replace(/^(?:---+|#+|\*{1,2}|>\s*)+\s*/, "").trim();
 }
 
@@ -280,12 +288,13 @@ function stripVerbWord(verb: Verb | undefined, message: string): string {
   return re ? message.replace(re, '') : message;
 }
 
-/** Pre-truncate a string to `max` columns with a trailing ellipsis. */
+/** Pre-truncate a string to `max` terminal cells with a trailing ellipsis.
+ *  Wrapper around the runtime's width-aware `truncateToWidth` so callers in
+ *  this file don't need a second import. Width-aware (CJK/emoji count as 2
+ *  cells, combining marks as 0) — `.length`-based slicing would misalign the
+ *  activity-zone column budget the moment a wide character shows up. */
 function truncateText(s: string, max: number): string {
-  if (max <= 0) return "";
-  if (s.length <= max) return s;
-  if (max <= 1) return "…";
-  return s.slice(0, max - 1) + "…";
+  return truncateToWidth(s, max);
 }
 
 /**
@@ -1185,6 +1194,24 @@ function App() {
     onCleanup(() => clearInterval(interval));
   });
 
+  // Glow tick: only runs while at least one agent (or session card) is in
+  // the `waiting` state — costs nothing in the steady-state. ~10Hz so the
+  // sine breathe at 2s period stays smooth without ghosting.
+  const hasWaiting = createMemo(() =>
+    sessions.some((s) =>
+      s.agentState?.status === "waiting"
+      || s.agents.some((a) => a.status === "waiting"),
+    ),
+  );
+  const [glowMs, setGlowMs] = createSignal(0);
+  createEffect(() => {
+    if (!hasWaiting()) return;
+    const start = Date.now();
+    const interval = setInterval(() => setGlowMs(Date.now() - start), 100);
+    onCleanup(() => clearInterval(interval));
+  });
+  const glowT = createMemo(() => glowPhase(glowMs()));
+
 
   // Reset agent-mode when focused session loses all agents
   createEffect(() => {
@@ -1377,6 +1404,7 @@ function App() {
                   isCurrent={session.name === currentSession()}
                   paneFocused={paneFocused}
                   spinIdx={spinIdx}
+                  glowT={glowT}
                   theme={theme}
                   statusColors={S}
                   onSelect={() => {
@@ -1430,6 +1458,7 @@ function App() {
                 isCurrent={data().name === currentSession()}
                 paneFocused={paneFocused}
                 spinIdx={spinIdx}
+                glowT={glowT}
                 theme={theme}
                 statusColors={S}
                 onSelect={() => switchToSession(data().name)}
@@ -1473,6 +1502,7 @@ function App() {
                   isCurrent={session.name === currentSession()}
                   paneFocused={paneFocused}
                   spinIdx={spinIdx}
+                  glowT={glowT}
                   theme={theme}
                   statusColors={S}
                   onSelect={() => {
@@ -1809,6 +1839,10 @@ interface AgentListItemProps {
   palette: Accessor<Theme["palette"]>;
   statusColors: Accessor<Theme["status"]>;
   spinIdx: Accessor<number>;
+  // 0..1 sine-driven glow phase. Only consulted when this row is waiting;
+  // upstream ticks the signal only while any row is waiting, so the closure
+  // is dormant otherwise.
+  glowT: Accessor<number>;
   isKeyboardFocused: boolean;
   onDismiss: () => void;
   onFocusPane: () => void;
@@ -1869,6 +1903,18 @@ function AgentListItem(props: AgentListItemProps) {
     return "transparent";
   };
 
+  // Agent-name fg. Normally the focus/unseen-driven palette tone; while the
+  // agent is waiting on input, the row breathes toward `yellow` so it pulls
+  // the eye without adding chrome. (Status glyph still shows yellow; this is
+  // the only animated part.)
+  const nameFg = () => {
+    const base = isUnseen()
+      ? P().teal
+      : (props.isKeyboardFocused ? P().text : P().subtext1);
+    if (label() !== "waiting") return base;
+    return lerpHex(base, P().yellow, props.glowT());
+  };
+
   return (
     <box flexDirection="column" flexShrink={0} onMouseDown={() => {
       appendFileSync("/tmp/tcm-tui-agent-click.log",
@@ -1897,9 +1943,7 @@ function AgentListItem(props: AgentListItemProps) {
           </text>
           <text flexGrow={1} truncate>
             <span style={{
-              fg: isUnseen()
-                ? P().teal
-                : (props.isKeyboardFocused ? P().text : P().subtext1),
+              fg: nameFg(),
               attributes: props.isKeyboardFocused ? BOLD : undefined,
             }}>{props.agent.agent}</span>
             <Show when={props.agent.threadId}>
@@ -1927,6 +1971,7 @@ interface SessionCardProps {
   isCurrent: boolean;
   paneFocused: Accessor<boolean>;
   spinIdx: Accessor<number>;
+  glowT: Accessor<number>;
   theme: Accessor<Theme>;
   statusColors: Accessor<Theme["status"]>;
   onSelect: () => void;
@@ -1980,9 +2025,17 @@ function SessionCard(props: SessionCardProps) {
     const focused = props.paneFocused();
     // Unseen sessions get the teal colour shift (color-only marker, replaces
     // the retired ● glyph).
-    if (unseen()) return P().teal;
-    if (props.isCurrent) return focused ? P().text : P().subtext0;
-    return focused ? P().subtext1 : P().overlay1;
+    const base = unseen()
+      ? P().teal
+      : props.isCurrent
+        ? (focused ? P().text : P().subtext0)
+        : (focused ? P().subtext1 : P().overlay1);
+    // Mirror AgentListItem.nameFg: when this session is itself waiting (e.g.
+    // collapsed card with no visible agent rows), breathe the name toward
+    // yellow so the gated tick — which counts session-level waiting — has
+    // something to paint.
+    if (label() !== "waiting") return base;
+    return lerpHex(base, P().yellow, props.glowT());
   };
 
   const truncName = () => {
@@ -2128,6 +2181,7 @@ function SessionCard(props: SessionCardProps) {
                     palette={() => P()}
                     statusColors={props.statusColors}
                     spinIdx={props.spinIdx}
+                    glowT={props.glowT}
                     isKeyboardFocused={props.panelFocus() === "agents" && i() === props.focusedAgentIdx()}
                     onDismiss={() => props.onAgentDismiss(agent)}
                     onFocusPane={() => props.onAgentFocus(agent)}
