@@ -31,7 +31,13 @@ interface PiHookBody {
   stop_reason?: "stop" | "length" | "toolUse" | "error" | "aborted";
   error_message?: string;
   shutdown_reason?: "quit" | "reload" | "new" | "resume" | "fork";
+  /** Pi runs the extension in-process, so `process.pid` is the long-lived
+   *  agent pid directly — no ancestor walk needed (unlike Claude Code). */
+  pid?: number;
 }
+
+/** Pi's pid is stable for the life of the agent — capture once. */
+const PI_PID = process.pid;
 
 function endpoint(): string {
   const port = process.env.TCM_PORT ?? DEFAULT_PORT;
@@ -87,6 +93,7 @@ export default function (pi: ExtensionAPI) {
       session_id: id,
       cwd: ctx.cwd,
       session_name: pi.getSessionName(),
+      pid: PI_PID,
     });
   });
 
@@ -96,7 +103,7 @@ export default function (pi: ExtensionAPI) {
     // Reset turn-scoped state.
     lastStopReason = undefined;
     lastErrorMessage = undefined;
-    post({ agent: "pi", event: "agent_start", session_id: id, cwd: ctx.cwd });
+    post({ agent: "pi", event: "agent_start", session_id: id, cwd: ctx.cwd, pid: PI_PID });
   });
 
   pi.on("message_end", (event, _ctx) => {
@@ -119,6 +126,7 @@ export default function (pi: ExtensionAPI) {
       cwd: ctx.cwd,
       stop_reason: lastStopReason,
       error_message: lastErrorMessage,
+      pid: PI_PID,
     });
   });
 
@@ -132,6 +140,7 @@ export default function (pi: ExtensionAPI) {
       cwd: ctx.cwd,
       tool_name: event.toolName,
       tool_input: event.args as Record<string, unknown>,
+      pid: PI_PID,
     });
   });
 
@@ -145,6 +154,7 @@ export default function (pi: ExtensionAPI) {
       cwd: ctx.cwd,
       tool_name: event.toolName,
       tool_is_error: event.isError,
+      pid: PI_PID,
     });
   });
 
@@ -158,6 +168,7 @@ export default function (pi: ExtensionAPI) {
       session_id: id,
       cwd: ctx.cwd,
       shutdown_reason: shutdownReason,
+      pid: PI_PID,
     });
   });
 }

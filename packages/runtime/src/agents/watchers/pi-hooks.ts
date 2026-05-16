@@ -30,6 +30,7 @@ import { appendFileSync } from "fs";
 import type { AgentStatus } from "../../contracts/agent";
 import { TERMINAL_STATUSES } from "../../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext, HookPayload, HookReceiver } from "../../contracts/agent-watcher";
+import { sanitizeForDisplay, truncateToWidth } from "../../text";
 
 function dbg(tag: string, msg: string, data?: Record<string, unknown>) {
   const ts = new Date().toISOString().slice(11, 23);
@@ -101,7 +102,7 @@ function extractThreadNameFromUser(entry: PiJournalEntry): string | undefined {
 
   if (!text) return undefined;
   if (text.startsWith("<") || text.startsWith("{")) return undefined;
-  return text.slice(0, 80);
+  return truncateToWidth(sanitizeForDisplay(text), 80);
 }
 
 /** Session display name set via `pi.setSessionName()` / `/name`. */
@@ -130,6 +131,9 @@ interface ThreadState {
   threadName?: string;
   projectDir: string;
   nameResolved: boolean;
+  /** Pi reports `process.pid` directly (extension runs in-process). Captured
+   *  once per thread; used by the tracker's liveness sweep. */
+  pid?: number;
   /** Last tool description from tool_execution_start; kept across tool_execution_end. */
   lastToolDescription?: string;
 }
@@ -148,31 +152,31 @@ export function piToolDescription(toolName: string | undefined, toolInput: Recor
     case "write": return pathDesc("Writing", input);
     case "ls": return pathDesc("Listing", input);
     case "bash": {
-      const cmd = typeof input.command === "string" ? input.command : undefined;
-      if (cmd) return `Running ${cmd.slice(0, 30)}`;
+      const cmd = safeStr(input.command);
+      if (cmd) return `Running ${truncateToWidth(cmd, 30)}`;
       return "Running command";
     }
     case "find":
     case "glob":
     case "grep": {
-      const pattern = typeof input.pattern === "string" ? input.pattern : undefined;
-      if (pattern) return `Searching ${pattern.slice(0, 30)}`;
+      const pattern = safeStr(input.pattern);
+      if (pattern) return `Searching ${truncateToWidth(pattern, 30)}`;
       return "Searching";
     }
     case "agent": {
-      const desc = typeof input.description === "string" ? input.description : undefined;
-      if (desc) return desc.slice(0, 40);
+      const desc = safeStr(input.description);
+      if (desc) return truncateToWidth(desc, 40);
       return "Agent";
     }
     case "web_fetch": return "Fetching URL";
     case "web_search": {
-      const query = typeof input.query === "string" ? input.query : undefined;
-      if (query) return `Search: ${query.slice(0, 30)}`;
+      const query = safeStr(input.query);
+      if (query) return `Search: ${truncateToWidth(query, 30)}`;
       return "Searching web";
     }
     case "ask_user_question": {
-      const q = typeof input.question === "string" ? input.question : undefined;
-      if (q) return `Question: ${q.slice(0, 50)}`;
+      const q = safeStr(input.question);
+      if (q) return `Question: ${truncateToWidth(q, 50)}`;
       return "Asking question";
     }
     case "todo_write": return "Updating todos";
@@ -180,8 +184,14 @@ export function piToolDescription(toolName: string | undefined, toolInput: Recor
   }
 }
 
+/** Read a string field, sanitize for safe display, return "" if missing/non-string. */
+function safeStr(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return sanitizeForDisplay(value);
+}
+
 function pathDesc(verb: string, input: Record<string, unknown>): string {
-  const p = typeof input.path === "string" ? input.path : undefined;
+  const p = safeStr(input.path);
   if (p) return `${verb} ${basename(p)}`;
   return verb;
 }
@@ -192,11 +202,9 @@ const ERROR_MESSAGE_LIMIT = 80;
 
 function truncateError(msg: string | undefined): string | undefined {
   if (!msg) return undefined;
-  const trimmed = msg.trim();
+  const trimmed = sanitizeForDisplay(msg).trim();
   if (trimmed.length === 0) return undefined;
-  return trimmed.length > ERROR_MESSAGE_LIMIT
-    ? trimmed.slice(0, ERROR_MESSAGE_LIMIT - 1) + "\u2026"
-    : trimmed;
+  return truncateToWidth(trimmed, ERROR_MESSAGE_LIMIT);
 }
 
 // --- Adapter ---
@@ -255,6 +263,10 @@ export class PiHookAdapter implements AgentWatcher, HookReceiver {
       state.threadName = payload.session_name;
       state.nameResolved = true;
     }
+
+    // Capture pid once per thread. Pi reports its own process.pid, which is
+    // the long-lived agent process — no ancestor walk required.
+    if (state.pid == null && payload.pid != null) state.pid = payload.pid;
 
     // session_shutdown is the definitive end signal and must bypass dedup
     // so the tracker releases the instance immediately rather than waiting
@@ -346,6 +358,7 @@ export class PiHookAdapter implements AgentWatcher, HookReceiver {
       threadId,
       threadName: state.threadName,
       toolDescription: state.lastToolDescription,
+      pid: state.pid,
       ...(extras?.ended ? { ended: true } : {}),
     });
   }

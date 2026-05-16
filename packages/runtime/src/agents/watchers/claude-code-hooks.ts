@@ -21,6 +21,14 @@ import { appendFileSync } from "fs";
 import type { AgentStatus } from "../../contracts/agent";
 import { TERMINAL_STATUSES } from "../../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext, HookPayload, HookReceiver } from "../../contracts/agent-watcher";
+import { parseProcessSnapshot, resolveAgentSessionPid } from "../resolve-agent-pid";
+import { sanitizeForDisplay, truncateToWidth } from "../../text";
+
+// Path-segment aware matcher for the long-lived claude process. Matches
+// `claude` or `claude-code` only when preceded by `^` or `/` and followed
+// by whitespace, another `/`, or end-of-string — so directory names that
+// contain "claude" as a substring (e.g. `meta-claude`) don't false-positive.
+const CLAUDE_CMD_RE = /(?:^|\/)claude(?:-code)?(?=\s|\/|$)/i;
 
 function dbg(tag: string, msg: string, data?: Record<string, unknown>) {
   const ts = new Date().toISOString().slice(11, 23);
@@ -120,7 +128,7 @@ function extractThreadName(entry: JournalEntry): string | undefined {
 
   if (!text) return undefined;
   if (text.startsWith("<") || text.startsWith("{") || text.startsWith("[Request")) return undefined;
-  return text.slice(0, 80);
+  return truncateToWidth(sanitizeForDisplay(text), 80);
 }
 
 function extractCustomTitle(entry: JournalEntry): string | undefined {
@@ -142,6 +150,10 @@ interface ThreadState {
   threadName?: string;
   projectDir: string;
   nameResolved: boolean;
+  /** Resolved long-lived agent pid. Set on first hook for this thread (via
+   *  ancestor walk against the hook's process_snapshot) and used by the
+   *  tracker's liveness sweep. */
+  pid?: number;
   /** Last tool description from PreToolUse/PermissionRequest — cleared on non-tool events */
   lastToolDescription?: string;
 }
@@ -156,7 +168,11 @@ const IDLE_NOTIFICATION_TYPES = new Set(["idle_prompt"]);
 
 // --- Tool description generation (ported from seance ctl.zig:1565-1603) ---
 
-/** Generate a human-readable description of the current tool activity. */
+/** Generate a human-readable description of the current tool activity.
+ *  Every interpolated value from `toolInput` is run through
+ *  `sanitizeForDisplay` + `truncateToWidth` at the leaf, so a pasted ANSI
+ *  sequence in a Bash command or a wide-char path can't disturb the row's
+ *  column budget. */
 export function toolDescription(toolName: string | undefined, toolInput: Record<string, unknown> | undefined): string | undefined {
   if (!toolName) return undefined;
 
@@ -167,38 +183,44 @@ export function toolDescription(toolName: string | undefined, toolInput: Record<
     case "Edit": return fileDesc("Editing", input);
     case "Write": return fileDesc("Writing", input);
     case "Bash": {
-      const cmd = typeof input.command === "string" ? input.command : undefined;
-      if (cmd) return `Running ${cmd.slice(0, 30)}`;
+      const cmd = safeStr(input.command);
+      if (cmd) return `Running ${truncateToWidth(cmd, 30)}`;
       return "Running command";
     }
     case "Glob":
     case "Grep": {
-      const pattern = typeof input.pattern === "string" ? input.pattern : undefined;
-      if (pattern) return `Searching ${pattern.slice(0, 30)}`;
+      const pattern = safeStr(input.pattern);
+      if (pattern) return `Searching ${truncateToWidth(pattern, 30)}`;
       return "Searching";
     }
     case "Agent": {
-      const desc = typeof input.description === "string" ? input.description : undefined;
-      if (desc) return desc.slice(0, 40);
+      const desc = safeStr(input.description);
+      if (desc) return truncateToWidth(desc, 40);
       return "Agent";
     }
     case "WebFetch": return "Fetching URL";
     case "WebSearch": {
-      const query = typeof input.query === "string" ? input.query : undefined;
-      if (query) return `Search: ${query.slice(0, 30)}`;
+      const query = safeStr(input.query);
+      if (query) return `Search: ${truncateToWidth(query, 30)}`;
       return "Searching web";
     }
     case "AskUserQuestion": {
-      const q = typeof input.question === "string" ? input.question : undefined;
-      if (q) return `Question: ${q.slice(0, 50)}`;
+      const q = safeStr(input.question);
+      if (q) return `Question: ${truncateToWidth(q, 50)}`;
       return "Asking question";
     }
     default: return toolName;
   }
 }
 
+/** Read a string field, sanitize it for safe display, return "" if missing or non-string. */
+function safeStr(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return sanitizeForDisplay(value);
+}
+
 function fileDesc(verb: string, input: Record<string, unknown>): string {
-  const fp = typeof input.file_path === "string" ? input.file_path : undefined;
+  const fp = safeStr(input.file_path);
   if (fp) return `${verb} ${basename(fp)}`;
   return verb;
 }
@@ -273,6 +295,25 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
       this.resolveThreadName(threadId, payload.cwd);
     }
 
+    // Resolve the long-lived agent pid once per thread. The hook's reported
+    // pid ($PPID) is the `sh -c` wrapper; walking ancestry against the
+    // snapshot finds the actual claude process. Re-resolve on every hook
+    // until we have a pid (a hook without process_snapshot can land first).
+    if (state.pid == null && payload.pid != null && payload.process_snapshot) {
+      const proc = parseProcessSnapshot(payload.process_snapshot);
+      const resolved = resolveAgentSessionPid(payload.pid, CLAUDE_CMD_RE, proc);
+      if (resolved !== payload.pid) {
+        // Walked up successfully to a claude ancestor.
+        state.pid = resolved;
+      } else {
+        // Walker gave up. Only trust the reported pid if its OWN command in
+        // the snapshot matches the claude pattern — otherwise it's the
+        // wrapper shell and would cause the liveness sweep to false-fire.
+        const info = proc.get(payload.pid);
+        if (info && CLAUDE_CMD_RE.test(info.command)) state.pid = payload.pid;
+      }
+    }
+
     // SessionEnd must bypass the dedup check below: a prior Stop event
     // already set status=done, so the dedup path would otherwise swallow
     // the end signal and leave a ghost entry until the 5-min prune.
@@ -332,6 +373,7 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
       threadId,
       threadName: state.threadName,
       toolDescription: state.lastToolDescription,
+      pid: state.pid,
       ...(extras?.ended ? { ended: true } : {}),
     });
   }

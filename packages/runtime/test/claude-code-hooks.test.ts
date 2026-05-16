@@ -412,10 +412,12 @@ describe("toolDescription", () => {
       .toBe("Running git status");
   });
 
-  test("Bash truncates long commands to 30 chars", () => {
+  test("Bash truncates long commands to 30 cells with ellipsis", () => {
     const long = "a".repeat(50);
+    // truncateToWidth reserves one cell for the ellipsis, so a 50-char ASCII
+    // command with budget 30 yields 29 chars + "…" = 30 cells.
     expect(toolDescription("Bash", { command: long }))
-      .toBe(`Running ${long.slice(0, 30)}`);
+      .toBe(`Running ${"a".repeat(29)}…`);
   });
 
   test("Bash without command returns fallback", () => {
@@ -437,10 +439,10 @@ describe("toolDescription", () => {
       .toBe("Explore codebase structure");
   });
 
-  test("Agent truncates long descriptions to 40 chars", () => {
+  test("Agent truncates long descriptions to 40 cells with ellipsis", () => {
     const long = "a".repeat(60);
     expect(toolDescription("Agent", { description: long }))
-      .toBe(long.slice(0, 40));
+      .toBe(`${"a".repeat(39)}…`);
   });
 
   test("WebFetch returns static string", () => {
@@ -467,5 +469,96 @@ describe("toolDescription", () => {
 
   test("undefined tool_input still works", () => {
     expect(toolDescription("Bash", undefined)).toBe("Running command");
+  });
+});
+
+describe("ClaudeCodeHookAdapter — pid resolution", () => {
+  let adapter: ClaudeCodeHookAdapter;
+  let ctx: ReturnType<typeof makeCtx>;
+
+  beforeEach(() => {
+    adapter = new ClaudeCodeHookAdapter();
+    ctx = makeCtx({ "/tmp/myproject": "myproject" });
+    adapter.start(ctx);
+  });
+
+  afterEach(() => {
+    adapter.stop();
+  });
+
+  /** Helper to build a process_snapshot where pid 400 (the hook) is a
+   *  descendant of pid 200 (the long-lived claude). */
+  function snapshotWithClaudeAt200(): string {
+    return [
+      "  100     1 /sbin/launchd",
+      "  200   100 node /Users/kyle/.nvm/versions/node/v20/lib/node_modules/@anthropic-ai/claude-code/cli.js",
+      "  300   200 /bin/sh -c hook.sh PreToolUse",
+      "  400   300 /bin/bash /Users/kyle/Code/meta-claude/tail-claude-mux/scripts/hook.sh PreToolUse",
+    ].join("\n");
+  }
+
+  test("resolves wrapper-shell pid to the long-lived claude pid", () => {
+    adapter.handleHook(
+      hook("SessionStart", "sess-1", "/tmp/myproject", {
+        pid: 400,
+        process_snapshot: snapshotWithClaudeAt200(),
+      }),
+    );
+    expect(ctx.events).toHaveLength(1);
+    expect(ctx.events[0].pid).toBe(200);
+  });
+
+  test("uses payload pid directly when it already matches claude in the snapshot", () => {
+    adapter.handleHook(
+      hook("SessionStart", "sess-1", "/tmp/myproject", {
+        pid: 200,
+        process_snapshot: snapshotWithClaudeAt200(),
+      }),
+    );
+    expect(ctx.events[0].pid).toBe(200);
+  });
+
+  test("drops pid when walker gives up and reported pid is not claude itself", () => {
+    // Walker can't reach claude in this snapshot.
+    const noClaude = [
+      "  100     1 /sbin/launchd",
+      "  200   100 /bin/bash",
+      "  400   200 /bin/bash /path/hook.sh",
+    ].join("\n");
+    adapter.handleHook(
+      hook("SessionStart", "sess-1", "/tmp/myproject", {
+        pid: 400,
+        process_snapshot: noClaude,
+      }),
+    );
+    // The wrapper pid would false-fire the liveness sweep, so we drop it.
+    expect(ctx.events[0].pid).toBeUndefined();
+  });
+
+  test("subsequent hooks reuse the resolved pid (resolved once per thread)", () => {
+    adapter.handleHook(
+      hook("SessionStart", "sess-1", "/tmp/myproject", {
+        pid: 400,
+        process_snapshot: snapshotWithClaudeAt200(),
+      }),
+    );
+    // Second hook with a totally different (e.g. stale) pid+snapshot should
+    // not re-resolve — pid is per-thread, captured once.
+    adapter.handleHook(
+      hook("PreToolUse", "sess-1", "/tmp/myproject", {
+        pid: 999,
+        process_snapshot: "",
+        tool_name: "Bash",
+        tool_input: { command: "ls" },
+      }),
+    );
+    const last = ctx.events[ctx.events.length - 1];
+    expect(last.pid).toBe(200);
+  });
+
+  test("works without pid/process_snapshot (legacy payloads)", () => {
+    adapter.handleHook(hook("SessionStart", "sess-1", "/tmp/myproject"));
+    expect(ctx.events).toHaveLength(1);
+    expect(ctx.events[0].pid).toBeUndefined();
   });
 });

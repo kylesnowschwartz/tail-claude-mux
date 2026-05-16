@@ -430,9 +430,11 @@ describe("piToolDescription", () => {
     expect(piToolDescription("read", {})).toBe("Reading");
   });
 
-  test("bash truncates long commands to 30 chars", () => {
+  test("bash truncates long commands to 30 cells with ellipsis", () => {
     const long = "a".repeat(50);
-    expect(piToolDescription("bash", { command: long })).toBe(`Running ${long.slice(0, 30)}`);
+    // truncateToWidth reserves one cell for the ellipsis, so a 50-char ASCII
+    // command with budget 30 yields 29 chars + "…" = 30 cells.
+    expect(piToolDescription("bash", { command: long })).toBe(`Running ${"a".repeat(29)}…`);
   });
 
   test("bash without command returns fallback", () => {
@@ -445,9 +447,9 @@ describe("piToolDescription", () => {
     expect(piToolDescription("find", { pattern: "*.md" })).toBe("Searching *.md");
   });
 
-  test("agent truncates long descriptions to 40 chars", () => {
+  test("agent truncates long descriptions to 40 cells with ellipsis", () => {
     const long = "a".repeat(60);
-    expect(piToolDescription("agent", { description: long })).toBe(long.slice(0, 40));
+    expect(piToolDescription("agent", { description: long })).toBe(`${"a".repeat(39)}…`);
   });
 
   test("web_fetch returns static string", () => {

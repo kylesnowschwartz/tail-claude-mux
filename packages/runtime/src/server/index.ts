@@ -227,6 +227,10 @@ function syncGitWatchers(sessions: SessionData[], broadcastFn: () => void) {
 export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   const allWatchers = watchers ?? [];
   const tracker = new AgentTracker();
+  // PID-based liveness sweep: every 5s, mark any tracked instance whose
+  // `pid` is no longer running as `liveness: "exited"`. Catches crashes
+  // and `kill -9` cases where no SessionEnd hook fires.
+  tracker.startLivenessCheck();
   const metadataStore = new SessionMetadataStore();
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
   const sessionOrderPath = join(home, ".config", "tcm", "session-order.json");
@@ -1504,6 +1508,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   }
   function cleanup() {
     for (const w of allWatchers) w.stop();
+    tracker.stopLivenessCheck();
     if (watcherBroadcastTimer) clearTimeout(watcherBroadcastTimer);
     if (debounceTimer) clearTimeout(debounceTimer);
     if (paneScanTimer) clearInterval(paneScanTimer);

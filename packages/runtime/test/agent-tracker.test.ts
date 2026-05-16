@@ -774,4 +774,86 @@ describe("AgentTracker", () => {
       expect(t.getAgents("sess-1")[0]!.liveness).toBe("alive");
     });
   });
+
+  // --- runLivenessSweepOnce ---
+
+  describe("runLivenessSweepOnce", () => {
+    test("marks instances with dead pid as liveness='exited'", () => {
+      const alive = new Set<number>([200, 300]);
+      const t = new AgentTracker({ isPidAlive: (pid) => alive.has(pid) });
+      t.applyEvent(event({ session: "s1", agent: "claude-code", threadId: "a", status: "running", pid: 200 }));
+      t.applyEvent(event({ session: "s1", agent: "claude-code", threadId: "b", status: "running", pid: 999 }));
+
+      const changed = t.runLivenessSweepOnce();
+      expect(changed).toBe(true);
+
+      const agents = t.getAgents("s1");
+      const a = agents.find((e) => e.threadId === "a")!;
+      const b = agents.find((e) => e.threadId === "b")!;
+      expect(a.liveness).toBeUndefined(); // alive — no change
+      expect(b.liveness).toBe("exited");  // dead — marked
+    });
+
+    test("leaves alive pid alone", () => {
+      const t = new AgentTracker({ isPidAlive: () => true });
+      t.applyEvent(event({ session: "s1", status: "running", pid: 200 }));
+      const changed = t.runLivenessSweepOnce();
+      expect(changed).toBe(false);
+      expect(t.getState("s1")!.liveness).toBeUndefined();
+    });
+
+    test("skips instances without pid", () => {
+      const t = new AgentTracker({ isPidAlive: () => false });
+      t.applyEvent(event({ session: "s1", status: "running" })); // no pid
+      const changed = t.runLivenessSweepOnce();
+      expect(changed).toBe(false);
+    });
+
+    test("skips instances in a terminal status", () => {
+      // A done/error/interrupted instance keeps its current liveness — the
+      // sweep is for transitioning alive→exited, not for re-marking already
+      // done sessions.
+      const t = new AgentTracker({ isPidAlive: () => false });
+      t.applyEvent(event({ session: "s1", status: "done", pid: 999, liveness: "alive" }));
+      const changed = t.runLivenessSweepOnce();
+      expect(changed).toBe(false);
+      expect(t.getState("s1")!.liveness).toBe("alive");
+    });
+
+    test("skips instances already marked exited (idempotent)", () => {
+      const t = new AgentTracker({ isPidAlive: () => false });
+      t.applyEvent(event({ session: "s1", status: "running", pid: 999, liveness: "exited" }));
+      const changed = t.runLivenessSweepOnce();
+      expect(changed).toBe(false);
+    });
+
+    test("handles multiple sessions independently", () => {
+      const alive = new Set<number>([200]);
+      const t = new AgentTracker({ isPidAlive: (pid) => alive.has(pid) });
+      t.applyEvent(event({ session: "s1", status: "running", pid: 200 }));
+      t.applyEvent(event({ session: "s2", status: "running", pid: 999 }));
+
+      t.runLivenessSweepOnce();
+      expect(t.getState("s1")!.liveness).toBeUndefined();
+      expect(t.getState("s2")!.liveness).toBe("exited");
+    });
+  });
+
+  // --- startLivenessCheck / stopLivenessCheck ---
+
+  describe("startLivenessCheck / stopLivenessCheck", () => {
+    test("start twice is a no-op (no leaked interval)", () => {
+      const t = new AgentTracker({ isPidAlive: () => true });
+      t.startLivenessCheck(60_000);
+      t.startLivenessCheck(60_000); // idempotent
+      t.stopLivenessCheck();
+      // No assertion needed — if the timer leaked, Bun's test runner would
+      // refuse to exit.
+    });
+
+    test("stop is safe when never started", () => {
+      const t = new AgentTracker({ isPidAlive: () => true });
+      t.stopLivenessCheck(); // no-op
+    });
+  });
 });

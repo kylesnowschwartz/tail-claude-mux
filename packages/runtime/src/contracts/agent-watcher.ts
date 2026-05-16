@@ -70,6 +70,15 @@ export interface HookPayload {
   error_message?: string;
   /** Pi session_shutdown only: why the session is ending. */
   shutdown_reason?: "quit" | "reload" | "new" | "resume" | "fork";
+  /** OS pid the hook came from. For Claude Code this is `$PPID` (the
+   *  `sh -c` wrapper) and must be resolved to the long-lived agent process
+   *  via an ancestor walk against `process_snapshot`. For pi the extension
+   *  reports `process.pid` directly. Used by the tracker's liveness sweep. */
+  pid?: number;
+  /** `ps -axww -o pid=,ppid=,command=` snapshot at hook time. Used by the
+   *  Claude Code watcher to walk ancestry from `pid` (= the `sh -c` wrapper)
+   *  up to the long-lived `claude` process. */
+  process_snapshot?: string;
 }
 
 /** A watcher that can receive hook events pushed from the agent process. */

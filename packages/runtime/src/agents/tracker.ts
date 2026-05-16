@@ -24,6 +24,19 @@ export function instanceKey(agent: string, threadId?: string): string {
   return threadId ? `${agent}:${threadId}` : agent;
 }
 
+/** Real `process.kill(pid, 0)` — sends signal 0 to probe for existence
+ *  without affecting the target. Returns false when the pid is gone or
+ *  unreachable (ESRCH / EPERM / any other error). */
+function defaultIsPidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 1) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export class AgentTracker {
   // Outer key: session name, inner key: instance key (agent or agent:threadId)
   private instances = new Map<string, Map<string, AgentEvent>>();
@@ -37,9 +50,13 @@ export class AgentTracker {
   // and on every delete path so it can't leak.
   private paneMisses = new Map<string, number>();
   private missThreshold: number;
+  private livenessTimer: ReturnType<typeof setInterval> | null = null;
+  /** Injected for tests so we can simulate a dead pid without forking. */
+  private isPidAlive: (pid: number) => boolean;
 
-  constructor(opts: { missThreshold?: number } = {}) {
+  constructor(opts: { missThreshold?: number; isPidAlive?: (pid: number) => boolean } = {}) {
     this.missThreshold = opts.missThreshold ?? DEFAULT_MISS_THRESHOLD;
+    this.isPidAlive = opts.isPidAlive ?? defaultIsPidAlive;
   }
 
   private unseenKey(session: string, key: string): string {
@@ -227,6 +244,43 @@ export class AgentTracker {
         this.instances.delete(session);
       }
     }
+  }
+
+  /**
+   * Run one liveness sweep: for every tracked instance with a `pid`, check
+   * whether the process is still alive. If not, mark `liveness: "exited"`
+   * so the rest of the system (pane miss counter, terminal prune) can act.
+   *
+   * Exposed for tests; the timer in `startLivenessCheck` just calls this on
+   * a 5s interval. Returns true if anything changed.
+   */
+  runLivenessSweepOnce(): boolean {
+    let changed = false;
+    for (const sessionInstances of this.instances.values()) {
+      for (const event of sessionInstances.values()) {
+        if (event.pid == null) continue;
+        if (event.liveness === "exited") continue;
+        if (TERMINAL_STATUSES.has(event.status)) continue;
+        if (!this.isPidAlive(event.pid)) {
+          event.liveness = "exited";
+          changed = true;
+        }
+      }
+    }
+    return changed;
+  }
+
+  /** Start the periodic liveness check. Caller is responsible for stopLivenessCheck(). */
+  startLivenessCheck(intervalMs = 5_000): void {
+    if (this.livenessTimer != null) return;
+    this.livenessTimer = setInterval(() => this.runLivenessSweepOnce(), intervalMs);
+  }
+
+  /** Stop the periodic liveness check. Safe to call when not started. */
+  stopLivenessCheck(): void {
+    if (this.livenessTimer == null) return;
+    clearInterval(this.livenessTimer);
+    this.livenessTimer = null;
   }
 
   isUnseen(session: string): boolean {
