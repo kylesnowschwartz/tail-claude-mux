@@ -29,6 +29,10 @@ export interface AgentEvent {
   pid?: number;
   /** Human-readable description of current activity, e.g. "Reading config.ts" or "Bash: git push" */
   toolDescription?: string;
+  /** Active subagent name when CC is running a Task tool call (e.g. "rb-orchestrator").
+   *  Sourced from ~/.claude/sessions/<pid>.json `agent` field; undefined when the
+   *  parent thread is in control. */
+  subagent?: string;
   /** Signals the tracker to remove this instance immediately instead of holding
    *  it in the terminal-prune window. Set by watchers when the underlying
    *  agent session has definitively ended (e.g. SessionEnd hook). */
