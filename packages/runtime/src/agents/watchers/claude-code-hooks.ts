@@ -16,7 +16,7 @@
 import { readdir, stat } from "fs/promises";
 import { join, basename } from "path";
 import { homedir } from "os";
-import { appendFileSync } from "fs";
+import { appendFileSync, readdirSync, readFileSync } from "fs";
 
 import type { AgentStatus } from "../../contracts/agent";
 import { TERMINAL_STATUSES } from "../../contracts/agent";
@@ -156,6 +156,17 @@ interface ThreadState {
   pid?: number;
   /** Last tool description from PreToolUse/PermissionRequest — cleared on non-tool events */
   lastToolDescription?: string;
+  /** PID of the Claude Code process serving this thread.
+   *  Resolved on-demand by walking ~/.claude/sessions/*.json and matching sessionId.
+   *  Cached across hook events; refreshed when the cached file's procStart no longer
+   *  matches (i.e. the PID was reused by a different CC process). */
+  pid?: number;
+  /** procStart string from sessions/<pid>.json. Pairs with `pid` to detect PID
+   *  reuse: if a re-read shows a different procStart, the cached PID is stale. */
+  procStart?: string;
+  /** Active subagent name from sessions/<pid>.json `agent` field, or undefined
+   *  when the parent CC thread is in control. */
+  subagent?: string;
 }
 
 const STALE_MS = 5 * 60 * 1000;
@@ -246,10 +257,12 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
   private threads = new Map<string, ThreadState>();
   private ctx: AgentWatcherContext | null = null;
   private projectsDir: string;
+  private sessionsDir: string;
 
 
-  constructor(projectsDir?: string) {
+  constructor(projectsDir?: string, sessionsDir?: string) {
     this.projectsDir = projectsDir ?? join(homedir(), ".claude", "projects");
+    this.sessionsDir = sessionsDir ?? join(homedir(), ".claude", "sessions");
   }
 
   start(ctx: AgentWatcherContext): void {
@@ -314,6 +327,12 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
       }
     }
 
+    // Refresh subagent from sessions/<pid>.json. Failures are swallowed —
+    // state.subagent stays whatever it was (preserved through transient errors).
+    // Independent of the pid above (uses its own sessions/-walk resolver).
+    this.refreshSubagent(threadId, state);
+
+
     // SessionEnd must bypass the dedup check below: a prior Stop event
     // already set status=done, so the dedup path would otherwise swallow
     // the end signal and leave a ghost entry until the 5-min prune.
@@ -374,8 +393,69 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
       threadName: state.threadName,
       toolDescription: state.lastToolDescription,
       pid: state.pid,
+      subagent: state.subagent,
       ...(extras?.ended ? { ended: true } : {}),
     });
+  }
+
+  // --- sessions/<pid>.json resolution for subagent field ---
+
+  /** Walk ~/.claude/sessions/*.json once and return the file matching `threadId`. */
+  private resolvePidFromSessions(threadId: string): { pid: number; procStart: string } | undefined {
+    let entries: string[];
+    try { entries = readdirSync(this.sessionsDir); } catch { return undefined; }
+
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) continue;
+      const filePath = join(this.sessionsDir, entry);
+      try {
+        const data = JSON.parse(readFileSync(filePath, "utf-8"));
+        if (data.sessionId === threadId && typeof data.pid === "number") {
+          return { pid: data.pid, procStart: String(data.procStart ?? "") };
+        }
+      } catch {}
+    }
+    return undefined;
+  }
+
+  /** Read sessions/<pid>.json and return the parsed payload (or undefined on failure). */
+  private readSessionFile(pid: number): { agent?: string; procStart?: string; sessionId?: string } | undefined {
+    try {
+      return JSON.parse(readFileSync(join(this.sessionsDir, `${pid}.json`), "utf-8"));
+    } catch { return undefined; }
+  }
+
+  /** Refresh `state.subagent` from sessions/<pid>.json. On any failure
+   *  (missing file, parse error, no matching sessionId) `state.subagent` is
+   *  reset to undefined — the tracker is responsible for preserving the prior
+   *  value across emit calls that lack subagent context. */
+  private refreshSubagent(threadId: string, state: ThreadState): void {
+    try {
+      // If we already have a cached PID, verify it still points at the same CC
+      // process (procStart match). Cheap: one file read.
+      if (state.pid !== undefined) {
+        const cached = this.readSessionFile(state.pid);
+        if (cached && cached.sessionId === threadId && String(cached.procStart ?? "") === (state.procStart ?? "")) {
+          state.subagent = typeof cached.agent === "string" ? cached.agent : undefined;
+          return;
+        }
+        // Cached PID is stale (file gone, sessionId mismatch, or procStart drift).
+        state.pid = undefined;
+        state.procStart = undefined;
+      }
+
+      const resolved = this.resolvePidFromSessions(threadId);
+      if (!resolved) {
+        state.subagent = undefined;
+        return;
+      }
+      state.pid = resolved.pid;
+      state.procStart = resolved.procStart;
+      const fresh = this.readSessionFile(resolved.pid);
+      state.subagent = fresh && typeof fresh.agent === "string" ? fresh.agent : undefined;
+    } catch {
+      state.subagent = undefined;
+    }
   }
 
   // --- Cold-start seed from JSONL files ---

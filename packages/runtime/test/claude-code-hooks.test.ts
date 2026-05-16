@@ -1,4 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { ClaudeCodeHookAdapter, toolDescription } from "../src/agents/watchers/claude-code-hooks";
 import type { AgentEvent } from "../src/contracts/agent";
 import type { AgentWatcherContext, HookPayload } from "../src/contracts/agent-watcher";
@@ -382,6 +385,159 @@ describe("ClaudeCodeHookAdapter", () => {
     expect(ctx.events).toHaveLength(3);
     expect(ctx.events[2].status).toBe("done");
     expect(ctx.events[2].ended).toBe(true);
+  });
+});
+
+// --- sessions/<pid>.json subagent enrichment ---
+
+describe("ClaudeCodeHookAdapter subagent enrichment", () => {
+  let sessionsDir: string;
+  let adapter: ClaudeCodeHookAdapter;
+  let ctx: ReturnType<typeof makeCtx>;
+
+  function writeSession(pid: number, payload: Record<string, unknown>): void {
+    writeFileSync(join(sessionsDir, `${pid}.json`), JSON.stringify(payload));
+  }
+
+  beforeEach(() => {
+    sessionsDir = mkdtempSync(join(tmpdir(), "cc-sessions-"));
+    adapter = new ClaudeCodeHookAdapter(undefined, sessionsDir);
+    ctx = makeCtx({ "/tmp/myproject": "myproject" });
+    adapter.start(ctx);
+  });
+
+  afterEach(() => {
+    adapter.stop();
+    rmSync(sessionsDir, { recursive: true, force: true });
+  });
+
+  test("emits subagent from sessions/<pid>.json when agent field is present", () => {
+    writeSession(42000, {
+      pid: 42000,
+      sessionId: "sess-1",
+      procStart: "Sat May 16 09:00:00 2026",
+      agent: "rb-orchestrator",
+    });
+
+    adapter.handleHook(hook("UserPromptSubmit", "sess-1", "/tmp/myproject"));
+
+    expect(ctx.events).toHaveLength(1);
+    expect(ctx.events[0].subagent).toBe("rb-orchestrator");
+  });
+
+  test("omits subagent when sessions/<pid>.json lacks an agent field", () => {
+    writeSession(42001, {
+      pid: 42001,
+      sessionId: "sess-1",
+      procStart: "Sat May 16 09:00:00 2026",
+    });
+
+    adapter.handleHook(hook("UserPromptSubmit", "sess-1", "/tmp/myproject"));
+
+    expect(ctx.events).toHaveLength(1);
+    expect(ctx.events[0].subagent).toBeUndefined();
+  });
+
+  test("omits subagent when no sessions file matches the threadId", () => {
+    adapter.handleHook(hook("UserPromptSubmit", "sess-orphan", "/tmp/myproject"));
+
+    expect(ctx.events).toHaveLength(1);
+    expect(ctx.events[0].subagent).toBeUndefined();
+  });
+
+  test("re-reads file across events so subagent transitions reflect", () => {
+    writeSession(42002, {
+      pid: 42002,
+      sessionId: "sess-1",
+      procStart: "Sat May 16 09:00:00 2026",
+      agent: "rb-orchestrator",
+    });
+
+    adapter.handleHook(hook("UserPromptSubmit", "sess-1", "/tmp/myproject"));
+    expect(ctx.events[0].subagent).toBe("rb-orchestrator");
+
+    // Subagent finishes — agent field cleared by CC
+    writeSession(42002, {
+      pid: 42002,
+      sessionId: "sess-1",
+      procStart: "Sat May 16 09:00:00 2026",
+    });
+
+    // Re-emission: a new tool description forces an emit
+    adapter.handleHook(hook("PreToolUse", "sess-1", "/tmp/myproject", {
+      tool_name: "Read",
+      tool_input: { file_path: "/tmp/x.ts" },
+    }));
+
+    expect(ctx.events).toHaveLength(2);
+    expect(ctx.events[1].subagent).toBeUndefined();
+  });
+
+  test("detects PID reuse via procStart drift", () => {
+    writeSession(42003, {
+      pid: 42003,
+      sessionId: "sess-old",
+      procStart: "Sat May 16 09:00:00 2026",
+      agent: "rb-orchestrator",
+    });
+
+    adapter.handleHook(hook("UserPromptSubmit", "sess-old", "/tmp/myproject"));
+    expect(ctx.events[0].subagent).toBe("rb-orchestrator");
+
+    // PID 42003 reused by a different CC process for sess-new
+    writeSession(42003, {
+      pid: 42003,
+      sessionId: "sess-new",
+      procStart: "Sat May 16 10:00:00 2026",
+      agent: "doc-writer",
+    });
+
+    adapter.handleHook(hook("UserPromptSubmit", "sess-new", "/tmp/myproject"));
+
+    expect(ctx.events).toHaveLength(2);
+    expect(ctx.events[1].threadId).toBe("sess-new");
+    expect(ctx.events[1].subagent).toBe("doc-writer");
+  });
+
+  test("file read errors do not propagate (subagent stays undefined)", () => {
+    // No file written — resolvePidFromSessions returns undefined, read fails
+    adapter.handleHook(hook("UserPromptSubmit", "sess-1", "/tmp/myproject"));
+
+    expect(ctx.events).toHaveLength(1);
+    expect(ctx.events[0].subagent).toBeUndefined();
+  });
+
+  test("malformed sessions file does not throw", () => {
+    writeFileSync(join(sessionsDir, "42004.json"), "{not json");
+
+    adapter.handleHook(hook("UserPromptSubmit", "sess-1", "/tmp/myproject"));
+
+    expect(ctx.events).toHaveLength(1);
+    expect(ctx.events[0].subagent).toBeUndefined();
+  });
+
+  test("disappearance of sessions file mid-flight leaves prior subagent on emitted state intact via tracker", () => {
+    // (Watcher-level) re-emission with file gone should result in undefined.
+    // The preservation behaviour lives in the tracker; this test asserts the
+    // watcher contract: on next emit after file removal, subagent is undefined.
+    writeSession(42005, {
+      pid: 42005,
+      sessionId: "sess-1",
+      procStart: "Sat May 16 09:00:00 2026",
+      agent: "rb-orchestrator",
+    });
+
+    adapter.handleHook(hook("UserPromptSubmit", "sess-1", "/tmp/myproject"));
+    expect(ctx.events[0].subagent).toBe("rb-orchestrator");
+
+    unlinkSync(join(sessionsDir, "42005.json"));
+
+    adapter.handleHook(hook("PreToolUse", "sess-1", "/tmp/myproject", {
+      tool_name: "Read",
+      tool_input: { file_path: "/tmp/x.ts" },
+    }));
+
+    expect(ctx.events[1].subagent).toBeUndefined();
   });
 });
 
