@@ -20,6 +20,7 @@ export type { AgentStatus, AgentLiveness, AgentEvent, PanePresenceInput } from "
 export { TERMINAL_STATUSES } from "./contracts/agent";
 export type { AgentWatcher, AgentWatcherContext, HookPayload, HookReceiver } from "./contracts/agent-watcher";
 export { isHookReceiver } from "./contracts/agent-watcher";
+export { parseHookPayload } from "./contracts/parse-hook-payload";
 export { AgentTracker } from "./agents/tracker";
 export { ClaudeCodeHookAdapter, toolDescription } from "./agents/watchers/claude-code-hooks";
 export { PiHookAdapter, piToolDescription } from "./agents/watchers/pi-hooks";

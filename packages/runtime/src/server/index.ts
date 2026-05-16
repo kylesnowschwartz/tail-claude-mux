@@ -6,6 +6,7 @@ import { isFullSidebarCapable, isBatchCapable } from "../contracts/mux";
 import type { AgentEvent } from "../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext } from "../contracts/agent-watcher";
 import { isHookReceiver } from "../contracts/agent-watcher";
+import { parseHookPayload } from "../contracts/parse-hook-payload";
 import { AgentTracker } from "../agents/tracker";
 import { SessionOrder } from "./session-order";
 import { SessionMetadataStore } from "./metadata-store";
@@ -1547,15 +1548,19 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
       }
 
       // Hook endpoint: receives lifecycle events from agent processes.
-      // Always returns 200 — hook failures must never block the agent.
+      // Always returns 200 — hook failures must never block the agent. The
+      // wire-event validator drops malformed payloads silently rather than
+      // 4xx'ing, so the agent always sees success regardless.
       if (req.method === "POST" && url.pathname === "/hook") {
         try {
           const body = (await req.json()) as unknown;
-          if (body && typeof body === "object") {
-            const payload = body as import("../contracts/agent-watcher").HookPayload;
+          const payload = parseHookPayload(body);
+          if (payload) {
             for (const w of allWatchers) {
               if (isHookReceiver(w)) w.handleHook(payload);
             }
+          } else {
+            log("hook", "rejected-malformed", { hint: "schema validation failed" });
           }
         } catch {}
         return new Response("ok", { status: 200 });
