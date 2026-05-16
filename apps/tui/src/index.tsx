@@ -1946,6 +1946,9 @@ function AgentListItem(props: AgentListItemProps) {
               fg: nameFg(),
               attributes: props.isKeyboardFocused ? BOLD : undefined,
             }}>{props.agent.agent}</span>
+            <Show when={props.agent.subagent}>
+              <span style={{ fg: P().overlay1 }}>{" · "}{props.agent.subagent}</span>
+            </Show>
             <Show when={props.agent.threadId}>
               <span style={{ fg: P().overlay0, attributes: DIM }}>{" #"}{shortThreadId(props.agent.threadId!)}</span>
             </Show>
