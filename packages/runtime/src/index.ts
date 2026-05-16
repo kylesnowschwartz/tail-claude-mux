@@ -23,6 +23,13 @@ export { isHookReceiver } from "./contracts/agent-watcher";
 export { AgentTracker } from "./agents/tracker";
 export { ClaudeCodeHookAdapter, toolDescription } from "./agents/watchers/claude-code-hooks";
 export { PiHookAdapter, piToolDescription } from "./agents/watchers/pi-hooks";
+export {
+  sanitizeForDisplay,
+  stringWidth,
+  stripAnsiEscapes,
+  stripNonPrintingControlChars,
+  truncateToWidth,
+} from "./text";
 export { loadConfig, saveConfig } from "./config";
 export type { TcmConfig } from "./config";
 export { resolveTheme, BUILTIN_THEMES, DEFAULT_THEME } from "./themes";
