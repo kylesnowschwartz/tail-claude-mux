@@ -1,5 +1,4 @@
 import type { AgentEvent } from "./contracts/agent";
-import type { MuxSessionInfo } from "./contracts/mux";
 import type { PartialTheme } from "./themes";
 
 export const SERVER_PORT = 7391;

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { dirname, join } from "path";
+import { dirname } from "path";
 
 interface PersistedSessionOrder {
   order?: unknown;

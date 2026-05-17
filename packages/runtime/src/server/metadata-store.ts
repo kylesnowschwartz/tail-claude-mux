@@ -1,4 +1,4 @@
-import type { MetadataTone, MetadataLogEntry, MetadataProgress, SessionMetadata } from "../shared";
+import type { MetadataTone, SessionMetadata } from "../shared";
 
 const MAX_LOGS = 50;
 const MAX_MESSAGE_LENGTH = 500;
