@@ -473,7 +473,7 @@ describe("ClaudeCodeHookAdapter subagent enrichment", () => {
     expect(ctx.events[1].subagent).toBeUndefined();
   });
 
-  test("detects PID reuse via procStart drift", () => {
+  test("detects PID reuse via sessionId mismatch", () => {
     writeSession(42003, {
       pid: 42003,
       sessionId: "sess-old",

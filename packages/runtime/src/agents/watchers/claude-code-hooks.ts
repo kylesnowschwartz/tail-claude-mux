@@ -157,9 +157,6 @@ interface ThreadState {
   pid?: number;
   /** Last tool description from PreToolUse/PermissionRequest — cleared on non-tool events */
   lastToolDescription?: string;
-  /** procStart string from sessions/<pid>.json. Pairs with `pid` to detect PID
-   *  reuse: if a re-read shows a different procStart, the cached PID is stale. */
-  procStart?: string;
   /** Active subagent name from sessions/<pid>.json `agent` field, or undefined
    *  when the parent CC thread is in control. */
   subagent?: string;
@@ -396,8 +393,8 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
 
   // --- sessions/<pid>.json resolution for subagent field ---
 
-  /** Walk ~/.claude/sessions/*.json once and return the file matching `threadId`. */
-  private resolvePidFromSessions(threadId: string): { pid: number; procStart: string } | undefined {
+  /** Walk ~/.claude/sessions/*.json once and return the pid matching `threadId`. */
+  private resolvePidFromSessions(threadId: string): number | undefined {
     let entries: string[];
     try { entries = readdirSync(this.sessionsDir); } catch { return undefined; }
 
@@ -407,7 +404,7 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
       try {
         const data = JSON.parse(readFileSync(filePath, "utf-8"));
         if (data.sessionId === threadId && typeof data.pid === "number") {
-          return { pid: data.pid, procStart: String(data.procStart ?? "") };
+          return data.pid;
         }
       } catch {}
     }
@@ -415,7 +412,7 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
   }
 
   /** Read sessions/<pid>.json and return the parsed payload (or undefined on failure). */
-  private readSessionFile(pid: number): { agent?: string; procStart?: string; sessionId?: string } | undefined {
+  private readSessionFile(pid: number): { agent?: string; sessionId?: string } | undefined {
     try {
       return JSON.parse(readFileSync(join(this.sessionsDir, `${pid}.json`), "utf-8"));
     } catch { return undefined; }
@@ -438,12 +435,11 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
       // (1) Acquire pid via sessions/-walk only if main didn't already set one.
       if (state.pid === undefined) {
         const resolved = this.resolvePidFromSessions(threadId);
-        if (!resolved) {
+        if (resolved === undefined) {
           state.subagent = undefined;
           return;
         }
-        state.pid = resolved.pid;
-        state.procStart = resolved.procStart;
+        state.pid = resolved;
       }
 
       const cached = this.readSessionFile(state.pid);
@@ -458,15 +454,10 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
       // sessionId mismatch is the authoritative PID-reuse signal — clear cache.
       if (cached.sessionId !== threadId) {
         state.pid = undefined;
-        state.procStart = undefined;
         state.subagent = undefined;
         return;
       }
 
-      // Opportunistically record procStart if not yet known.
-      if (!state.procStart && cached.procStart) {
-        state.procStart = String(cached.procStart);
-      }
       state.subagent = typeof cached.agent === "string" ? cached.agent : undefined;
     } catch {
       state.subagent = undefined;
