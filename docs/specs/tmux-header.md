@@ -133,7 +133,7 @@ Mascot likeness is a trademark of Anthropic; personal-use vendoring is fine, pub
 const AGENT_PRIORITY = ["claude-code", "pi", "codex", "amp"];
 ```
 
-`pickAgentForWindow(agents)` returns the first match from `AGENT_PRIORITY` present in `agents`, falling back to `agents[0]` and finally to `"generic"`. Mirrors the existing `AGENT_TITLE_PATTERNS` ordering in `server/index.ts`.
+`pickAgentForWindow(agents)` returns the first match from `AGENT_PRIORITY` present in `agents`, falling back to `agents[0]` and finally to `"generic"`. Mirrors the existing `AGENT_COMM_PATTERNS` ordering in `server/index.ts`.
 
 ---
 

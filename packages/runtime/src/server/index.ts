@@ -1292,6 +1292,16 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     const trackedEvent = tracker.getEvent(sessionName, agentName, threadId);
     const expectedPid = trackedEvent?.pid;
     if (expectedPid !== undefined) {
+      // Gate unknown agents before the verify path: findAgentPidsInPane
+      // returns [] for both "agent has no descendants in this pane" and
+      // "agent name has no comm-pattern entry". Refusing on [] would mislabel
+      // the second case as a pid mismatch. Caller-side this is unreachable
+      // (agentName originates from tracker events we emit) but a future
+      // alternate watcher could violate that assumption.
+      if (!(agentName in AGENT_COMM_PATTERNS)) {
+        log("kill-agent-pane", "unable to verify pid (no comm patterns for agent)", { sessionName, agentName, paneId: targetPaneId });
+        return;
+      }
       // The display-message subshell here is structural, not vestigial like
       // Bug 14's: paneId (e.g. "%5") is tmux's identifier; findAgentPidsInPane
       // needs the pane's OS shell pid to feed `pgrep -P`. No tmux primitive
