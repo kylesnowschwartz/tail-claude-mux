@@ -136,6 +136,8 @@ export class AgentTracker {
     if (prev?.paneId) {
       event.paneId = event.paneId ?? prev.paneId;
       event.liveness = event.liveness ?? prev.liveness;
+      event.windowIndex = event.windowIndex ?? prev.windowIndex;
+      event.paneIndex = event.paneIndex ?? prev.paneIndex;
     }
     // Preserve subagent across PostToolUse-style events that don't re-read sessions/
     if (event.subagent === undefined && prev?.subagent !== undefined) {
@@ -152,23 +154,50 @@ export class AgentTracker {
     // rb-planner) and must stay until those processes fire their own hooks.
     // Deleting them indiscriminately produced ~3s flicker as the pane scanner
     // re-created them on every cycle.
+    //
+    // Prefer matching by PID — synthetics carry the scanner's pid, this event
+    // carries the watcher's pid, both resolve from the same OS process. PID
+    // match disambiguates when several synthetics share an agent name.
+    // Fall back to paneId match (when we already adopted one), then to
+    // first-with-paneId (cold-boot watcher with no pane info yet).
     let graduateKey: string | undefined;
-    for (const [k, ev] of sessionInstances) {
-      if (k === key) continue;
-      if (ev.agent !== event.agent) continue;
-      if (!k.includes(":pane:")) continue;
-      // Two graduation cases:
-      //   1. We have no paneId yet — adopt this synthetic's pane and graduate it.
-      //   2. We already have a paneId — graduate the synthetic whose pane matches.
-      if (ev.paneId && !event.paneId) {
-        event.paneId = ev.paneId;
-        event.liveness = ev.liveness;
+    if (event.pid !== undefined) {
+      for (const [k, ev] of sessionInstances) {
+        if (k === key) continue;
+        if (ev.agent !== event.agent) continue;
+        if (!k.includes(":pane:")) continue;
+        if (ev.pid !== event.pid) continue;
+        event.paneId = event.paneId ?? ev.paneId;
+        event.liveness = event.liveness ?? ev.liveness;
+        event.windowIndex = event.windowIndex ?? ev.windowIndex;
+        event.paneIndex = event.paneIndex ?? ev.paneIndex;
         graduateKey = k;
         break;
       }
-      if (event.paneId && ev.paneId === event.paneId) {
-        graduateKey = k;
-        break;
+    }
+    if (graduateKey === undefined) {
+      for (const [k, ev] of sessionInstances) {
+        if (k === key) continue;
+        if (ev.agent !== event.agent) continue;
+        if (!k.includes(":pane:")) continue;
+        // Two graduation cases:
+        //   1. We have no paneId yet — adopt this synthetic's pane and graduate it.
+        //   2. We already have a paneId — graduate the synthetic whose pane matches.
+        if (ev.paneId && !event.paneId) {
+          // Don't adopt a synthetic whose pid disagrees with this event's pid —
+          // it belongs to a different process.
+          if (event.pid !== undefined && ev.pid !== undefined && ev.pid !== event.pid) continue;
+          event.paneId = ev.paneId;
+          event.liveness = ev.liveness;
+          event.windowIndex = event.windowIndex ?? ev.windowIndex;
+          event.paneIndex = event.paneIndex ?? ev.paneIndex;
+          graduateKey = k;
+          break;
+        }
+        if (event.paneId && ev.paneId === event.paneId) {
+          graduateKey = k;
+          break;
+        }
       }
     }
     if (graduateKey !== undefined) {
@@ -228,7 +257,20 @@ export class AgentTracker {
         const isUnseen = this.unseenInstances.has(this.unseenKey(session, key));
         return isUnseen ? { ...event, unseen: true } : event;
       })
-      .sort((a, b) => (a.firstSeenTs ?? a.ts) - (b.firstSeenTs ?? b.ts));
+      .sort((a, b) => {
+        // Primary: tmux window index so rows align with the status-bar tabs.
+        // Secondary: pane index within a window for stable ordering when
+        // multiple agents share a window. Tertiary: firstSeenTs keeps
+        // watcher-only rows (no pane info yet) and synthetics in arrival
+        // order. Unresolved values sort last via Infinity.
+        const wA = a.windowIndex ?? Infinity;
+        const wB = b.windowIndex ?? Infinity;
+        if (wA !== wB) return wA - wB;
+        const pA = a.paneIndex ?? Infinity;
+        const pB = b.paneIndex ?? Infinity;
+        if (pA !== pB) return pA - pB;
+        return (a.firstSeenTs ?? a.ts) - (b.firstSeenTs ?? b.ts);
+      });
   }
 
   /** Returns recent event timestamps for sparkline rendering */
@@ -483,23 +525,53 @@ export class AgentTracker {
       // producing entry-count drift when multiple panes share an agent.
       // Skip entries the liveness sweep marked dead — resurrecting them
       // flickers the row against the sweep at every broadcast.
+      //
+      // Disambiguate by PID when available. Watcher entries resolve pid via
+      // ancestor walk on hook fire; the pane scanner resolves the same pid
+      // via descendant walk of the pane's shell. When both agree, the claim
+      // is unambiguous even with multiple panes sharing an agent name
+      // (assistant + rb-orchestrator + rb-planner all "claude-code").
+      // Without this guard, the loop fell back to Map iteration order and
+      // silently crisscrossed watcher entries with the wrong panes.
       let bestKey: string | undefined;
       let bestEvent: AgentEvent | undefined;
+      let fallbackKey: string | undefined;
+      let fallbackEvent: AgentEvent | undefined;
       for (const [k, ev] of sessionInstances) {
         if (ev.agent !== pa.agent) continue;
         if (claimedKeys.has(k)) continue;
         if (ev.liveness === "exited") continue;
         if (k.includes(":pane:")) continue;
-        bestKey = k;
-        bestEvent = ev;
-        break;
+        if (pa.pid !== undefined && ev.pid === pa.pid) {
+          // Strict PID match — done.
+          bestKey = k;
+          bestEvent = ev;
+          break;
+        }
+        // Fallback only when the entry has no pid yet (cold-boot watcher).
+        // An entry with a different pid belongs to a different process —
+        // never claim it from this pane.
+        if (ev.pid === undefined && fallbackEvent === undefined) {
+          fallbackKey = k;
+          fallbackEvent = ev;
+        }
+      }
+      if (!bestEvent) {
+        bestKey = fallbackKey;
+        bestEvent = fallbackEvent;
       }
 
       if (bestEvent && bestKey) {
         claimedKeys.add(bestKey);
-        const wasDifferent = bestEvent.paneId !== pa.paneId || bestEvent.liveness !== "alive";
+        const wasDifferent =
+          bestEvent.paneId !== pa.paneId ||
+          bestEvent.liveness !== "alive" ||
+          bestEvent.windowIndex !== pa.windowIndex ||
+          bestEvent.paneIndex !== pa.paneIndex;
         bestEvent.paneId = pa.paneId;
         bestEvent.liveness = "alive";
+        bestEvent.windowIndex = pa.windowIndex;
+        bestEvent.paneIndex = pa.paneIndex;
         // Resolved — any pending miss for this entry is no longer relevant.
         this.clearMissState(session, bestKey);
         if (wasDifferent) changed = true;
@@ -524,13 +596,24 @@ export class AgentTracker {
           ts: this.now(),
           paneId: pa.paneId,
           liveness: "alive",
+          windowIndex: pa.windowIndex,
+          paneIndex: pa.paneIndex,
+          pid: pa.pid,
         });
         changed = true;
       } else {
         const existing = sessionInstances.get(syntheticKey)!;
-        const wasDifferent = existing.paneId !== pa.paneId || existing.liveness !== "alive";
+        const wasDifferent =
+          existing.paneId !== pa.paneId ||
+          existing.liveness !== "alive" ||
+          existing.windowIndex !== pa.windowIndex ||
+          existing.paneIndex !== pa.paneIndex ||
+          existing.pid !== pa.pid;
         existing.paneId = pa.paneId;
         existing.liveness = "alive";
+        existing.windowIndex = pa.windowIndex;
+        existing.paneIndex = pa.paneIndex;
+        existing.pid = pa.pid;
         this.clearMissState(session, syntheticKey);
         if (wasDifferent) changed = true;
       }

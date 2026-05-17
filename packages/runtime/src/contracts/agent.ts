@@ -20,6 +20,14 @@ export interface AgentEvent {
   unseen?: boolean;
   /** Set by pane scanner — the tmux pane ID where this agent was detected */
   paneId?: string;
+  /** Set by pane scanner — tmux window index where this agent's pane lives.
+   *  Used in the TUI agent-row left slot so rows line up with the status-bar
+   *  window tabs. Renumbers when windows close if `renumber-windows on`. */
+  windowIndex?: number;
+  /** Set by pane scanner — tmux pane index within the window. Used as the
+   *  secondary sort key so multiple agents in the same window appear in
+   *  pane order. */
+  paneIndex?: number;
   /** Whether the agent process is alive, exited, or unknown (no pane info) */
   liveness?: AgentLiveness;
   /** OS process id of the long-lived agent process. Resolved by the watcher
@@ -47,4 +55,14 @@ export const TERMINAL_STATUSES = new Set<AgentStatus>(["done", "error", "interru
 export interface PanePresenceInput {
   agent: string;
   paneId: string;
+  /** Agent process PID resolved via descendant walk of the pane's shell.
+   *  Matches AgentEvent.pid so the tracker can claim a watcher entry by
+   *  PID instead of "first unclaimed by iteration order" — which silently
+   *  crisscrossed entries when multiple panes shared an agent name. */
+  pid?: number;
+  /** tmux window index hosting this pane — surfaced in the TUI to mirror the
+   *  status-bar window tabs. */
+  windowIndex?: number;
+  /** tmux pane index within the window. Secondary sort key for the TUI list. */
+  paneIndex?: number;
 }

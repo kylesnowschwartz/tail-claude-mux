@@ -1000,4 +1000,173 @@ describe("AgentTracker", () => {
       expect(t.getAgents("sess-1")[0]!.subagent).toBe("doc-writer");
     });
   });
+
+  // --- windowIndex / paneIndex from pane scanner ---
+
+  describe("windowIndex / paneIndex", () => {
+    test("synthetic carries windowIndex and paneIndex from scanner input", () => {
+      const t = new AgentTracker();
+      t.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%7", windowIndex: 3, paneIndex: 1 },
+      ]);
+
+      const a = t.getAgents("sess-1")[0]!;
+      expect(a.windowIndex).toBe(3);
+      expect(a.paneIndex).toBe(1);
+    });
+
+    test("watcher entry adopts windowIndex/paneIndex on pane enrichment", () => {
+      const t = new AgentTracker();
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "running" }));
+      t.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%7", windowIndex: 2, paneIndex: 0 },
+      ]);
+
+      const a = t.getAgents("sess-1")[0]!;
+      expect(a.windowIndex).toBe(2);
+      expect(a.paneIndex).toBe(0);
+    });
+
+    test("subsequent watcher event without pane info preserves windowIndex/paneIndex", () => {
+      const t = new AgentTracker();
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "running" }));
+      t.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%7", windowIndex: 2, paneIndex: 0 },
+      ]);
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "waiting" }));
+
+      const a = t.getAgents("sess-1")[0]!;
+      expect(a.windowIndex).toBe(2);
+      expect(a.paneIndex).toBe(0);
+    });
+
+    test("synthetic graduation copies windowIndex/paneIndex onto adopting watcher entry", () => {
+      const t = new AgentTracker();
+      // Pane scanner sees a claude-code in window 4 first — creates a synthetic.
+      t.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%9", windowIndex: 4, paneIndex: 2 },
+      ]);
+      // Then the watcher fires — should adopt the synthetic's pane fields.
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "running" }));
+
+      const agents = t.getAgents("sess-1");
+      expect(agents.length).toBe(1);
+      expect(agents[0]!.threadId).toBe("abc");
+      expect(agents[0]!.windowIndex).toBe(4);
+      expect(agents[0]!.paneIndex).toBe(2);
+    });
+
+    test("getAgents sorts by (windowIndex, paneIndex, firstSeenTs)", () => {
+      const t = new AgentTracker();
+      // Three watcher entries arrive in firstSeenTs order: t1, t2, t3.
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "t1", status: "running", ts: 100 }));
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "t2", status: "running", ts: 200 }));
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "t3", status: "running", ts: 300 }));
+
+      // Scanner reports them in window/pane order: t2→w1p0, t3→w2p0, t1→w2p1.
+      // Pane scanner doesn't know threadIds, so emit three panes; the claim
+      // loop picks one unclaimed entry per pane in instance-iteration order
+      // (t1, t2, t3 — Map insertion order). We control the assignment by
+      // calling applyPanePresence with one pane at a time across separate
+      // scans so each pane binds to the next unclaimed entry.
+      t.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%1", windowIndex: 2, paneIndex: 1 },
+        { agent: "claude-code", paneId: "%2", windowIndex: 1, paneIndex: 0 },
+        { agent: "claude-code", paneId: "%3", windowIndex: 2, paneIndex: 0 },
+      ]);
+
+      const order = t.getAgents("sess-1").map((a) => a.threadId);
+      // Expected: rows sort by (window asc, pane asc) — t2 (w1p0), t3 (w2p0), t1 (w2p1)
+      expect(order).toEqual(["t2", "t3", "t1"]);
+    });
+
+    test("claim loop prefers PID match over Map iteration order (no crisscross)", () => {
+      const t = new AgentTracker();
+      // Two claude-code watcher entries — different threadIds, different pids.
+      // Insertion order: assistant first, rb-orch second.
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "assistant", status: "running", pid: 1001 }));
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "rb-orch",  status: "running", pid: 2002 }));
+
+      // Scanner emits panes in the OPPOSITE order — rb-orch's pane first.
+      // Without pid-aware claiming, the loop would crisscross:
+      //   pane %200 (pid 2002) → claims first unclaimed entry = "assistant"
+      //   pane %100 (pid 1001) → claims next unclaimed entry = "rb-orch"
+      // With pid-aware claiming, each pane claims the entry whose pid matches.
+      t.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%200", pid: 2002, windowIndex: 2, paneIndex: 2 },
+        { agent: "claude-code", paneId: "%100", pid: 1001, windowIndex: 4, paneIndex: 1 },
+      ]);
+
+      const agents = t.getAgents("sess-1");
+      const assistant = agents.find((a) => a.threadId === "assistant")!;
+      const rbOrch    = agents.find((a) => a.threadId === "rb-orch")!;
+      expect(assistant.paneId).toBe("%100");
+      expect(assistant.windowIndex).toBe(4);
+      expect(rbOrch.paneId).toBe("%200");
+      expect(rbOrch.windowIndex).toBe(2);
+    });
+
+    test("claim loop falls back to PID-less watcher when no PID match available", () => {
+      const t = new AgentTracker();
+      // Cold-boot watcher entry — no pid yet (hook hasn't fired).
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "running" }));
+
+      // Scanner emits a pane with a pid that doesn't match anything yet —
+      // the PID-less entry is a fair fallback target.
+      t.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%5", pid: 1234, windowIndex: 1, paneIndex: 0 },
+      ]);
+
+      const agents = t.getAgents("sess-1");
+      expect(agents.length).toBe(1);
+      expect(agents[0]!.threadId).toBe("abc");
+      expect(agents[0]!.paneId).toBe("%5");
+    });
+
+    test("claim loop refuses to bind to an entry whose pid disagrees", () => {
+      const t = new AgentTracker();
+      // Watcher resolved pid 5555.
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "running", pid: 5555 }));
+
+      // Scanner sees a different pid (e.g. a freshly-launched second claude
+      // whose hook hasn't fired yet) — must NOT claim the pid 5555 entry.
+      t.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%9", pid: 9999, windowIndex: 1, paneIndex: 0 },
+      ]);
+
+      const agents = t.getAgents("sess-1");
+      const watcher = agents.find((a) => a.threadId === "abc")!;
+      // Watcher entry must not have been bound to %9.
+      expect(watcher.paneId).toBeUndefined();
+      // A synthetic should have been minted for the new pane.
+      const synthetic = agents.find((a) => a.paneId === "%9")!;
+      expect(synthetic).toBeDefined();
+      expect(synthetic.pid).toBe(9999);
+    });
+
+    test("getAgents puts rows without windowIndex last", () => {
+      const t = new AgentTracker();
+      // t1 has no pane info; t2 is on window 5.
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "t1", status: "running", ts: 100 }));
+      t.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "t2", status: "running", ts: 200 }));
+      t.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%2", windowIndex: 5, paneIndex: 0 },
+      ]);
+
+      // t1 had no pane match — only t2 got enriched. Pane scanner picks the
+      // first unclaimed entry in iteration order (t1), so t1 gets the pane.
+      // Force the opposite: enrich t2 first by applying pane presence with
+      // both present — t1 alphabetically/insertion-first gets the pane.
+      // Simpler: just check that the watcher entry with windowIndex sorts
+      // before the one without.
+      const agents = t.getAgents("sess-1");
+      const withWin = agents.find((a) => a.windowIndex !== undefined);
+      const without = agents.find((a) => a.windowIndex === undefined);
+      expect(withWin).toBeDefined();
+      expect(without).toBeDefined();
+      const idxWith = agents.indexOf(withWin!);
+      const idxWithout = agents.indexOf(without!);
+      expect(idxWith).toBeLessThan(idxWithout);
+    });
+  });
 });

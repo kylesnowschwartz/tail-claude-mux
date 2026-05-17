@@ -785,6 +785,12 @@ function App() {
   // --- Pane focus: does this terminal pane have focus? ---
   const [paneFocused, setPaneFocused] = createSignal(false);
 
+  // --- Pane focus: which paneId is currently focused anywhere in the user's
+  //     tmux session? Used to mark the agent row whose pane the user is
+  //     currently looking at. Separate from paneFocused, which is scoped to
+  //     "is THIS TUI's host pane the focused one?".
+  const [focusedPaneId, setFocusedPaneId] = createSignal<string | null>(null);
+
   // --- Panel focus: sessions list vs agent detail ---
   type PanelFocus = "sessions" | "agents";
   const [panelFocus, setPanelFocus] = createSignal<PanelFocus>("sessions");
@@ -866,8 +872,16 @@ function App() {
       }
 
       const agents = session.agents ?? [];
-      for (const _agent of agents) {
-        h++; // agent row — single line now (Row 2 retired in favour of ActivityZone)
+      for (const agent of agents) {
+        // Mirror the AgentListItem render so subagent + threadId wrapping is
+        // accounted for. Without this, rows that wrap to 2 lines push the
+        // card's effective click area outside its frame and later rows
+        // become un-clickable even though they appear visible.
+        let text = "0 " + agent.agent; // window-index slot is ~2 chars
+        if (agent.subagent) text += " · " + agent.subagent;
+        if (agent.threadId) text += " #" + shortThreadId(agent.threadId);
+        text += "  X"; // status glyph slot on the right
+        h += wrapLines(text);
       }
       // no gap between agents — card border provides visual grouping
 
@@ -948,6 +962,7 @@ function App() {
       agent: agent.agent,
       threadId: agent.threadId,
       threadName: agent.threadName,
+      paneId: agent.paneId,
     });
   }
 
@@ -981,6 +996,7 @@ function App() {
       agent: agent.agent,
       threadId: agent.threadId,
       threadName: agent.threadName,
+      paneId: agent.paneId,
     });
   }
 
@@ -1132,6 +1148,8 @@ function App() {
                 }
               }
             } else if (msg.type === "pane-focus") {
+              // Record the focused paneId globally for cross-row comparison.
+              setFocusedPaneId(msg.paneId ?? null);
               if (muxCtx.type !== "none") {
                 const isFocused = msg.paneId === muxCtx.paneId;
                 // During session switch, suppress transient unfocus to prevent blink
@@ -1414,6 +1432,7 @@ function App() {
                   }}
                   panelFocus={panelFocus}
                   focusedAgentIdx={focusedAgentIdx}
+                  focusedPaneId={focusedPaneId}
                   onAgentDismiss={(agent) => {
                     send({
                       type: "dismiss-agent",
@@ -1424,13 +1443,14 @@ function App() {
                   }}
                   onAgentFocus={(agent) => {
                     appendFileSync("/tmp/tcm-tui-agent-click.log",
-                      `[${new Date().toISOString()}] sending focus-agent-pane session=${session.name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`);
+                      `[${new Date().toISOString()}] sending focus-agent-pane session=${session.name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName} paneId=${agent.paneId}\n`);
                     send({
                       type: "focus-agent-pane",
                       session: session.name,
                       agent: agent.agent,
                       threadId: agent.threadId,
                       threadName: agent.threadName,
+                      paneId: agent.paneId,
                     });
                   }}
                 />
@@ -1464,6 +1484,7 @@ function App() {
                 onSelect={() => switchToSession(data().name)}
                 panelFocus={panelFocus}
                 focusedAgentIdx={focusedAgentIdx}
+                focusedPaneId={focusedPaneId}
                 onAgentDismiss={(agent) => {
                   send({
                     type: "dismiss-agent",
@@ -1474,13 +1495,14 @@ function App() {
                 }}
                 onAgentFocus={(agent) => {
                   appendFileSync("/tmp/tcm-tui-agent-click.log",
-                    `[${new Date().toISOString()}] sending focus-agent-pane session=${data().name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`);
+                    `[${new Date().toISOString()}] sending focus-agent-pane session=${data().name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName} paneId=${agent.paneId}\n`);
                   send({
                     type: "focus-agent-pane",
                     session: data().name,
                     agent: agent.agent,
                     threadId: agent.threadId,
                     threadName: agent.threadName,
+                    paneId: agent.paneId,
                   });
                 }}
               />
@@ -1512,6 +1534,7 @@ function App() {
                   }}
                   panelFocus={panelFocus}
                   focusedAgentIdx={focusedAgentIdx}
+                  focusedPaneId={focusedPaneId}
                   onAgentDismiss={(agent) => {
                     send({
                       type: "dismiss-agent",
@@ -1522,13 +1545,14 @@ function App() {
                   }}
                   onAgentFocus={(agent) => {
                     appendFileSync("/tmp/tcm-tui-agent-click.log",
-                      `[${new Date().toISOString()}] sending focus-agent-pane session=${session.name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`);
+                      `[${new Date().toISOString()}] sending focus-agent-pane session=${session.name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName} paneId=${agent.paneId}\n`);
                     send({
                       type: "focus-agent-pane",
                       session: session.name,
                       agent: agent.agent,
                       threadId: agent.threadId,
                       threadName: agent.threadName,
+                      paneId: agent.paneId,
                     });
                   }}
                 />
@@ -1844,6 +1868,7 @@ interface AgentListItemProps {
   // is dormant otherwise.
   glowT: Accessor<number>;
   isKeyboardFocused: boolean;
+  isPaneFocused: boolean;
   onDismiss: () => void;
   onFocusPane: () => void;
 }
@@ -1939,7 +1964,7 @@ function AgentListItem(props: AgentListItemProps) {
             onMouseOver={() => setIsDismissHover(true)}
             onMouseOut={() => setIsDismissHover(false)}
           >
-            <span style={{ fg: isDismissHover() ? P().red : P().overlay0 }}>{"✕ "}</span>
+            <span style={{ fg: isDismissHover() ? P().red : P().overlay0 }}>{(props.agent.windowIndex != null ? String(props.agent.windowIndex) : "·") + " "}</span>
           </text>
           <text flexGrow={1} truncate>
             <span style={{
@@ -1951,6 +1976,9 @@ function AgentListItem(props: AgentListItemProps) {
             </Show>
             <Show when={props.agent.threadId}>
               <span style={{ fg: P().overlay0, attributes: DIM }}>{" #"}{shortThreadId(props.agent.threadId!)}</span>
+            </Show>
+            <Show when={props.isPaneFocused}>
+              <span style={{ fg: P().sky }}>{" •"}</span>
             </Show>
           </text>
           <text flexShrink={0}>
@@ -1980,6 +2008,7 @@ interface SessionCardProps {
   onSelect: () => void;
   panelFocus: Accessor<"sessions" | "agents">;
   focusedAgentIdx: Accessor<number>;
+  focusedPaneId: Accessor<string | null>;
   onAgentDismiss: (agent: SessionData["agents"][number]) => void;
   onAgentFocus: (agent: SessionData["agents"][number]) => void;
 }
@@ -2186,6 +2215,7 @@ function SessionCard(props: SessionCardProps) {
                     spinIdx={props.spinIdx}
                     glowT={props.glowT}
                     isKeyboardFocused={props.panelFocus() === "agents" && i() === props.focusedAgentIdx()}
+                    isPaneFocused={agent.paneId != null && agent.paneId === props.focusedPaneId()}
                     onDismiss={() => props.onAgentDismiss(agent)}
                     onFocusPane={() => props.onAgentFocus(agent)}
                   />

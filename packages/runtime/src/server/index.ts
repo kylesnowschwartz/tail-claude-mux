@@ -1167,12 +1167,16 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     return targetPaneId;
   }
 
-  function focusAgentPane(sessionName: string, agentName: string, threadId?: string, threadName?: string): void {
-    log("focus-agent-pane", "received", { sessionName, agentName, threadId, threadName });
-    const targetPaneId = resolveAgentPaneId(sessionName, agentName, threadId, threadName);
+  function focusAgentPane(sessionName: string, agentName: string, threadId?: string, threadName?: string, explicitPaneId?: string): void {
+    log("focus-agent-pane", "received", { sessionName, agentName, threadId, threadName, explicitPaneId });
+    // Prefer the paneId the tracker already knows — same source as the
+    // window number the user clicked on, so display and navigation stay
+    // consistent. Fall back to per-agent re-resolution for older clients
+    // or rows where the tracker has no paneId yet.
+    const targetPaneId = explicitPaneId ?? resolveAgentPaneId(sessionName, agentName, threadId, threadName);
     if (!targetPaneId) return;
 
-    log("focus-agent-pane", "focusing", { sessionName, agentName, paneId: targetPaneId });
+    log("focus-agent-pane", "focusing", { sessionName, agentName, paneId: targetPaneId, fromClient: explicitPaneId !== undefined });
 
     // Switch to the window containing the target pane first,
     // otherwise select-pane alone won't work across windows
@@ -1197,12 +1201,12 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     );
   }
 
-  function killAgentPane(sessionName: string, agentName: string, threadId?: string, threadName?: string): void {
-    log("kill-agent-pane", "received", { sessionName, agentName, threadId, threadName });
-    const targetPaneId = resolveAgentPaneId(sessionName, agentName, threadId, threadName);
+  function killAgentPane(sessionName: string, agentName: string, threadId?: string, threadName?: string, explicitPaneId?: string): void {
+    log("kill-agent-pane", "received", { sessionName, agentName, threadId, threadName, explicitPaneId });
+    const targetPaneId = explicitPaneId ?? resolveAgentPaneId(sessionName, agentName, threadId, threadName);
     if (!targetPaneId) return;
 
-    log("kill-agent-pane", "killing", { sessionName, agentName, paneId: targetPaneId });
+    log("kill-agent-pane", "killing", { sessionName, agentName, paneId: targetPaneId, fromClient: explicitPaneId !== undefined });
     shell(["tmux", "kill-pane", "-t", targetPaneId]);
   }
 
@@ -1233,20 +1237,26 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   // commMatches is hoisted to module scope (see export at file bottom) so
   // unit tests can exercise the boundary rules without spinning up a server.
 
-  /** Walk up to 3 levels of child processes using a pre-built process tree. */
+  /** Walk up to 3 levels of child processes using a pre-built process tree.
+   *  Returns the matched child PID (the agent process itself, e.g. the claude
+   *  binary), or undefined if no descendant matches any pattern.
+   *  Callers use the PID to disambiguate among multiple agent watcher entries
+   *  with the same agent name — watcher event.pid is the same claude PID,
+   *  so the claim is unambiguous when both sides agree. */
   function matchProcessTreeFast(
     pid: number, patterns: string[],
     tree: ReturnType<typeof buildProcessTree>, depth = 0,
-  ): boolean {
-    if (depth > 2) return false;
+  ): number | undefined {
+    if (depth > 2) return undefined;
     const children = tree.childrenOf.get(pid);
-    if (!children) return false;
+    if (!children) return undefined;
     for (const childPid of children) {
       const comm = tree.commOf.get(childPid);
-      if (comm && patterns.some((pat) => commMatches(comm, pat))) return true;
-      if (matchProcessTreeFast(childPid, patterns, tree, depth + 1)) return true;
+      if (comm && patterns.some((pat) => commMatches(comm, pat))) return childPid;
+      const deeper = matchProcessTreeFast(childPid, patterns, tree, depth + 1);
+      if (deeper !== undefined) return deeper;
     }
-    return false;
+    return undefined;
   }
 
   /** Scan all panes across all tmux sessions and identify running agents.
@@ -1257,7 +1267,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
 
     const raw = shell([
       "tmux", "list-panes", "-a",
-      "-F", "#{session_name}|#{pane_id}|#{pane_pid}|#{pane_current_command}|#{pane_title}",
+      "-F", "#{session_name}|#{pane_id}|#{pane_pid}|#{pane_current_command}|#{window_index}|#{pane_index}|#{pane_title}",
     ]);
     if (!raw) return result;
 
@@ -1266,12 +1276,16 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
       const idx2 = line.indexOf("|", idx1 + 1);
       const idx3 = line.indexOf("|", idx2 + 1);
       const idx4 = line.indexOf("|", idx3 + 1);
+      const idx5 = line.indexOf("|", idx4 + 1);
+      const idx6 = line.indexOf("|", idx5 + 1);
       return {
         session: line.slice(0, idx1),
         id: line.slice(idx1 + 1, idx2),
         pid: parseInt(line.slice(idx2 + 1, idx3), 10),
         cmd: line.slice(idx3 + 1, idx4),
-        title: line.slice(idx4 + 1),
+        windowIndex: parseInt(line.slice(idx4 + 1, idx5), 10),
+        paneIndex: parseInt(line.slice(idx5 + 1, idx6), 10),
+        title: line.slice(idx6 + 1),
       };
     });
 
@@ -1291,14 +1305,21 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
       for (const [agentName, patterns] of Object.entries(AGENT_TITLE_PATTERNS)) {
         // Only use process tree matching — title matching produces false positives
         // (e.g. an Amp thread named "Detect Claude session names" matches "claude")
-        if (!matchProcessTreeFast(pane.pid, patterns, tree)) continue;
+        const agentPid = matchProcessTreeFast(pane.pid, patterns, tree);
+        if (agentPid === undefined) continue;
 
         let sessionAgents = result.get(pane.session);
         if (!sessionAgents) {
           sessionAgents = [];
           result.set(pane.session, sessionAgents);
         }
-        sessionAgents.push({ agent: agentName, paneId: pane.id });
+        sessionAgents.push({
+          agent: agentName,
+          paneId: pane.id,
+          pid: agentPid,
+          windowIndex: Number.isFinite(pane.windowIndex) ? pane.windowIndex : undefined,
+          paneIndex: Number.isFinite(pane.paneIndex) ? pane.paneIndex : undefined,
+        });
         break; // One agent per pane — first match wins (ordered so parents precede child tools)
       }
     }
@@ -1452,12 +1473,12 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
         }));
         break;
       case "focus-agent-pane":
-        log("handleCommand", "focus-agent-pane received", { session: cmd.session, agent: cmd.agent, threadId: cmd.threadId, threadName: cmd.threadName });
-        focusAgentPane(cmd.session, cmd.agent, cmd.threadId, cmd.threadName);
+        log("handleCommand", "focus-agent-pane received", { session: cmd.session, agent: cmd.agent, threadId: cmd.threadId, threadName: cmd.threadName, paneId: cmd.paneId });
+        focusAgentPane(cmd.session, cmd.agent, cmd.threadId, cmd.threadName, cmd.paneId);
         break;
       case "kill-agent-pane":
-        log("handleCommand", "kill-agent-pane received", { session: cmd.session, agent: cmd.agent, threadId: cmd.threadId, threadName: cmd.threadName });
-        killAgentPane(cmd.session, cmd.agent, cmd.threadId, cmd.threadName);
+        log("handleCommand", "kill-agent-pane received", { session: cmd.session, agent: cmd.agent, threadId: cmd.threadId, threadName: cmd.threadName, paneId: cmd.paneId });
+        killAgentPane(cmd.session, cmd.agent, cmd.threadId, cmd.threadName, cmd.paneId);
         break;
       case "report-width": {
         if (!sidebarVisible) {
