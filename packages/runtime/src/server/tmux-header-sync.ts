@@ -176,12 +176,35 @@ function computeWindowStates(input: PlanInput): SyncedState {
   const result: SyncedState = new Map();
   for (const [windowId, agents] of windowAgents) {
     const dominantName = pickAgentForWindow(agents.map((a) => a.agent));
-    const dominant = agents.find((a) => a.agent === dominantName) ?? agents[0]!;
+    // Among entries sharing the dominant agent name, pick the one with the
+    // highest severity priority. The old `.find(...)` returned the first by
+    // push order, so a running entry could hide behind an idle one in the
+    // same window — header showed grey while the agent was actually working.
+    const matching = agents.filter((a) => a.agent === dominantName);
+    const dominant = matching.reduce<AgentEvent | undefined>(
+      (best, cur) =>
+        best === undefined || severityRank(cur) > severityRank(best) ? cur : best,
+      undefined,
+    ) ?? agents[0]!;
     const glyph = AGENT_GLYPHS[dominantName] ?? AGENT_GLYPHS["generic"]!;
     const fg = toTmuxColour(severityColour(dominant, input.theme));
     result.set(windowId, { glyph, fg, agent: dominantName });
   }
   return result;
+}
+
+/** Rank a per-agent severity for the header tie-break. Higher wins.
+ *  Defined on the 5-state SeverityLabel surface that the header already
+ *  consumes (no cross-module STATUS_PRIORITY dependency). */
+const SEVERITY_RANK: Record<SeverityLabel, number> = {
+  error: 5,
+  working: 4,
+  waiting: 3,
+  ready: 2,
+  stopped: 1,
+};
+function severityRank(agent: AgentEvent): number {
+  return SEVERITY_RANK[severityLabel(agent.status, agent.liveness)];
 }
 
 // --- Severity colour resolution ---

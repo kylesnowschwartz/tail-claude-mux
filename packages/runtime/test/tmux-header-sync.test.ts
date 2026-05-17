@@ -410,6 +410,30 @@ describe("planTmuxHeaderSync severity-aware fg", () => {
     expect(out.newWindows.get("@4")?.fg).toBe(BLUE);
   });
 
+  test("severity tie-break picks highest-severity entry sharing the dominant name", () => {
+    // Two claude-code instances in the same window: idle 'done' (alive=ready)
+    // pushed first, running pushed second. The old `.find()` picked the first
+    // by push order and rendered green; we want blue (working) to surface.
+    const sessions = [makeSession("s1", [
+      makeAgent({ agent: "claude-code", session: "s1", paneId: "%50", status: "done", liveness: "alive" }),
+      makeAgent({ agent: "claude-code", session: "s1", paneId: "%51", status: "running" }),
+    ])];
+    const paneToWindow = new Map([["%50", "@5"], ["%51", "@5"]]);
+    const out = planTmuxHeaderSync(emptyInput({ sessions, paneToWindow }));
+    expect(out.newWindows.get("@5")?.agent).toBe("claude-code");
+    expect(out.newWindows.get("@5")?.fg).toBe(BLUE);
+  });
+
+  test("severity tie-break: error outranks working among same-agent entries", () => {
+    const sessions = [makeSession("s1", [
+      makeAgent({ agent: "claude-code", session: "s1", paneId: "%60", status: "running" }),
+      makeAgent({ agent: "claude-code", session: "s1", paneId: "%61", status: "error" }),
+    ])];
+    const paneToWindow = new Map([["%60", "@6"], ["%61", "@6"]]);
+    const out = planTmuxHeaderSync(emptyInput({ sessions, paneToWindow }));
+    expect(out.newWindows.get("@6")?.fg).toBe(RED);
+  });
+
   test("status change without agent-type change re-emits a new fg", () => {
     const paneToWindow = new Map([["%10", "@1"]]);
     const first = planTmuxHeaderSync(emptyInput({
