@@ -72,6 +72,13 @@ export interface PaneInfo {
   height: number;
   left: number;
   right: number;
+  /** Set to "1" by the runtime when spawning a sidebar pane via
+   *  setPaneOption(id, "@tcm-sidebar", "1"). Stable across our process
+   *  restarts (tmux owns the storage). Use this instead of matching
+   *  pane_title — title can be silently rewritten by anything in the
+   *  pane (shell escape sequences, automatic-rename) and so isn't a
+   *  trustworthy identifier. */
+  tcmSidebar: string;
 }
 
 export interface ClientInfo {
@@ -206,6 +213,7 @@ const PANE_SPEC: FieldSpec<PaneInfo> = {
   height: ["pane_height", int],
   left: ["pane_left", int],
   right: ["pane_right", int],
+  tcmSidebar: ["@tcm-sidebar", str],
 };
 
 const CLIENT_SPEC: FieldSpec<ClientInfo> = {
@@ -376,6 +384,14 @@ export class TmuxClient {
     this.run(["select-pane", "-t", target, "-T", title]);
   }
 
+  /** Set a tmux pane-local user-option (an @-prefixed option, queryable via
+   *  `#{@name}` in format strings). Use for stable per-pane identification
+   *  that survives our process restarts and can't be silently rewritten by
+   *  shell escape sequences the way pane_title can. */
+  setPaneOption(target: string, name: string, value: string): void {
+    this.run(["set-option", "-p", "-t", target, name, value]);
+  }
+
   killPane(target: string): void {
     this.run(["kill-pane", "-t", target]);
   }
@@ -466,12 +482,16 @@ export class TmuxClient {
    * Get the active pane's cwd for every session in one `list-panes -a` call.
    * Uses tmux's -f filter to get only non-sidebar panes in active windows.
    * First hit per session wins (tmux lists active pane first).
+   *
+   * Sidebar exclusion uses the @tcm-sidebar pane-local option (stable) and
+   * falls back to pane_title equality (backward compat for sidebars spawned
+   * before the marker was introduced).
    */
   getActiveSessionDirs(): Map<string, string> {
     const dirs = new Map<string, string>();
     const { stdout } = this.run([
       "list-panes", "-a",
-      "-f", "#{&&:#{window_active},#{!=:#{pane_title},tcm-sidebar}}",
+      "-f", "#{&&:#{window_active},#{&&:#{!=:#{@tcm-sidebar},1},#{!=:#{pane_title},tcm-sidebar}}}",
       "-F", `#{session_name}${SEP}#{pane_current_path}`,
     ]);
     if (!stdout) return dirs;

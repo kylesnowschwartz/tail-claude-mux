@@ -33,8 +33,9 @@ done
 echo "  ✓ removed global hooks"
 
 # --- Kill sidebar panes ---
-# Find all panes titled "tcm-sidebar" and kill them
-sidebar_panes=$(tmux list-panes -a -F '#{pane_id} #{pane_title}' 2>/dev/null | grep 'tcm-sidebar' | awk '{print $1}') || true
+# Identify by @tcm-sidebar pane-local option (primary) + pane_title fallback.
+sidebar_panes=$(tmux list-panes -a -F '#{pane_id} #{@tcm-sidebar} #{pane_title}' 2>/dev/null \
+  | awk '$2 == "1" || $3 == "tcm-sidebar" { print $1 }') || true
 if [ -n "$sidebar_panes" ]; then
   for pane in $sidebar_panes; do
     tmux kill-pane -t "$pane" 2>/dev/null || true

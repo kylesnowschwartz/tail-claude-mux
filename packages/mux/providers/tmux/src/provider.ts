@@ -29,6 +29,21 @@ function rawTmux(args: string[]): string {
 
 const STASH_SESSION = "_tcm_stash";
 const SIDEBAR_PANE_TITLE = "tcm-sidebar";
+/** tmux pane-local user-option set on every sidebar pane we spawn. Stable
+ *  across our process restarts (tmux owns the storage) and can't be
+ *  silently rewritten by anything inside the pane the way `pane_title`
+ *  can (shell escape `\\e]2;...\\a` rewrites the title). Identification
+ *  primary key. The title is kept as a recovery hint for in-flight
+ *  migration. */
+const SIDEBAR_MARKER_OPTION = "@tcm-sidebar";
+const SIDEBAR_MARKER_VALUE = "1";
+
+/** A pane is a sidebar iff its @tcm-sidebar marker is set, OR (for backward
+ *  compat with sidebars spawned before this marker was introduced) its
+ *  pane_title equals SIDEBAR_PANE_TITLE. New spawns always set the marker. */
+function isSidebarPane(p: { tcmSidebar: string; title: string }): boolean {
+  return p.tcmSidebar === SIDEBAR_MARKER_VALUE || p.title === SIDEBAR_PANE_TITLE;
+}
 
 export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapable, BatchCapable {
   readonly name = "tmux";
@@ -117,8 +132,8 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
       return; // stash session doesn't exist — nothing to prune
     }
     for (const p of stashPanes) {
-      if (p.title !== SIDEBAR_PANE_TITLE) {
-        plog("pruneStashOrphans", { paneId: p.id, title: p.title });
+      if (!isSidebarPane(p)) {
+        plog("pruneStashOrphans", { paneId: p.id, title: p.title, tcmSidebar: p.tcmSidebar });
         try { tmux.killPane(p.id); } catch {}
       }
     }
@@ -134,7 +149,7 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     }
 
     return panes
-      .filter((p) => p.title === SIDEBAR_PANE_TITLE && p.sessionName !== STASH_SESSION)
+      .filter((p) => isSidebarPane(p) && p.sessionName !== STASH_SESSION)
       .map((p) => ({
         paneId: p.id,
         sessionName: p.sessionName,
@@ -171,12 +186,15 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     // --- Try to restore a stashed sidebar pane ---
     try {
       const stashPanes = tmux.listPanes({ scope: "session", target: STASH_SESSION });
-      const stashedPane = stashPanes.find((p) => p.title === SIDEBAR_PANE_TITLE);
+      const stashedPane = stashPanes.find((p) => isSidebarPane(p));
       if (stashedPane) {
         plog("spawnSidebar: restoring from stash", { paneId: stashedPane.id, target: targetPane.id });
         const joinFlag = position === "left" ? "-hb" : "-h";
         rawTmux(["join-pane", joinFlag, "-f", "-l", String(width), "-s", stashedPane.id, "-t", targetPane.id]);
         tmux.setPaneTitle(stashedPane.id, SIDEBAR_PANE_TITLE);
+        // Re-stamp the marker — opportunistic migration for old stashed
+        // panes that pre-date the @tcm-sidebar option.
+        tmux.setPaneOption(stashedPane.id, SIDEBAR_MARKER_OPTION, SIDEBAR_MARKER_VALUE);
         // Do NOT selectPane here — same as fresh spawns. The TUI's
         // restoreTerminalModes fires on focus-in after join-pane, generating
         // capability query responses. Refocusing the main pane immediately
@@ -202,6 +220,9 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     }
 
     tmux.setPaneTitle(newPane.id, SIDEBAR_PANE_TITLE);
+    // Stable identification marker — survives pane_title rewriting by
+    // any escape sequences the TUI process emits while running.
+    tmux.setPaneOption(newPane.id, SIDEBAR_MARKER_OPTION, SIDEBAR_MARKER_VALUE);
     // Do NOT selectPane here for fresh spawns — the TUI's refocusMainPane()
     // handles it after terminal capability detection finishes. Refocusing
     // immediately causes capability query responses (DECRPM, DA1, Kitty
@@ -241,7 +262,7 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     }
     // Find sidebar panes that are the only pane in their window
     for (const p of allPanes) {
-      if (p.title !== SIDEBAR_PANE_TITLE || p.sessionName === STASH_SESSION) continue;
+      if (!isSidebarPane(p) || p.sessionName === STASH_SESSION) continue;
       if (windowPaneCounts.get(p.windowId) === 1) {
         tmux.killPane(p.id);
       }

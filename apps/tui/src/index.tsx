@@ -152,11 +152,17 @@ function refocusMainPane() {
           ).stdout.toString().trim();
       if (!windowId) return;
       const r = Bun.spawnSync(
-        ["tmux", "list-panes", "-t", windowId, "-F", "#{pane_id} #{pane_title}"],
+        ["tmux", "list-panes", "-t", windowId, "-F", "#{pane_id} #{@tcm-sidebar} #{pane_title}"],
         { stdout: "pipe", stderr: "pipe" },
       );
       const lines = r.stdout.toString().trim().split("\n");
-      const main = lines.find((l) => !l.includes("tcm-sidebar"));
+      // A "main" pane is anything that's NOT a sidebar — neither marker nor
+      // legacy title. Sidebar identification: @tcm-sidebar=="1" primary,
+      // pane_title fallback.
+      const main = lines.find((l) => {
+        const parts = l.split(" ");
+        return parts[1] !== "1" && parts.slice(2).join(" ") !== "tcm-sidebar";
+      });
       if (main) {
         const paneId = main.split(" ")[0];
         Bun.spawnSync(["tmux", "select-pane", "-t", paneId], { stdout: "pipe", stderr: "pipe" });

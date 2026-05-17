@@ -4,7 +4,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/server-common.sh"
 
 find_sidebar_pane() {
-  tmux list-panes -t "$1" -F '#{pane_id} #{pane_title}' 2>/dev/null | awk '$2 == "tcm-sidebar" { print $1; exit }'
+  # Sidebar identification: @tcm-sidebar marker primary, pane_title fallback
+  # for any in-flight legacy sidebars that pre-date the marker.
+  tmux list-panes -t "$1" -F '#{pane_id} #{@tcm-sidebar} #{pane_title}' 2>/dev/null \
+    | awk '$2 == "1" || $3 == "tcm-sidebar" { print $1; exit }'
 }
 
 WINDOW_ID="$(tmux display-message -p '#{window_id}' 2>/dev/null)"
