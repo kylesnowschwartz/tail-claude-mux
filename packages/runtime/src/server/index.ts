@@ -1030,7 +1030,10 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   const PANE_HIGHLIGHT_MS = 300;
   const pendingHighlightResets = new Map<string, ReturnType<typeof setTimeout>>();
 
-  /** Walk child processes (up to 3 levels) to find a process matching `name`, returning its PID. */
+  /** Walk child processes (up to 3 levels) to find a process matching `name`, returning its PID.
+   *  Uses boundary-aware commMatches: "pi" matches "pi", "/usr/bin/pi", "pi-helper"
+   *  but NOT "pip", "pipenv", "pipx". "codex" does NOT match "codex-cli" unless
+   *  intended (codex-cli has the hyphen suffix exception). */
   function findChildPid(pid: string, name: string, depth = 0): string | undefined {
     if (depth > 2) return undefined;
     const children = shell(["pgrep", "-P", pid]);
@@ -1039,7 +1042,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
       const trimmed = childPid.trim();
       if (!trimmed) continue;
       const childCmd = shell(["ps", "-p", trimmed, "-o", "comm="]);
-      if (childCmd?.trim().toLowerCase().includes(name)) return trimmed;
+      if (childCmd && commMatches(childCmd.trim().toLowerCase(), name)) return trimmed;
       const found = findChildPid(trimmed, name, depth + 1);
       if (found) return found;
     }
