@@ -1227,12 +1227,11 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
 
     log("focus-agent-pane", "focusing", { sessionName, agentName, paneId: targetPaneId, fromClient: explicitPaneId !== undefined });
 
-    // Switch to the window containing the target pane first,
-    // otherwise select-pane alone won't work across windows
-    const windowId = shell(["tmux", "display-message", "-t", targetPaneId, "-p", "#{window_id}"]);
-    if (windowId) {
-      shell(["tmux", "select-window", "-t", windowId.trim()]);
-    }
+    // Switch to the window containing the target pane first, otherwise
+    // select-pane alone won't work across windows. tmux select-window
+    // accepts a pane id directly (resolves to the pane's window), so we
+    // don't need the display-message subshell to look up window_id first.
+    shell(["tmux", "select-window", "-t", targetPaneId]);
     shell(["tmux", "select-pane", "-t", targetPaneId]);
 
     const existing = pendingHighlightResets.get(targetPaneId);
