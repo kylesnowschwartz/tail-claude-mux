@@ -983,6 +983,8 @@ function App() {
       session: data.name,
       agent: agent.agent,
       threadId: agent.threadId,
+      paneId: agent.paneId,
+      pid: agent.pid,
     });
     // Adjust index if we dismissed the last item
     if (focusedAgentIdx() >= agents.length - 1 && agents.length > 1) {
@@ -1446,6 +1448,8 @@ function App() {
                       session: session.name,
                       agent: agent.agent,
                       threadId: agent.threadId,
+                      paneId: agent.paneId,
+                      pid: agent.pid,
                     });
                   }}
                   onAgentFocus={(agent) => {
@@ -1498,6 +1502,8 @@ function App() {
                     session: data().name,
                     agent: agent.agent,
                     threadId: agent.threadId,
+                    paneId: agent.paneId,
+                    pid: agent.pid,
                   });
                 }}
                 onAgentFocus={(agent) => {
@@ -1548,6 +1554,8 @@ function App() {
                       session: session.name,
                       agent: agent.agent,
                       threadId: agent.threadId,
+                      paneId: agent.paneId,
+                      pid: agent.pid,
                     });
                   }}
                   onAgentFocus={(agent) => {

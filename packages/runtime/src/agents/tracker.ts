@@ -293,16 +293,31 @@ export class AgentTracker {
     return true;
   }
 
-  dismiss(session: string, agent: string, threadId?: string): boolean {
+  /** Remove the agent instance the caller is pointing at. Accepts every
+   *  identifier the TUI has access to — threadId for watcher rows, paneId for
+   *  synthetics that never carried one, pid as a tie-breaker when the same
+   *  agent occupies two panes with the same threadId (cloned worktrees,
+   *  replayed sessions). Matching is conjunctive: every supplied field must
+   *  agree with the candidate entry. The first match wins, so callers that
+   *  know paneId can target a specific row without flushing siblings. */
+  dismiss(session: string, agent: string, threadId?: string, paneId?: string, pid?: number): boolean {
     const sessionInstances = this.instances.get(session);
     if (!sessionInstances) return false;
 
-    const key = instanceKey(agent, threadId);
-    const removed = sessionInstances.delete(key);
-    if (!removed) return false;
+    let matchKey: string | undefined;
+    for (const [key, ev] of sessionInstances) {
+      if (ev.agent !== agent) continue;
+      if (threadId !== undefined && ev.threadId !== threadId) continue;
+      if (paneId !== undefined && ev.paneId !== paneId) continue;
+      if (pid !== undefined && ev.pid !== pid) continue;
+      matchKey = key;
+      break;
+    }
+    if (matchKey === undefined) return false;
 
-    this.unseenInstances.delete(this.unseenKey(session, key));
-    this.clearMissState(session, key);
+    sessionInstances.delete(matchKey);
+    this.unseenInstances.delete(this.unseenKey(session, matchKey));
+    this.clearMissState(session, matchKey);
     if (sessionInstances.size === 0) {
       this.instances.delete(session);
     }

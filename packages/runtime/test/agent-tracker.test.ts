@@ -176,6 +176,30 @@ describe("AgentTracker", () => {
     expect(tracker.getUnseen()).not.toContain("sess-1");
   });
 
+  test("dismiss with paneId targets the matching pane when threadIds collide", () => {
+    // Two panes running the same agent + threadId (replayed session, cloned
+    // worktree). Without paneId the dismiss would delete whichever Map key
+    // happened to win — both entries collapse to instanceKey("amp","t1") today,
+    // but the constraint scan should still honour paneId once we move the
+    // storage key off (agent, threadId). Asserts the API surface, not the
+    // storage shape.
+    tracker.applyEvent(event({ session: "sess-1", agent: "amp", threadId: "t1", paneId: "%5", pid: 1001 }));
+    expect(tracker.dismiss("sess-1", "amp", "t1", "%99", 9999)).toBe(false);
+    expect(tracker.dismiss("sess-1", "amp", "t1", "%5", 1001)).toBe(true);
+    expect(tracker.getAgents("sess-1")).toEqual([]);
+  });
+
+  test("dismiss without threadId can target a synthetic by paneId", () => {
+    // Synthetics carry paneId but no threadId — the old key-based dismiss
+    // would build instanceKey("amp", undefined) === "amp" and never match the
+    // synthetic stored under "amp:pane:%7".
+    tracker.applyPanePresence("sess-1", [{ agent: "amp", paneId: "%7", pid: 2002 }]);
+    expect(tracker.getAgents("sess-1").length).toBe(1);
+
+    expect(tracker.dismiss("sess-1", "amp", undefined, "%7")).toBe(true);
+    expect(tracker.getAgents("sess-1")).toEqual([]);
+  });
+
   // --- pruneStuck ---
 
   test("pruneStuck removes running states older than timeout", () => {
