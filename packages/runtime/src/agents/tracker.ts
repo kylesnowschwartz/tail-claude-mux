@@ -139,6 +139,12 @@ export class AgentTracker {
       event.windowIndex = event.windowIndex ?? prev.windowIndex;
       event.paneIndex = event.paneIndex ?? prev.paneIndex;
     }
+    // Preserve pid independently of paneId. A watcher event without pid
+    // (e.g. arriving before findChildPid resolves it) would otherwise lose
+    // the value the pane scanner already established, and fall through to
+    // the paneId-only graduation branch below — the very ambiguity the
+    // pid-keyed branch exists to avoid.
+    event.pid = event.pid ?? prev?.pid;
     // Preserve subagent across PostToolUse-style events that don't re-read sessions/
     if (event.subagent === undefined && prev?.subagent !== undefined) {
       event.subagent = prev.subagent;

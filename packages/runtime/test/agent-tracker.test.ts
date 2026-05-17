@@ -189,6 +189,17 @@ describe("AgentTracker", () => {
     expect(tracker.getAgents("sess-1")).toEqual([]);
   });
 
+  test("applyEvent preserves prev.pid when incoming event omits it", () => {
+    // Pane scanner posted a pid-bearing entry; a subsequent watcher event
+    // (e.g. PostToolUse) lands without pid. The pid must survive so the
+    // pid-keyed graduation branch can still disambiguate.
+    tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "t", pid: 4242, paneId: "%1" }));
+    tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "t", status: "waiting" })); // no pid, no paneId
+    const after = tracker.getAgents("sess-1").find((a) => a.threadId === "t");
+    expect(after?.pid).toBe(4242);
+    expect(after?.status).toBe("waiting");
+  });
+
   test("dismiss without threadId can target a synthetic by paneId", () => {
     // Synthetics carry paneId but no threadId — the old key-based dismiss
     // would build instanceKey("amp", undefined) === "amp" and never match the
