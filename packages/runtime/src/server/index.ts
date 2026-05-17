@@ -1053,18 +1053,22 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
    *  pairs in the same pane — a Claude Code "Task" tool spawns a sub-claude alongside the parent,
    *  and only one of them carries the threadId the TUI clicked on.
    *  Boundary-aware commMatches: "pi" matches "pi", "/usr/bin/pi", "pi-helper" but NOT "pip"/"pipenv". */
-  function findChildPids(pid: string, name: string, depth = 0, acc: string[] = []): string[] {
-    if (depth > 2) return acc;
+  function findChildPids(pid: string, name: string): string[] {
+    const acc: string[] = [];
+    collectChildPids(pid, name, 0, acc);
+    return acc;
+  }
+  function collectChildPids(pid: string, name: string, depth: number, acc: string[]): void {
+    if (depth > 2) return;
     const children = shell(["pgrep", "-P", pid]);
-    if (!children) return acc;
+    if (!children) return;
     for (const childPid of children.split("\n")) {
       const trimmed = childPid.trim();
       if (!trimmed) continue;
       const childCmd = shell(["ps", "-p", trimmed, "-o", "comm="]);
       if (childCmd && commMatches(childCmd.trim().toLowerCase(), name)) acc.push(trimmed);
-      findChildPids(trimmed, name, depth + 1, acc);
+      collectChildPids(trimmed, name, depth + 1, acc);
     }
-    return acc;
   }
 
   type PaneEntry = { id: string; pid: string; cmd: string; title: string };
@@ -1178,7 +1182,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     const expectedPid = trackedEvent?.pid;
     if (expectedPid !== undefined) {
       for (const pane of nonSidebar) {
-        const descendantPids = findChildPids(pane.pid, patterns[0]).map((p) => parseInt(p, 10));
+        const descendantPids = patterns.flatMap((pat) => findChildPids(pane.pid, pat)).map((p) => parseInt(p, 10));
         if (descendantPids.includes(expectedPid)) {
           targetPaneId = pane.id;
           break;
@@ -1282,7 +1286,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
         log("kill-agent-pane", "unable to verify pid (missing patterns or pane_pid)", { sessionName, agentName, paneId: targetPaneId });
         return;
       }
-      const liveAgentPids = findChildPids(panePidStr, patterns[0]).map((p) => parseInt(p, 10));
+      const liveAgentPids = patterns.flatMap((pat) => findChildPids(panePidStr, pat)).map((p) => parseInt(p, 10));
       if (!liveAgentPids.includes(expectedPid)) {
         log("kill-agent-pane", "refusing — pid mismatch (pane recycled?)", { sessionName, agentName, paneId: targetPaneId, expectedPid, liveAgentPids });
         return;
