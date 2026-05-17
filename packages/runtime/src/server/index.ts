@@ -368,10 +368,18 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     });
   }
 
-  // Bootstrap active sessions
-  const currentSession = mux.getCurrentSession();
-  if (currentSession) {
-    tracker.setActiveSessions([currentSession]);
+  // Bootstrap active sessions. listAttachedSessions covers the multi-client
+  // case where getCurrentSession() fails closed with null — every attached
+  // client's session is "active" from the tracker's point of view, so
+  // terminal events for any of them are not flagged unseen at bootstrap.
+  // Falls back to the single-session result when no clients are attached
+  // (cold daemon start before any TUI connects) for backward compatibility.
+  const attachedSessions = mux.listAttachedSessions();
+  if (attachedSessions.length > 0) {
+    tracker.setActiveSessions(attachedSessions);
+  } else {
+    const currentSession = mux.getCurrentSession();
+    if (currentSession) tracker.setActiveSessions([currentSession]);
   }
 
   // --- Agent watcher context ---

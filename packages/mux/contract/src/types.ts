@@ -43,6 +43,11 @@ export interface MuxProviderV1 {
    *  provider returns a best-effort answer (single attached client → that
    *  one; multiple → null, because the question is ambiguous). */
   getCurrentSession(clientTty?: string): string | null;
+  /** Return the set of session names that currently have at least one client
+   *  attached. Used at server bootstrap to seed the tracker's active-session
+   *  set without guessing a single "current" session in multi-client setups.
+   *  Empty array when no clients are attached. */
+  listAttachedSessions(): string[];
   getSessionDir(name: string): string;
   getPaneCount(name: string): number;
   getClientTty(): string;

@@ -68,6 +68,14 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     return tmux.getCurrentSession(clientTty);
   }
 
+  listAttachedSessions(): string[] {
+    const seen = new Set<string>();
+    for (const c of tmux.listClients()) {
+      if (c.sessionName) seen.add(c.sessionName);
+    }
+    return [...seen];
+  }
+
   getSessionDir(name: string): string {
     return tmux.getSessionDir(name);
   }
