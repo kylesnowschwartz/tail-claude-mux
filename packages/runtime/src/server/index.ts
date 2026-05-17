@@ -1146,7 +1146,29 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
 
     let targetPaneId: string | undefined;
 
-    if (agentName === "claude-code" && threadId) {
+    // Pid-first shortcut: if the tracker already knows the agent process's
+    // pid, walk panes once and match descendants directly. This skips the
+    // per-agent resolvers (sessions/<pid>.json read, sqlite query, lsof) for
+    // the common case where everything is consistent — much cheaper and
+    // sidesteps any disagreement between event.pid and what the resolvers
+    // would re-derive. Fall through to per-agent resolution only when the
+    // tracker has no pid yet, or the pid is no longer present in any live
+    // pane (process exited, pane recycled).
+    const trackedEvent = tracker.getAgents(sessionName).find(
+      (a) => a.agent === agentName && a.threadId === threadId,
+    );
+    const expectedPid = trackedEvent?.pid;
+    if (expectedPid !== undefined) {
+      for (const pane of nonSidebar) {
+        const descendantPids = findChildPids(pane.pid, patterns[0]).map((p) => parseInt(p, 10));
+        if (descendantPids.includes(expectedPid)) {
+          targetPaneId = pane.id;
+          break;
+        }
+      }
+    }
+
+    if (!targetPaneId && agentName === "claude-code" && threadId) {
       targetPaneId = resolveClaudeCodePane(nonSidebar, threadId);
     }
     if (!targetPaneId && agentName === "amp" && threadName) {
