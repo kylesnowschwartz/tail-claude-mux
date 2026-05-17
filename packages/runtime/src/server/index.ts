@@ -1292,6 +1292,12 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     const trackedEvent = tracker.getEvent(sessionName, agentName, threadId);
     const expectedPid = trackedEvent?.pid;
     if (expectedPid !== undefined) {
+      // The display-message subshell here is structural, not vestigial like
+      // Bug 14's: paneId (e.g. "%5") is tmux's identifier; findAgentPidsInPane
+      // needs the pane's OS shell pid to feed `pgrep -P`. No tmux primitive
+      // takes a paneId and enumerates descendants by comm. Caching pane_pid in
+      // the tracker would re-create the stale-data bug this gate exists to
+      // catch (pane_pid mutates on every pane recycle).
       const panePidStr = shell(["tmux", "display-message", "-t", targetPaneId, "-p", "#{pane_pid}"])?.trim();
       if (!panePidStr) {
         log("kill-agent-pane", "unable to verify pid (no pane_pid)", { sessionName, agentName, paneId: targetPaneId });
