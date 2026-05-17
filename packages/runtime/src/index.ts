@@ -37,7 +37,7 @@ export type { TcmConfig } from "./config";
 export { resolveTheme, BUILTIN_THEMES, DEFAULT_THEME } from "./themes";
 export type { Theme, ThemePalette, PartialTheme } from "./themes";
 export { startServer } from "./server/index";
-export { STATUSLINE_LAST_WINDOW, STATUSLINE_SHELL } from "./server/tmux-header-sync";
+export { STATUSLINE_LAST_WINDOW, STATUSLINE_SHELL, AGENT_GLYPHS } from "./server/tmux-header-sync";
 export { ensureServer } from "./server/launcher";
 export {
   SERVER_PORT,

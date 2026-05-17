@@ -41,7 +41,7 @@ const ID_CLAUDE_CODE = "\u{100CC0}"; // Clawd, vendored at fonts/Clawd.ttf
 // reads via `#{@tcm-last-window-glyph}` / `#{@tcm-shell-glyph}`. These never
 // appear in the panel — they live here so vocab.ts stays the single
 // reader-facing entry-point for every glyph in the codebase.
-export { STATUSLINE_LAST_WINDOW, STATUSLINE_SHELL } from "@tcm/runtime";
+export { STATUSLINE_LAST_WINDOW, STATUSLINE_SHELL, AGENT_GLYPHS } from "@tcm/runtime";
 
 // ── Structural & branding glyphs ──
 export const BRAND_CLAWD = ID_CLAUDE_CODE;   // header product mark

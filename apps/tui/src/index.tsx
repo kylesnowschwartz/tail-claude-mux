@@ -49,6 +49,7 @@ import {
   ACTIVITY_VERB_THINKING,
   ACTIVITY_VERB_ERROR,
   ACTIVITY_VERB_MISC,
+  AGENT_GLYPHS,
 } from "./vocab";
 import { tier } from "./tiers";
 import { classifyVerb, type Verb } from "./classify";
@@ -877,9 +878,9 @@ function App() {
         // accounted for. Without this, rows that wrap to 2 lines push the
         // card's effective click area outside its frame and later rows
         // become un-clickable even though they appear visible.
-        let text = "0 " + agent.agent; // window-index slot is ~2 chars
-        if (agent.subagent) text += " · " + agent.subagent;
-        if (agent.threadId) text += " #" + shortThreadId(agent.threadId);
+        let text = "00 X"; // 2-cell win-num + space + 1-cell icon = 4 cells
+        if (agent.subagent) text += "  " + agent.subagent;
+        if (agent.threadId) text += "  " + shortThreadId(agent.threadId);
         text += "  X"; // status glyph slot on the right
         h += wrapLines(text);
       }
@@ -1964,18 +1965,18 @@ function AgentListItem(props: AgentListItemProps) {
             onMouseOver={() => setIsDismissHover(true)}
             onMouseOut={() => setIsDismissHover(false)}
           >
-            <span style={{ fg: isDismissHover() ? P().red : P().overlay0 }}>{(props.agent.windowIndex != null ? String(props.agent.windowIndex) : "·") + " "}</span>
+            <span style={{ fg: isDismissHover() ? P().red : P().overlay0 }}>{(props.agent.windowIndex != null ? String(props.agent.windowIndex).padStart(2, " ") : " ·") + " "}</span>
           </text>
           <text flexGrow={1} truncate>
             <span style={{
               fg: nameFg(),
               attributes: props.isKeyboardFocused ? BOLD : undefined,
-            }}>{props.agent.agent}</span>
+            }}>{AGENT_GLYPHS[props.agent.agent] ?? props.agent.agent}</span>
             <Show when={props.agent.subagent}>
-              <span style={{ fg: P().overlay1 }}>{" · "}{props.agent.subagent}</span>
+              <span style={{ fg: P().overlay1 }}>{"  "}{props.agent.subagent}</span>
             </Show>
             <Show when={props.agent.threadId}>
-              <span style={{ fg: P().overlay0, attributes: DIM }}>{" #"}{shortThreadId(props.agent.threadId!)}</span>
+              <span style={{ fg: P().overlay0, attributes: DIM }}>{"  "}{shortThreadId(props.agent.threadId!)}</span>
             </Show>
             <Show when={props.isPaneFocused}>
               <span style={{ fg: P().sky }}>{" •"}</span>
