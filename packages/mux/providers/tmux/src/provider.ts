@@ -49,8 +49,8 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     tmux.switchClient(name, clientTty ? { clientTty } : undefined);
   }
 
-  getCurrentSession(): string | null {
-    return tmux.getCurrentSession();
+  getCurrentSession(clientTty?: string): string | null {
+    return tmux.getCurrentSession(clientTty);
   }
 
   getSessionDir(name: string): string {

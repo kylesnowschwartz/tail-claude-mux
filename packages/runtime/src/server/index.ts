@@ -520,13 +520,17 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   // Map session name → client TTY (from hook context, for multi-client setups)
   const clientTtyBySession = new Map<string, string>();
 
-  function getCurrentSession(): string | null {
-    const result = mux.getCurrentSession();
+  /** Resolve the current session for one specific client when possible.
+   *  Pass `clientTty` from action handlers (the WebSocket-tracked client TTY)
+   *  to disambiguate in multi-attached-client setups. Without it, the mux
+   *  layer returns null when ≥2 clients are attached. */
+  function getCurrentSession(clientTty?: string): string | null {
+    const result = mux.getCurrentSession(clientTty);
     if (result) {
-      log("getCurrentSession", "result", { result, provider: mux.name });
+      log("getCurrentSession", "result", { result, provider: mux.name, clientTty });
       return result;
     }
-    log("getCurrentSession", "no provider returned a session");
+    log("getCurrentSession", "no provider returned a session", { clientTty });
     return null;
   }
 
@@ -1418,8 +1422,13 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
         break;
       case "kill-session": {
         const p = sessionProviders.get(cmd.name) ?? mux;
-        // If killing the current session, switch to the adjacent session in sidebar order
-        const currentBefore = getCurrentSession();
+        // If killing the current session, switch to the adjacent session in sidebar order.
+        // Resolve "current" through this client's TTY so multi-attached-client setups
+        // don't accidentally fire the switch dance based on some OTHER client's session.
+        const clientSess = clientSessionNames.get(ws);
+        const ttyForCurrent = (clientSess ? clientTtyBySession.get(clientSess) : undefined)
+          ?? clientTtys.get(ws);
+        const currentBefore = getCurrentSession(ttyForCurrent);
         if (currentBefore === cmd.name) {
           const allNames = p.listSessions().map((s) => s.name);
           const visible = sessionOrder.apply(allNames);

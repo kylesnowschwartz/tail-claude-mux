@@ -224,6 +224,27 @@ const WINDOW_FORMAT = buildFormat(WINDOW_SPEC);
 const PANE_FORMAT = buildFormat(PANE_SPEC);
 const CLIENT_FORMAT = buildFormat(CLIENT_SPEC);
 
+// --- Pure helpers (extracted so unit tests don't need to spawn tmux) ---
+
+/** Resolve which session is "current" for a given client. Pure function
+ *  over the rows that `tmux list-clients` returned. See TmuxClient
+ *  .getCurrentSession() for the contract. */
+export function resolveCurrentSession(
+  clients: readonly ClientInfo[],
+  clientTty?: string,
+): string | null {
+  if (clients.length === 0) return null;
+  if (clientTty) {
+    const match = clients.find((c) => c.tty === clientTty);
+    return match?.sessionName || null;
+  }
+  if (clients.length === 1) return clients[0]!.sessionName || null;
+  // Multiple clients, no disambiguator — fail closed rather than pick
+  // arbitrarily. The previous behavior (return clients[0]) silently
+  // picked whichever client tmux happened to list first.
+  return null;
+}
+
 // --- TmuxClient ---
 
 export class TmuxClient {
@@ -409,12 +430,14 @@ export class TmuxClient {
   }
 
   /**
-   * Get the current session name from the first attached client
+   * Resolve the current session for the caller. Pass `clientTty` to target
+   * one specific attached client — required for correctness when ≥2
+   * clients are attached, since "the current session" is then ambiguous.
+   * Without `clientTty`: returns the lone client's session when exactly
+   * one is attached, otherwise null (refuses to guess).
    */
-  getCurrentSession(): string | null {
-    const clients = this.listClients();
-    if (clients.length === 0) return null;
-    return clients[0]!.sessionName || null;
+  getCurrentSession(clientTty?: string): string | null {
+    return resolveCurrentSession(this.listClients(), clientTty);
   }
 
   /**

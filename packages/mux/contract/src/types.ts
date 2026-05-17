@@ -37,7 +37,12 @@ export interface MuxProviderV1 {
   // Session CRUD
   listSessions(): MuxSessionInfo[];
   switchSession(name: string, clientTty?: string): void;
-  getCurrentSession(): string | null;
+  /** Resolve "which session is the caller currently looking at?". When
+   *  `clientTty` is provided, returns that specific client's session — the
+   *  only correct answer in multi-attached-client setups. Without it the
+   *  provider returns a best-effort answer (single attached client → that
+   *  one; multiple → null, because the question is ambiguous). */
+  getCurrentSession(clientTty?: string): string | null;
   getSessionDir(name: string): string;
   getPaneCount(name: string): number;
   getClientTty(): string;

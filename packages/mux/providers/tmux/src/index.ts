@@ -14,4 +14,5 @@ export function createTmux() {
 }
 
 export { TmuxProvider } from "./provider";
-export { TmuxClient } from "./client";
+export { TmuxClient, resolveCurrentSession } from "./client";
+export type { ClientInfo } from "./client";
