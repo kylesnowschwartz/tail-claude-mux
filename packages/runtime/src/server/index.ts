@@ -1182,9 +1182,18 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
       targetPaneId = resolveClaudeCodePane(nonSidebar, threadId);
     }
     if (!targetPaneId && agentName === "amp" && threadName) {
-      targetPaneId = nonSidebar
-        .find((p) => p.title.toLowerCase().startsWith("amp - ") && p.title.includes(threadName))
-        ?.id;
+      // Amp has no per-thread id surface we can correlate from outside, so
+      // the only signal is the pane title `amp - <thread-name>`. Substring
+      // matching collides when two threads' names contain each other
+      // ("refactor" vs "refactor-helper") — the old first-found resolution
+      // routed clicks at the wrong pane. Fail closed when the title doesn't
+      // disambiguate: collect every candidate, return only if exactly one
+      // matches. The pid-first shortcut above handles the common case;
+      // this is a cold-path fallback.
+      const candidates = nonSidebar.filter(
+        (p) => p.title.toLowerCase().startsWith("amp - ") && p.title.includes(threadName),
+      );
+      if (candidates.length === 1) targetPaneId = candidates[0]!.id;
     }
     if (!targetPaneId && agentName === "codex" && threadId) {
       targetPaneId = resolveCodexPane(nonSidebar, threadId);
