@@ -1214,7 +1214,34 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     const targetPaneId = explicitPaneId ?? resolveAgentPaneId(sessionName, agentName, threadId, threadName);
     if (!targetPaneId) return;
 
-    log("kill-agent-pane", "killing", { sessionName, agentName, paneId: targetPaneId, fromClient: explicitPaneId !== undefined });
+    // Pid-verification gate: the tracker holds the agent process's pid at the
+    // moment the watcher reported it. If the pane has since been recycled —
+    // same paneId, new process inside — killing on paneId alone takes out an
+    // unrelated process. Compare the tracker's pid against the pane's current
+    // descendants (boundary-matched comm); if it's no longer present, refuse.
+    // Events without a known pid fall through to the old behavior (only really
+    // happens for synthetics from the pane-scanner before the tracker has
+    // observed a watcher event, where the kill target is unambiguous anyway).
+    const trackedAgents = tracker.getAgents(sessionName);
+    const trackedEvent = trackedAgents.find(
+      (a) => a.agent === agentName && a.threadId === threadId,
+    );
+    const expectedPid = trackedEvent?.pid;
+    if (expectedPid !== undefined) {
+      const patterns = AGENT_TITLE_PATTERNS[agentName];
+      const panePidStr = shell(["tmux", "display-message", "-t", targetPaneId, "-p", "#{pane_pid}"])?.trim();
+      if (!patterns || !panePidStr) {
+        log("kill-agent-pane", "unable to verify pid (missing patterns or pane_pid)", { sessionName, agentName, paneId: targetPaneId });
+        return;
+      }
+      const liveAgentPids = findChildPids(panePidStr, patterns[0]).map((p) => parseInt(p, 10));
+      if (!liveAgentPids.includes(expectedPid)) {
+        log("kill-agent-pane", "refusing — pid mismatch (pane recycled?)", { sessionName, agentName, paneId: targetPaneId, expectedPid, liveAgentPids });
+        return;
+      }
+    }
+
+    log("kill-agent-pane", "killing", { sessionName, agentName, paneId: targetPaneId, fromClient: explicitPaneId !== undefined, expectedPid });
     shell(["tmux", "kill-pane", "-t", targetPaneId]);
   }
 
