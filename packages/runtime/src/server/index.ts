@@ -1158,11 +1158,10 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     if (!targetPaneId && agentName === "opencode" && threadId) {
       targetPaneId = resolveOpenCodePane(nonSidebar, threadId);
     }
-    if (!targetPaneId) {
-      targetPaneId = nonSidebar
-        .find((p) => patterns.some((pat) => p.title.toLowerCase().includes(pat)))
-        ?.id;
-    }
+    // Title-substring fallback retired — too unsafe. A shell pane editing
+    // `claude-notes.md` (or any editor/grep with the agent name in its title)
+    // matched before the real agent process. The process-tree match below
+    // uses commMatches boundary rules and is strictly more correct.
     if (!targetPaneId) {
       for (const pane of nonSidebar) {
         if (matchProcessTree(pane.pid, patterns)) {
