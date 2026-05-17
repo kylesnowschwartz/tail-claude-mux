@@ -236,7 +236,10 @@ export class AgentTracker {
     }
   }
 
-  /** Returns the most important agent state for backward compat */
+  /** Returns the most important agent state for backward compat.
+   *  Tie-break (same STATUS_PRIORITY) is by most-recent ts, then firstSeenTs.
+   *  Strict `>` on ties used to pick whichever entry Map iteration enumerated
+   *  first — unstable across server restarts and pruneTerminal cycles. */
   getState(session: string): AgentEvent | null {
     const sessionInstances = this.instances.get(session);
     if (!sessionInstances || sessionInstances.size === 0) return null;
@@ -248,6 +251,14 @@ export class AgentTracker {
       if (p > bestPriority) {
         bestPriority = p;
         best = event;
+        continue;
+      }
+      if (p === bestPriority && best !== null) {
+        if (event.ts > best.ts) {
+          best = event;
+        } else if (event.ts === best.ts && (event.firstSeenTs ?? 0) > (best.firstSeenTs ?? 0)) {
+          best = event;
+        }
       }
     }
     return best;

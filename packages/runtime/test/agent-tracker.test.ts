@@ -189,6 +189,22 @@ describe("AgentTracker", () => {
     expect(tracker.getAgents("sess-1")).toEqual([]);
   });
 
+  test("getState ties at same STATUS_PRIORITY break by most-recent ts", () => {
+    // Two waiting agents in the same session — same priority, different ts.
+    // Strict `>` on priority used to keep the first by Map iteration; the
+    // newer event must win.
+    tracker.applyEvent(event({ session: "sess-1", agent: "amp", threadId: "t1", status: "waiting", ts: 100 }));
+    tracker.applyEvent(event({ session: "sess-1", agent: "codex", threadId: "t2", status: "waiting", ts: 200 }));
+    expect(tracker.getState("sess-1")?.agent).toBe("codex");
+
+    // Swap arrival order; result should be the same (the codex event has
+    // higher ts regardless of insertion order).
+    const t2 = new AgentTracker();
+    t2.applyEvent(event({ session: "sess-1", agent: "codex", threadId: "t2", status: "waiting", ts: 200 }));
+    t2.applyEvent(event({ session: "sess-1", agent: "amp", threadId: "t1", status: "waiting", ts: 100 }));
+    expect(t2.getState("sess-1")?.agent).toBe("codex");
+  });
+
   test("applyEvent preserves prev.pid when incoming event omits it", () => {
     // Pane scanner posted a pid-bearing entry; a subsequent watcher event
     // (e.g. PostToolUse) lands without pid. The pid must survive so the
