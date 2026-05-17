@@ -264,6 +264,24 @@ export class AgentTracker {
     return best;
   }
 
+  /** O(1) lookup for one specific instance — no scan, no sort. Watcher rows
+   *  resolve by (agent, threadId); synthetics by (agent, paneId). Callers that
+   *  need a single event by primary identifier should reach for this instead
+   *  of `getAgents(session).find(...)`, which sorts the whole list per call. */
+  getEvent(session: string, agent: string, threadId?: string, paneId?: string): AgentEvent | null {
+    const sessionInstances = this.instances.get(session);
+    if (!sessionInstances) return null;
+    if (threadId !== undefined) {
+      const hit = sessionInstances.get(instanceKey(agent, threadId));
+      return hit ?? null;
+    }
+    if (paneId !== undefined) {
+      const hit = sessionInstances.get(`${agent}:pane:${paneId}`);
+      return hit ?? null;
+    }
+    return null;
+  }
+
   /** Returns all agent instances for a session, with unseen flag stamped */
   getAgents(session: string): AgentEvent[] {
     const sessionInstances = this.instances.get(session);

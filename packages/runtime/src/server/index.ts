@@ -1176,9 +1176,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     // would re-derive. Fall through to per-agent resolution only when the
     // tracker has no pid yet, or the pid is no longer present in any live
     // pane (process exited, pane recycled).
-    const trackedEvent = tracker.getAgents(sessionName).find(
-      (a) => a.agent === agentName && a.threadId === threadId,
-    );
+    const trackedEvent = tracker.getEvent(sessionName, agentName, threadId);
     const expectedPid = trackedEvent?.pid;
     if (expectedPid !== undefined) {
       for (const pane of nonSidebar) {
@@ -1274,10 +1272,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     // Events without a known pid fall through to the old behavior (only really
     // happens for synthetics from the pane-scanner before the tracker has
     // observed a watcher event, where the kill target is unambiguous anyway).
-    const trackedAgents = tracker.getAgents(sessionName);
-    const trackedEvent = trackedAgents.find(
-      (a) => a.agent === agentName && a.threadId === threadId,
-    );
+    const trackedEvent = tracker.getEvent(sessionName, agentName, threadId);
     const expectedPid = trackedEvent?.pid;
     if (expectedPid !== undefined) {
       const patterns = AGENT_TITLE_PATTERNS[agentName];

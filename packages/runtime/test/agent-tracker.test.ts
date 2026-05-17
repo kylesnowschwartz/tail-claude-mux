@@ -189,6 +189,33 @@ describe("AgentTracker", () => {
     expect(tracker.getAgents("sess-1")).toEqual([]);
   });
 
+  test("getEvent returns the event for (session, agent, threadId) without scanning", () => {
+    tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "running" }));
+    tracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "xyz", status: "waiting" }));
+    tracker.applyEvent(event({ session: "sess-2", agent: "claude-code", threadId: "abc", status: "done" }));
+
+    const hit = tracker.getEvent("sess-1", "claude-code", "abc");
+    expect(hit).not.toBeNull();
+    expect(hit?.threadId).toBe("abc");
+    expect(hit?.status).toBe("running");
+
+    const sibling = tracker.getEvent("sess-1", "claude-code", "xyz");
+    expect(sibling?.status).toBe("waiting");
+
+    expect(tracker.getEvent("sess-1", "amp", "abc")).toBeNull();
+    expect(tracker.getEvent("missing", "claude-code", "abc")).toBeNull();
+  });
+
+  test("getEvent finds synthetic rows keyed by pane (no threadId)", () => {
+    tracker.applyPanePresence("sess-1", [{ agent: "claude-code", paneId: "%9", pid: 1234 }]);
+    // Synthetics are stored under `agent:pane:<paneId>`. Lookup by threadId
+    // alone must NOT return the synthetic — it's a different identity.
+    expect(tracker.getEvent("sess-1", "claude-code", undefined)).toBeNull();
+    // But the synthetic IS retrievable by (agent, paneId) — see overload.
+    const synth = tracker.getEvent("sess-1", "claude-code", undefined, "%9");
+    expect(synth?.paneId).toBe("%9");
+  });
+
   test("getState ties at same STATUS_PRIORITY break by most-recent ts", () => {
     // Two waiting agents in the same session — same priority, different ts.
     // Strict `>` on priority used to keep the first by Map iteration; the
