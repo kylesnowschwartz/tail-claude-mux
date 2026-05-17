@@ -53,6 +53,7 @@ import {
 import { tier } from "./tiers";
 import { classifyVerb, type Verb } from "./classify";
 import { getScenario, listScenarios } from "./mocks/scenarios";
+import { createRefocusGate } from "./refocus-gate";
 
 // Detect which mux we're running inside
 type MuxContext =
@@ -1051,22 +1052,19 @@ function App() {
       return;
     }
 
-    // Refocus the main pane once terminal capability detection finishes.
-    // This avoids the race where start.sh refocuses too early and capability
-    // responses leak as garbage text into the main pane.
-    let startupRefocused = false;
-    const doStartupRefocus = () => {
-      if (startupRefocused) return;
-      startupRefocused = true;
-      refocusMainPane();
-    };
-    renderer.on("capabilities", doStartupRefocus);
-    // Fallback: if no capability response arrives within 2s, refocus anyway
-    const refocusTimeout = setTimeout(doStartupRefocus, 2000);
+    // Refocus the main pane once terminal capability detection settles.
+    // opentui fires "capabilities" PER response sequence, not once when all
+    // probes complete; refocusing on the first event leaks later responses
+    // (kitty graphics OK, DA1, etc.) into the main pane as garbage typed at
+    // the shell prompt. The gate waits for a quiescent window after the
+    // last event — see ./refocus-gate.ts for the design.
+    const refocusGate = createRefocusGate(refocusMainPane, { quietMs: 250, fallbackMs: 2000 });
+    const onCapability = () => refocusGate.onCapability();
+    renderer.on("capabilities", onCapability);
 
     onCleanup(() => {
-      clearTimeout(refocusTimeout);
-      renderer.removeListener("capabilities", doStartupRefocus);
+      refocusGate.cleanup();
+      renderer.removeListener("capabilities", onCapability);
     });
 
     let intentionalQuit = false;
