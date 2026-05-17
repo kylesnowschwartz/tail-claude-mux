@@ -1036,7 +1036,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     return false;
   }
 
-  const AGENT_TITLE_PATTERNS: Record<string, string[]> = {
+  const AGENT_COMM_PATTERNS: Record<string, string[]> = {
     amp: ["amp"],
     "claude-code": ["claude"],
     codex: ["codex"],
@@ -1138,7 +1138,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     const p = sessionProviders.get(sessionName) ?? mux;
     if (p.name !== "tmux") return undefined;
 
-    const patterns = AGENT_TITLE_PATTERNS[agentName];
+    const patterns = AGENT_COMM_PATTERNS[agentName];
     if (!patterns) return undefined;
 
     const raw = shell([
@@ -1275,7 +1275,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     const trackedEvent = tracker.getEvent(sessionName, agentName, threadId);
     const expectedPid = trackedEvent?.pid;
     if (expectedPid !== undefined) {
-      const patterns = AGENT_TITLE_PATTERNS[agentName];
+      const patterns = AGENT_COMM_PATTERNS[agentName];
       const panePidStr = shell(["tmux", "display-message", "-t", targetPaneId, "-p", "#{pane_pid}"])?.trim();
       if (!patterns || !panePidStr) {
         log("kill-agent-pane", "unable to verify pid (missing patterns or pane_pid)", { sessionName, agentName, paneId: targetPaneId });
@@ -1384,7 +1384,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     const tree = buildProcessTree();
 
     for (const pane of nonSidebar) {
-      for (const [agentName, patterns] of Object.entries(AGENT_TITLE_PATTERNS)) {
+      for (const [agentName, patterns] of Object.entries(AGENT_COMM_PATTERNS)) {
         // Only use process tree matching — title matching produces false positives
         // (e.g. an Amp thread named "Detect Claude session names" matches "claude")
         const agentPid = matchProcessTreeFast(pane.pid, patterns, tree);
