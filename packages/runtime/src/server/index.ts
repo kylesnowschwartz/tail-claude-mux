@@ -1030,42 +1030,45 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   const PANE_HIGHLIGHT_MS = 300;
   const pendingHighlightResets = new Map<string, ReturnType<typeof setTimeout>>();
 
-  /** Walk child processes (up to 3 levels) to find a process matching `name`, returning its PID.
-   *  Uses boundary-aware commMatches: "pi" matches "pi", "/usr/bin/pi", "pi-helper"
-   *  but NOT "pip", "pipenv", "pipx". "codex" does NOT match "codex-cli" unless
-   *  intended (codex-cli has the hyphen suffix exception). */
-  function findChildPid(pid: string, name: string, depth = 0): string | undefined {
-    if (depth > 2) return undefined;
+  /** Walk child processes (up to 3 levels) and return EVERY descendant whose comm matches `name`.
+   *  Returning all matches (not just the first) lets resolvers inspect parent-and-Task-spawned-child
+   *  pairs in the same pane — a Claude Code "Task" tool spawns a sub-claude alongside the parent,
+   *  and only one of them carries the threadId the TUI clicked on.
+   *  Boundary-aware commMatches: "pi" matches "pi", "/usr/bin/pi", "pi-helper" but NOT "pip"/"pipenv". */
+  function findChildPids(pid: string, name: string, depth = 0, acc: string[] = []): string[] {
+    if (depth > 2) return acc;
     const children = shell(["pgrep", "-P", pid]);
-    if (!children) return undefined;
+    if (!children) return acc;
     for (const childPid of children.split("\n")) {
       const trimmed = childPid.trim();
       if (!trimmed) continue;
       const childCmd = shell(["ps", "-p", trimmed, "-o", "comm="]);
-      if (childCmd && commMatches(childCmd.trim().toLowerCase(), name)) return trimmed;
-      const found = findChildPid(trimmed, name, depth + 1);
-      if (found) return found;
+      if (childCmd && commMatches(childCmd.trim().toLowerCase(), name)) acc.push(trimmed);
+      findChildPids(trimmed, name, depth + 1, acc);
     }
-    return undefined;
+    return acc;
   }
 
   type PaneEntry = { id: string; pid: string; cmd: string; title: string };
 
-  /** Claude Code: ~/.claude/sessions/<pid>.json → sessionId */
+  /** Claude Code: ~/.claude/sessions/<pid>.json → sessionId.
+   *  A pane can host multiple claude processes (parent + Task-spawned sub-agent),
+   *  so check every matching descendant — not just the first — before moving on. */
   function resolveClaudeCodePane(panes: PaneEntry[], threadId: string): string | undefined {
     const sessionsDir = join(homedir(), ".claude", "sessions");
     for (const pane of panes) {
-      const agentPid = findChildPid(pane.pid, "claude");
-      if (!agentPid) continue;
-      try {
-        const data = JSON.parse(readFileSync(join(sessionsDir, `${agentPid}.json`), "utf-8"));
-        if (data.sessionId === threadId) return pane.id;
-      } catch {}
+      for (const agentPid of findChildPids(pane.pid, "claude")) {
+        try {
+          const data = JSON.parse(readFileSync(join(sessionsDir, `${agentPid}.json`), "utf-8"));
+          if (data.sessionId === threadId) return pane.id;
+        } catch {}
+      }
     }
     return undefined;
   }
 
-  /** Codex: logs_1.sqlite process_uuid='pid:<PID>:*' → thread_id */
+  /** Codex: logs_1.sqlite process_uuid='pid:<PID>:*' → thread_id.
+   *  Same multi-descendant rule as Claude — try every matching pid before discarding the pane. */
   function resolveCodexPane(panes: PaneEntry[], threadId: string): string | undefined {
     const dbPath = join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "logs_1.sqlite");
     let db: any;
@@ -1076,35 +1079,34 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
 
     try {
       for (const pane of panes) {
-        const agentPid = findChildPid(pane.pid, "codex");
-        if (!agentPid) continue;
-        const row = db.query(
-          `SELECT thread_id FROM logs WHERE process_uuid LIKE ? AND thread_id IS NOT NULL ORDER BY ts DESC LIMIT 1`,
-        ).get(`pid:${agentPid}:%`);
-        if (row?.thread_id === threadId) return pane.id;
+        for (const agentPid of findChildPids(pane.pid, "codex")) {
+          const row = db.query(
+            `SELECT thread_id FROM logs WHERE process_uuid LIKE ? AND thread_id IS NOT NULL ORDER BY ts DESC LIMIT 1`,
+          ).get(`pid:${agentPid}:%`);
+          if (row?.thread_id === threadId) return pane.id;
+        }
       }
     } finally { try { db.close(); } catch {} }
     return undefined;
   }
 
-  /** OpenCode: lsof → log file → grep session ID */
+  /** OpenCode: lsof → log file → grep session ID.
+   *  Same multi-descendant rule — opencode parent + spawned worker each have their own log. */
   function resolveOpenCodePane(panes: PaneEntry[], threadId: string): string | undefined {
     for (const pane of panes) {
-      const agentPid = findChildPid(pane.pid, "opencode");
-      if (!agentPid) continue;
-      const lsofOut = shell(["lsof", "-p", agentPid]);
-      if (!lsofOut) continue;
-      // Find the log file path from open file descriptors
-      const logLine = lsofOut.split("\n").find((l) => l.includes("/opencode/log/") && l.endsWith(".log"));
-      if (!logLine) continue;
-      // Extract absolute path — lsof NAME column starts at the last recognized path
-      const pathMatch = logLine.match(/\s(\/\S+\.log)$/);
-      if (!pathMatch) continue;
-      try {
-        const logText = readFileSync(pathMatch[1], "utf-8");
-        const match = logText.match(/ses_[A-Za-z0-9]+/);
-        if (match?.[0] === threadId) return pane.id;
-      } catch {}
+      for (const agentPid of findChildPids(pane.pid, "opencode")) {
+        const lsofOut = shell(["lsof", "-p", agentPid]);
+        if (!lsofOut) continue;
+        const logLine = lsofOut.split("\n").find((l) => l.includes("/opencode/log/") && l.endsWith(".log"));
+        if (!logLine) continue;
+        const pathMatch = logLine.match(/\s(\/\S+\.log)$/);
+        if (!pathMatch) continue;
+        try {
+          const logText = readFileSync(pathMatch[1], "utf-8");
+          const match = logText.match(/ses_[A-Za-z0-9]+/);
+          if (match?.[0] === threadId) return pane.id;
+        } catch {}
+      }
     }
     return undefined;
   }
