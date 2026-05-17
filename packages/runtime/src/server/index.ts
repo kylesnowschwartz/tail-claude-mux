@@ -467,10 +467,20 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
       // Direct path match
       const direct = map.get(projectDir);
       if (direct) return direct;
-      // Substring match (parent/child directories)
+      // Longest-prefix match. Two related projects can both prefix the
+      // watcher's cwd (~/Code/foo vs ~/Code/foo/sub); first-by-iteration
+      // routed the event to whichever Map happened to enumerate first.
+      // Scan both directions and pick the most specific (longest-dir) match.
+      let bestName: string | null = null;
+      let bestLen = -1;
       for (const [dir, name] of map) {
-        if (projectDir.startsWith(dir + "/") || dir.startsWith(projectDir + "/")) return name;
+        const match = projectDir.startsWith(dir + "/") || dir.startsWith(projectDir + "/");
+        if (match && dir.length > bestLen) {
+          bestName = name;
+          bestLen = dir.length;
+        }
       }
+      if (bestName !== null) return bestName;
       // Encoded match: the watcher couldn't decode the path unambiguously,
       // so try encoding each session dir and comparing against the encoded form.
       // Claude Code encodes /, ., and _ as - in project directory names.
