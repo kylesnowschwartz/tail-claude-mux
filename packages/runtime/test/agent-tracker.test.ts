@@ -580,6 +580,35 @@ describe("AgentTracker", () => {
       expect(agents[0]!.paneId).toBe("%21");
       expect(agents[0]!.liveness).toBe("alive");
     });
+
+    test("does not resurrect sweep-exited entry; creates synthetic for new pane occupant", () => {
+      // A tracker that pretends pid 42 is dead and pid 99 is alive.
+      const localTracker = new AgentTracker({ isPidAlive: (pid) => pid === 99 });
+
+      // Watcher entry for the original CC at pane %30 with pid 42.
+      localTracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "old-thread", status: "running", pid: 42 }));
+      localTracker.applyPanePresence("sess-1", [{ agent: "claude-code", paneId: "%30" }]);
+
+      // Sweep notices pid 42 is gone and flips liveness=exited on the watcher entry.
+      localTracker.runLivenessSweepOnce();
+      const afterSweep = localTracker.getAgents("sess-1").find((a) => a.threadId === "old-thread")!;
+      expect(afterSweep.liveness).toBe("exited");
+
+      // Pane %30 still has a claude (a *different* CC). Scanner must NOT
+      // resurrect the dead entry — it should create a synthetic instead, so
+      // the row stays exited until prune and the fresh CC gets its own slot
+      // when its first hook arrives.
+      localTracker.applyPanePresence("sess-1", [{ agent: "claude-code", paneId: "%30" }]);
+
+      const agents = localTracker.getAgents("sess-1");
+      const dead = agents.find((a) => a.threadId === "old-thread")!;
+      const synthetic = agents.find((a) => !a.threadId)!;
+
+      expect(dead.liveness).toBe("exited");           // still dead, not flipped back
+      expect(synthetic).toBeDefined();                 // synthetic created for the pane
+      expect(synthetic.paneId).toBe("%30");
+      expect(synthetic.liveness).toBe("alive");
+    });
   });
 
   // Pane-presence hysteresis: a single missed scan must not transition an

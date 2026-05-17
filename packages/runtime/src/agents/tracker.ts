@@ -425,11 +425,14 @@ export class AgentTracker {
 
       // Find an existing entry for this agent that hasn't already been claimed.
       // Prefer watcher-sourced entries (no ":pane:" in key) over synthetics.
+      // Skip entries the liveness sweep has marked dead — resurrecting them
+      // flickers the row against the sweep at every broadcast.
       let bestKey: string | undefined;
       let bestEvent: AgentEvent | undefined;
       for (const [k, ev] of sessionInstances) {
         if (ev.agent !== pa.agent) continue;
         if (claimedKeys.has(k)) continue;
+        if (ev.liveness === "exited") continue;
         if (!bestEvent || !k.includes(":pane:")) {
           bestKey = k;
           bestEvent = ev;
