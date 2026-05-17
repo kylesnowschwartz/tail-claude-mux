@@ -3,6 +3,11 @@ import { TERMINAL_STATUSES } from "../contracts/agent";
 
 const MAX_EVENT_TIMESTAMPS = 30;
 const TERMINAL_PRUNE_MS = 5 * 60 * 1000;
+/** Window after a watcher signals SessionEnd during which the pane scanner
+ *  must NOT mint a synthetic for that pane/agent. SessionEnd fires while the
+ *  agent process is still wrapping up — ps shows it for a beat after — so
+ *  without this gate the row reappears as a ghost synthetic for ~5s. */
+const RECENT_END_SUPPRESS_MS = 5_000;
 
 // Pane scans (server/index.ts:1205) run every 3s. A single missed scan can
 // happen when the agent process re-execs (Claude Code compaction, codex
@@ -53,10 +58,34 @@ export class AgentTracker {
   private livenessTimer: ReturnType<typeof setInterval> | null = null;
   /** Injected for tests so we can simulate a dead pid without forking. */
   private isPidAlive: (pid: number) => boolean;
+  /** Injected for tests so suppression windows can be advanced without setTimeout. */
+  private now: () => number;
+  /** paneId-keyed suppression: skip creating synthetics for a pane that the
+   *  watcher just removed via SessionEnd. Value is the expiration timestamp.
+   *  Key shape: `${session}\0${agent}\0${paneId}`. */
+  private recentlyEndedPanes = new Map<string, number>();
 
-  constructor(opts: { missThreshold?: number; isPidAlive?: (pid: number) => boolean } = {}) {
+  constructor(opts: { missThreshold?: number; isPidAlive?: (pid: number) => boolean; now?: () => number } = {}) {
     this.missThreshold = opts.missThreshold ?? DEFAULT_MISS_THRESHOLD;
     this.isPidAlive = opts.isPidAlive ?? defaultIsPidAlive;
+    this.now = opts.now ?? (() => Date.now());
+  }
+
+  private endSuppressKey(session: string, agent: string, paneId: string): string {
+    return `${session}\0${agent}\0${paneId}`;
+  }
+
+  /** Return true if a synthetic for this pane/agent should be suppressed
+   *  because the watcher recently ended an entry here. Lazily expires. */
+  private isPaneEndSuppressed(session: string, agent: string, paneId: string): boolean {
+    const k = this.endSuppressKey(session, agent, paneId);
+    const exp = this.recentlyEndedPanes.get(k);
+    if (exp === undefined) return false;
+    if (this.now() >= exp) {
+      this.recentlyEndedPanes.delete(k);
+      return false;
+    }
+    return true;
   }
 
   private unseenKey(session: string, key: string): string {
@@ -77,6 +106,15 @@ export class AgentTracker {
     if (event.ended) {
       const sessionInstances = this.instances.get(event.session);
       if (sessionInstances) {
+        // Stash the paneId before deletion so the pane scanner can suppress
+        // a transient synthetic during the agent's exit-cleanup window.
+        const removed = sessionInstances.get(key);
+        if (removed?.paneId) {
+          this.recentlyEndedPanes.set(
+            this.endSuppressKey(event.session, event.agent, removed.paneId),
+            this.now() + RECENT_END_SUPPRESS_MS,
+          );
+        }
         sessionInstances.delete(key);
         this.unseenInstances.delete(this.unseenKey(event.session, key));
         this.clearMissState(event.session, key);
@@ -469,6 +507,12 @@ export class AgentTracker {
         continue;
       }
 
+      // Pane just had a SessionEnd — ps still shows the agent for a beat
+      // during exit cleanup. Don't mint a ghost synthetic for that window.
+      if (this.isPaneEndSuppressed(session, pa.agent, pa.paneId)) {
+        continue;
+      }
+
       // No existing entry — create minimal synthetic
       const syntheticKey = `${pa.agent}:pane:${pa.paneId}`;
 
@@ -477,7 +521,7 @@ export class AgentTracker {
           agent: pa.agent,
           session,
           status: "idle",
-          ts: Date.now(),
+          ts: this.now(),
           paneId: pa.paneId,
           liveness: "alive",
         });

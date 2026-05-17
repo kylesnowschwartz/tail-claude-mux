@@ -581,6 +581,66 @@ describe("AgentTracker", () => {
       expect(agents[0]!.liveness).toBe("alive");
     });
 
+    test("suppresses synthetic creation for ~5s after SessionEnd on the same pane", () => {
+      // Simulate the /exit race: SessionEnd hook fires while ps still shows
+      // claude in the pane for a beat. Without suppression, the next pane
+      // scan mints a ghost synthetic that lingers until the miss counter
+      // drops it ~6s later.
+      let mockNow = 1_000_000;
+      const localTracker = new AgentTracker({ now: () => mockNow });
+
+      // Watcher entry established with a paneId via the normal flow.
+      localTracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "running" }));
+      localTracker.applyPanePresence("sess-1", [{ agent: "claude-code", paneId: "%50" }]);
+      expect(localTracker.getAgents("sess-1").length).toBe(1);
+
+      // SessionEnd fires — entry removed.
+      localTracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "done", ended: true }));
+      expect(localTracker.getAgents("sess-1").length).toBe(0);
+
+      // Pane scan within the suppression window still sees claude (exit cleanup).
+      // Synthetic must NOT be created.
+      mockNow += 1_000;
+      localTracker.applyPanePresence("sess-1", [{ agent: "claude-code", paneId: "%50" }]);
+      expect(localTracker.getAgents("sess-1").length).toBe(0);
+
+      mockNow += 3_000; // total +4s, still within 5s window
+      localTracker.applyPanePresence("sess-1", [{ agent: "claude-code", paneId: "%50" }]);
+      expect(localTracker.getAgents("sess-1").length).toBe(0);
+
+      // Past the window, scanner is allowed to mint a synthetic again
+      // (e.g. a freshly-launched claude in the same pane).
+      mockNow += 2_000; // total +6s
+      localTracker.applyPanePresence("sess-1", [{ agent: "claude-code", paneId: "%50" }]);
+      const agents = localTracker.getAgents("sess-1");
+      expect(agents.length).toBe(1);
+      expect(agents[0]!.threadId).toBeUndefined(); // synthetic, not a watcher entry
+      expect(agents[0]!.paneId).toBe("%50");
+    });
+
+    test("end-suppression is per pane: other panes in same session unaffected", () => {
+      let mockNow = 1_000_000;
+      const localTracker = new AgentTracker({ now: () => mockNow });
+
+      localTracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "running" }));
+      localTracker.applyPanePresence("sess-1", [{ agent: "claude-code", paneId: "%60" }]);
+
+      // /exit on pane %60
+      localTracker.applyEvent(event({ session: "sess-1", agent: "claude-code", threadId: "abc", status: "done", ended: true }));
+
+      // Pane scan sees claude in %60 (residue) AND in %61 (a different live CC).
+      // %60's synthetic must stay suppressed; %61 must mint its synthetic.
+      mockNow += 500;
+      localTracker.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%60" },
+        { agent: "claude-code", paneId: "%61" },
+      ]);
+
+      const agents = localTracker.getAgents("sess-1");
+      expect(agents.length).toBe(1);
+      expect(agents[0]!.paneId).toBe("%61");
+    });
+
     test("watcher applyEvent leaves synthetics for OTHER panes intact", () => {
       // Two claude processes in the same tmux session: my watcher (pane %40)
       // and a second claude (pane %41) that hasn't fired hooks yet.
