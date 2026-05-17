@@ -1970,7 +1970,9 @@ function AgentListItem(props: AgentListItemProps) {
           </text>
           <text flexGrow={1} truncate>
             <span style={{
-              fg: nameFg(),
+              // Focused-pane highlight wins over the normal name-fg palette,
+              // matching the trailing "•" dot. Same anchor color, two surfaces.
+              fg: props.isPaneFocused ? P().sky : nameFg(),
               attributes: props.isKeyboardFocused ? BOLD : undefined,
             }}>{AGENT_GLYPHS[props.agent.agent] ?? props.agent.agent}</span>
             <Show when={props.agent.subagent}>
