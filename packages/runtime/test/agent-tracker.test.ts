@@ -581,6 +581,38 @@ describe("AgentTracker", () => {
       expect(agents[0]!.liveness).toBe("alive");
     });
 
+    test("watcher applyEvent leaves synthetics for OTHER panes intact", () => {
+      // Two claude processes in the same tmux session: my watcher (pane %40)
+      // and a second claude (pane %41) that hasn't fired hooks yet.
+      // Scanner creates two synthetics first.
+      tracker.applyPanePresence("sess-1", [
+        { agent: "claude-code", paneId: "%40" },
+        { agent: "claude-code", paneId: "%41" },
+      ]);
+      expect(tracker.getAgents("sess-1").length).toBe(2);
+
+      // My watcher arrives — graduates ONE synthetic (the one for my pane),
+      // must leave the other intact. Pre-fix bug: it nuked both, then the
+      // pane scanner re-created %41's synthetic on its next tick → flicker.
+      tracker.applyEvent(event({
+        session: "sess-1",
+        agent: "claude-code",
+        threadId: "mine",
+        status: "running",
+      }));
+
+      const agents = tracker.getAgents("sess-1");
+      expect(agents.length).toBe(2);
+
+      const mine = agents.find((a) => a.threadId === "mine")!;
+      const other = agents.find((a) => !a.threadId)!;
+
+      expect(mine.paneId === "%40" || mine.paneId === "%41").toBe(true);
+      expect(other).toBeDefined();
+      expect(other.paneId).not.toBe(mine.paneId);
+      expect(other.liveness).toBe("alive");
+    });
+
     test("does not resurrect sweep-exited entry; creates synthetic for new pane occupant", () => {
       // A tracker that pretends pid 42 is dead and pid 99 is alive.
       const localTracker = new AgentTracker({ isPidAlive: (pid) => pid === 99 });

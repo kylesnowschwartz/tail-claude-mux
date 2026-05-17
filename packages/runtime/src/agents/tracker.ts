@@ -108,19 +108,35 @@ export class AgentTracker {
     event.firstSeenTs = prev?.firstSeenTs ?? event.ts;
     sessionInstances.set(key, event);
 
-    // Clean up any synthetic pane-keyed entries for this agent
-    // (pane scanner may have created a minimal synthetic before the watcher seeded)
+    // Graduate at most ONE synthetic pane-keyed entry — the one that represents
+    // this watcher's pane. Synthetics for OTHER panes belong to other live
+    // claude processes in the same tmux session (e.g. rb-orchestrator,
+    // rb-planner) and must stay until those processes fire their own hooks.
+    // Deleting them indiscriminately produced ~3s flicker as the pane scanner
+    // re-created them on every cycle.
+    let graduateKey: string | undefined;
     for (const [k, ev] of sessionInstances) {
-      if (k !== key && ev.agent === event.agent && k.includes(":pane:")) {
-        // Transfer pane info from the synthetic to the watcher entry
-        if (ev.paneId && !event.paneId) {
-          event.paneId = ev.paneId;
-          event.liveness = ev.liveness;
-        }
-        sessionInstances.delete(k);
-        this.unseenInstances.delete(this.unseenKey(event.session, k));
-        this.clearMissState(event.session, k);
+      if (k === key) continue;
+      if (ev.agent !== event.agent) continue;
+      if (!k.includes(":pane:")) continue;
+      // Two graduation cases:
+      //   1. We have no paneId yet — adopt this synthetic's pane and graduate it.
+      //   2. We already have a paneId — graduate the synthetic whose pane matches.
+      if (ev.paneId && !event.paneId) {
+        event.paneId = ev.paneId;
+        event.liveness = ev.liveness;
+        graduateKey = k;
+        break;
       }
+      if (event.paneId && ev.paneId === event.paneId) {
+        graduateKey = k;
+        break;
+      }
+    }
+    if (graduateKey !== undefined) {
+      sessionInstances.delete(graduateKey);
+      this.unseenInstances.delete(this.unseenKey(event.session, graduateKey));
+      this.clearMissState(event.session, graduateKey);
     }
 
     // Track event timestamps
@@ -423,9 +439,11 @@ export class AgentTracker {
         this.instances.set(session, sessionInstances);
       }
 
-      // Find an existing entry for this agent that hasn't already been claimed.
-      // Prefer watcher-sourced entries (no ":pane:" in key) over synthetics.
-      // Skip entries the liveness sweep has marked dead — resurrecting them
+      // Find an unclaimed alive watcher-sourced entry for this agent.
+      // Skip synthetics: each synthetic is pinned to a specific paneId in its
+      // key, and claiming one for a different pane silently rebinds it,
+      // producing entry-count drift when multiple panes share an agent.
+      // Skip entries the liveness sweep marked dead — resurrecting them
       // flickers the row against the sweep at every broadcast.
       let bestKey: string | undefined;
       let bestEvent: AgentEvent | undefined;
@@ -433,11 +451,10 @@ export class AgentTracker {
         if (ev.agent !== pa.agent) continue;
         if (claimedKeys.has(k)) continue;
         if (ev.liveness === "exited") continue;
-        if (!bestEvent || !k.includes(":pane:")) {
-          bestKey = k;
-          bestEvent = ev;
-          if (!k.includes(":pane:")) break;
-        }
+        if (k.includes(":pane:")) continue;
+        bestKey = k;
+        bestEvent = ev;
+        break;
       }
 
       if (bestEvent && bestKey) {
