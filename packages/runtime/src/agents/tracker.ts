@@ -376,19 +376,38 @@ export class AgentTracker {
     }
   }
 
-  /** Auto-prune terminal instances older than timeout, but only if instance is not unseen or alive */
+  /** Auto-prune entries whose process has exited. Two-tier policy:
+   *    - Terminal status (done | error | interrupted): wait TERMINAL_PRUNE_MS
+   *      so the user can see the "agent finished" outcome before it disappears.
+   *    - Non-terminal idle | waiting: prune immediately. The process is gone
+   *      and there is no narrative worth preserving — without this, opening pi
+   *      then closing the pane without a prompt would leave "idle + exited"
+   *      rows in the sidebar forever (pi extension's session_shutdown hook
+   *      only fires on graceful exit).
+   *    - Non-terminal running: handled by pruneStuck, not here. Excluded so
+   *      Claude Code compaction / codex sandbox-spawn re-execs don't flicker
+   *      rows out and back in while the pid sweep transiently sees the old
+   *      pid as dead.
+   *  Skips unseen instances in every tier — user hasn't looked yet. */
   pruneTerminal(): void {
     const now = Date.now();
     for (const [session, sessionInstances] of this.instances) {
       for (const [key, event] of sessionInstances) {
-        if (!TERMINAL_STATUSES.has(event.status)) continue;
+        if (event.liveness !== "exited") continue; // Only prune when we know the pane is gone
         const ukey = this.unseenKey(session, key);
         if (this.unseenInstances.has(ukey)) continue; // Don't prune unseen — user hasn't looked yet
-        if (event.liveness !== "exited") continue; // Only prune when we know the pane is gone
-        if (now - event.ts > TERMINAL_PRUNE_MS) {
+        if (TERMINAL_STATUSES.has(event.status)) {
+          if (now - event.ts > TERMINAL_PRUNE_MS) {
+            sessionInstances.delete(key);
+            this.clearMissState(session, key);
+          }
+          continue;
+        }
+        if (event.status === "idle" || event.status === "waiting") {
           sessionInstances.delete(key);
           this.clearMissState(session, key);
         }
+        // running + exited intentionally falls through — pruneStuck owns it.
       }
       if (sessionInstances.size === 0) {
         this.instances.delete(session);

@@ -378,6 +378,59 @@ describe("AgentTracker", () => {
     expect(tracker.getState("sess-1")).not.toBeNull();
   });
 
+  test("pruneTerminal removes idle + exited immediately (no age threshold)", () => {
+    // The 'opened pi then closed the pane without ever submitting a prompt'
+    // case: session_start sets status=idle, the pid sweep marks liveness=exited
+    // when the process is killed externally, and pi's session_shutdown hook
+    // never gets to fire. Such rows must not pile up forever.
+    tracker.applyEvent(event({ session: "sess-1", status: "idle", ts: Date.now(), liveness: "exited" }));
+    tracker.markSeen("sess-1");
+
+    tracker.pruneTerminal();
+
+    expect(tracker.getState("sess-1")).toBeNull();
+  });
+
+  test("pruneTerminal removes waiting + exited immediately", () => {
+    tracker.applyEvent(event({ session: "sess-1", status: "waiting", ts: Date.now(), liveness: "exited" }));
+    tracker.markSeen("sess-1");
+
+    tracker.pruneTerminal();
+
+    expect(tracker.getState("sess-1")).toBeNull();
+  });
+
+  test("pruneTerminal does NOT remove idle + alive", () => {
+    tracker.applyEvent(event({ session: "sess-1", status: "idle", ts: Date.now(), liveness: "alive" }));
+    tracker.markSeen("sess-1");
+
+    tracker.pruneTerminal();
+
+    expect(tracker.getState("sess-1")).not.toBeNull();
+  });
+
+  test("pruneTerminal does NOT remove idle with unknown liveness", () => {
+    // No pane scan has confirmed the process is gone — can't safely prune.
+    tracker.applyEvent(event({ session: "sess-1", status: "idle", ts: Date.now() }));
+    tracker.markSeen("sess-1");
+
+    tracker.pruneTerminal();
+
+    expect(tracker.getState("sess-1")).not.toBeNull();
+  });
+
+  test("pruneTerminal leaves running + exited to pruneStuck", () => {
+    // running + exited within pruneStuck's stuck-timeout window must survive
+    // pruneTerminal. Re-exec races (Claude Code compaction) flip the recorded
+    // pid as dead briefly while the agent keeps running under a new pid.
+    tracker.applyEvent(event({ session: "sess-1", status: "running", ts: Date.now(), liveness: "exited" }));
+    tracker.markSeen("sess-1");
+
+    tracker.pruneTerminal();
+
+    expect(tracker.getState("sess-1")).not.toBeNull();
+  });
+
   // --- applyPanePresence ---
 
   describe("applyPanePresence", () => {
