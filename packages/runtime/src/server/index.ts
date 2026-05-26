@@ -8,6 +8,11 @@ import type { AgentWatcher, AgentWatcherContext } from "../contracts/agent-watch
 import { isHookReceiver } from "../contracts/agent-watcher";
 import { parseHookPayload } from "../contracts/parse-hook-payload";
 import { AgentTracker } from "../agents/tracker";
+import { parseProcessSnapshot } from "../agents/resolve-agent-pid";
+import {
+  buildPanePidIndex,
+  resolveSessionByPid as resolveSessionByPidPure,
+} from "../agents/resolve-session-by-pid";
 import { SessionOrder } from "./session-order";
 import { SessionMetadataStore } from "./metadata-store";
 import { loadConfig, saveConfig } from "../config";
@@ -411,6 +416,37 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     return map;
   }
 
+  // Cache for pid→session resolution. Same TTL as the dir cache — both are
+  // bounded by how fast tmux panes / processes turn over, and the watcher
+  // contract for staleness is "a few seconds is fine."
+  let panePidIndexCache: Map<number, string> | null = null;
+  let panePidIndexCacheTs = 0;
+
+  function getPanePidIndex(): Map<number, string> {
+    const now = Date.now();
+    if (panePidIndexCache && now - panePidIndexCacheTs < DIR_CACHE_TTL) return panePidIndexCache;
+    // The tmux provider is the only mux we ship pid routing for. Non-tmux
+    // providers (none exist today) would return an empty index here — callers
+    // would then drop pid-bearing hooks, which matches the contract.
+    const raw = mux.name === "tmux"
+      ? shell(["tmux", "list-panes", "-a", "-F", "#{session_name}|#{pane_pid}"])
+      : "";
+    panePidIndexCache = buildPanePidIndex(raw);
+    panePidIndexCacheTs = now;
+    return panePidIndexCache;
+  }
+
+  /** Resolve an agent pid to a session by walking up the OS process tree until
+   *  the chain hits a pid that is some tmux pane's shell pid. The process
+   *  snapshot is read on demand with `ps` — callers are watchers handling a
+   *  hook, so the cost is paid per hook, not per render. */
+  function resolveSessionByPidLive(pid: number): string | null {
+    if (!Number.isInteger(pid) || pid <= 1) return null;
+    const snapshotRaw = shell(["ps", "-axo", "pid=,ppid=,command="]);
+    const snapshot = parseProcessSnapshot(snapshotRaw);
+    return resolveSessionByPidPure(pid, getPanePidIndex(), snapshot);
+  }
+
   // ---- Activity log producer ----
   //
   // Watchers emit AgentEvents (status / tool / thread name) that are
@@ -499,6 +535,9 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
         }
       }
       return null;
+    },
+    resolveSessionByPid(pid: number): string | null {
+      return resolveSessionByPidLive(pid);
     },
     emit(event: AgentEvent) {
       log("agent-emit", event.agent, { session: event.session, status: event.status, threadId: event.threadId?.slice(0, 8) });

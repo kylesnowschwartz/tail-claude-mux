@@ -7,7 +7,10 @@ import type { AgentEvent } from "../src/contracts/agent";
 import type { AgentWatcherContext, HookPayload } from "../src/contracts/agent-watcher";
 import { isHookReceiver } from "../src/contracts/agent-watcher";
 
-function makeCtx(sessionMap: Record<string, string> = {}): AgentWatcherContext & { events: AgentEvent[] } {
+function makeCtx(
+  sessionMap: Record<string, string> = {},
+  pidMap: Record<number, string> = {},
+): AgentWatcherContext & { events: AgentEvent[] } {
   const events: AgentEvent[] = [];
   return {
     events,
@@ -17,6 +20,9 @@ function makeCtx(sessionMap: Record<string, string> = {}): AgentWatcherContext &
         if (projectDir.endsWith(key) || key.endsWith(projectDir)) return val;
       }
       return null;
+    },
+    resolveSessionByPid(pid: number) {
+      return pidMap[pid] ?? null;
     },
     emit(event: AgentEvent) {
       events.push(event);
@@ -277,7 +283,80 @@ describe("PiHookAdapter", () => {
     expect(ctx.events[0].status).toBe("running");
   });
 
-  // --- Unresolved session ---
+  // --- Routing: pid-first, cwd-fallback ---
+  //
+  // Live hook routing prefers pid because pi sends its long-lived process.pid
+  // in every payload and the answer is independent of the active pane's cwd.
+  // Cwd is the fallback only when pid is absent (older watchers / malformed
+  // payloads); when pid is present and pid lookup fails, the event is dropped
+  // rather than silently re-routed.
+
+  test("hook with pid routes via pid — ignores cwd map", () => {
+    // Pid-only ctx: cwd map is empty, so a cwd-based attempt would drop the hook.
+    const pidCtx = makeCtx({}, { 89555: "pi-dev" });
+    const piAdapter = new PiHookAdapter(
+      join(tmpdir(), "tcm-pi-routing-" + Math.random().toString(36).slice(2)),
+    );
+    piAdapter.start(pidCtx);
+    piAdapter.handleHook(hook("agent_start", "sess-pid-1", "/unrelated/path", { pid: 89555 }));
+
+    expect(pidCtx.events).toHaveLength(1);
+    expect(pidCtx.events[0]).toMatchObject({
+      session: "pi-dev",
+      threadId: "sess-pid-1",
+      status: "running",
+      pid: 89555,
+    });
+    piAdapter.stop();
+  });
+
+  test("hook with pid is dropped when pid lookup fails — no cwd fallback", () => {
+    // The whole point: if pid is provided and we can't resolve it, that is a
+    // routing failure. We refuse to silently fall through to cwd — doing so
+    // would mask future pid-resolution regressions. Same scenario from the
+    // live bug: cwd map points at the active pane's path, hook arrives with a
+    // different cwd, but now carries pid. We want it to fail loudly via the
+    // pid path, not succeed accidentally via cwd.
+    const pidCtx = makeCtx(
+      { "/Users/kyle/Code/my-projects/kylesnowschwartz.github.io": "pi-dev" },
+      {}, // no pid mapping — lookup will fail
+    );
+    const piAdapter = new PiHookAdapter(
+      join(tmpdir(), "tcm-pi-routing-" + Math.random().toString(36).slice(2)),
+    );
+    piAdapter.start(pidCtx);
+    piAdapter.handleHook(hook(
+      "agent_start",
+      "sess-pid-fail-1",
+      "/Users/kyle/Code/my-projects/kylesnowschwartz.github.io", // would resolve via cwd
+      { pid: 89555 },
+    ));
+
+    expect(pidCtx.events).toHaveLength(0);
+    piAdapter.stop();
+  });
+
+  test("hook without pid falls through to cwd — backward compat for malformed payloads", () => {
+    // Pi extension always sends pid, but the contract allows missing pid for
+    // forward compat with watchers that don't carry it. In that case there is
+    // no pid path to fail — cwd is the only available channel.
+    const cwdCtx = makeCtx({ "/tmp/legacy-project": "legacy" });
+    const piAdapter = new PiHookAdapter(
+      join(tmpdir(), "tcm-pi-routing-" + Math.random().toString(36).slice(2)),
+    );
+    piAdapter.start(cwdCtx);
+    piAdapter.handleHook(hook("agent_start", "sess-cwd-1", "/tmp/legacy-project"));
+
+    expect(cwdCtx.events).toHaveLength(1);
+    expect(cwdCtx.events[0]).toMatchObject({
+      session: "legacy",
+      threadId: "sess-cwd-1",
+      status: "running",
+    });
+    piAdapter.stop();
+  });
+
+  // --- Unresolved session (cwd path, no pid) ---
 
   test("unresolved cwd emits nothing", () => {
     adapter.handleHook(hook("session_start", "sess-1", "/tmp/unknown-project"));

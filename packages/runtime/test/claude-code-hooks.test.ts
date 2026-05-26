@@ -7,7 +7,10 @@ import type { AgentEvent } from "../src/contracts/agent";
 import type { AgentWatcherContext, HookPayload } from "../src/contracts/agent-watcher";
 import { isHookReceiver } from "../src/contracts/agent-watcher";
 
-function makeCtx(sessionMap: Record<string, string> = {}): AgentWatcherContext & { events: AgentEvent[] } {
+function makeCtx(
+  sessionMap: Record<string, string> = {},
+  pidMap: Record<number, string> = {},
+): AgentWatcherContext & { events: AgentEvent[] } {
   const events: AgentEvent[] = [];
   return {
     events,
@@ -19,6 +22,9 @@ function makeCtx(sessionMap: Record<string, string> = {}): AgentWatcherContext &
         if (projectDir.endsWith(key) || key.endsWith(projectDir)) return val;
       }
       return null;
+    },
+    resolveSessionByPid(pid: number) {
+      return pidMap[pid] ?? null;
     },
     emit(event: AgentEvent) {
       events.push(event);

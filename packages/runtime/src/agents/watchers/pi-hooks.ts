@@ -240,9 +240,26 @@ export class PiHookAdapter implements AgentWatcher, HookReceiver {
     dbg("hook", "received", { event: payload.event, cwd: payload.cwd, session_id: payload.session_id?.slice(0, 8) });
     if (!this.ctx) { dbg("hook", "no-ctx"); return; }
     if (!payload.session_id || !payload.cwd) { dbg("hook", "missing-ids"); return; }
-
-    const session = this.ctx.resolveSession(payload.cwd);
-    if (!session) { dbg("hook", "no-session", { cwd: payload.cwd }); return; }
+    // Routing: pid is the authoritative channel — pi's extension runs
+    // in-process and reports `process.pid` directly, and the answer is
+    // independent of the active pane's cwd (which the cwd resolver keys on
+    // and which drifts as the user navigates). When pid is present and pid
+    // lookup fails, we drop the event rather than silently fall through to
+    // cwd: a fallback there would mask future pid-resolution regressions,
+    // re-introducing the same class of silent-drop bug from a different
+    // direction. Cwd remains the only channel when pid is absent —
+    // backward-compat for malformed payloads from non-pi hook clients.
+    let session: string | null;
+    if (payload.pid != null) {
+      session = this.ctx.resolveSessionByPid(payload.pid);
+      if (!session) {
+        dbg("hook", "no-session-by-pid", { pid: payload.pid, event: payload.event });
+        return;
+      }
+    } else {
+      session = this.ctx.resolveSession(payload.cwd);
+      if (!session) { dbg("hook", "no-session", { cwd: payload.cwd }); return; }
+    }
 
     const threadId = payload.session_id;
     let state = this.threads.get(threadId);

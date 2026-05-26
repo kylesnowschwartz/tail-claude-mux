@@ -120,11 +120,14 @@ interface AgentWatcher {
 ```ts
 interface AgentWatcherContext {
   resolveSession(projectDir: string): string | null;
+  resolveSessionByPid(pid: number): string | null;
   emit(event: AgentEvent): void;
 }
 ```
 
-`resolveSession(projectDir)` first checks for an exact directory match across registered mux sessions. If there is no exact match, the server falls back to parent-child prefix matching so nested project paths can still resolve.
+`resolveSession(projectDir)` first checks for an exact directory match across registered mux sessions. If there is no exact match, the server falls back to parent-child prefix matching so nested project paths can still resolve. It is fragile by construction — a tmux session does not have a single canonical cwd, and the recorded `s.dir` reflects whichever pane is currently active. Prefer `resolveSessionByPid` for live hook routing; use `resolveSession` only when no live pid is available (cold-start seed paths).
+
+`resolveSessionByPid(pid)` walks upward through the OS process tree from `pid` until the chain hits a pid that matches some tmux pane's shell pid, and returns that pane's session. It is the authoritative routing channel for live hooks: every payload carries the agent's pid, the answer is independent of where the user has focused, and a failure to resolve is a hard failure (the watcher drops the event rather than silently falling through to `resolveSession`).
 
 ### Minimal Watcher Example
 

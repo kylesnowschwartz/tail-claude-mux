@@ -6,8 +6,19 @@ import type { AgentEvent } from "./agent";
  * and emit events without knowing about server internals.
  */
 export interface AgentWatcherContext {
-  /** Resolve a project directory path to a mux session name, or null if unmatched */
+  /** Resolve a project directory path to a mux session name, or null if unmatched.
+   *  Cwd-based resolution is fragile: tmux sessions don't have a single canonical
+   *  cwd, and the runtime's recorded `s.dir` is the active pane's cwd — which can
+   *  drift to a path unrelated to where an agent in the same session was launched.
+   *  Prefer `resolveSessionByPid` for live hook routing; this entry exists for the
+   *  cold-start seed path where no live pid is available. */
   resolveSession(projectDir: string): string | null;
+  /** Resolve an agent's pid to a mux session name, or null if unmatched.
+   *  Walks upward through the process tree until it lands on a tmux pane's shell
+   *  pid, then returns that pane's session. Authoritative for live hook routing —
+   *  the watcher emits the agent's pid in every payload, and the answer doesn't
+   *  depend on which pane the user has currently focused. */
+  resolveSessionByPid(pid: number): string | null;
   /** Emit an agent event (applied to tracker + broadcast automatically) */
   emit(event: AgentEvent): void;
 }
