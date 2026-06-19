@@ -16,6 +16,17 @@ const RECENT_END_SUPPRESS_MS = 5_000;
 // noticeably delaying real exits.
 const DEFAULT_MISS_THRESHOLD = 2;
 
+// Last-resort ceiling for an alive `running` entry that pruneStuck would
+// otherwise keep forever. An interactive agent's process stays alive between
+// turns, so liveness alone can't say "still working" — reconcileStaleRunning
+// answers that authoritatively against the agent's status file and bumps `ts`
+// for entries it confirms busy. An alive entry that reaches this ceiling with
+// neither a fresh hook nor a "working" confirmation is a lost terminal signal
+// (probe returned null: file absent, sdk-cli, pid reused, or a watcher with no
+// probe) and gets pruned rather than spinning indefinitely. Far longer than any
+// real single tool call, so it never truncates genuine work.
+const ALIVE_PRUNE_CEILING_MS = 30 * 60 * 1000;
+
 const STATUS_PRIORITY: Record<string, number> = {
   running: 5,
   error: 4,
@@ -363,17 +374,69 @@ export class AgentTracker {
     const now = Date.now();
     for (const [session, sessionInstances] of this.instances) {
       for (const [key, event] of sessionInstances) {
-        if (event.status === "running" && now - event.ts > timeoutMs) {
-          if (event.liveness === "alive") continue;
-          sessionInstances.delete(key);
-          this.unseenInstances.delete(this.unseenKey(session, key));
-          this.clearMissState(session, key);
-        }
+        if (event.status !== "running") continue;
+        const age = now - event.ts;
+        if (age <= timeoutMs) continue;
+        // Alive panes get a longer leash. A long single tool call emits no
+        // hooks mid-run (so `ts` stalls), and reconcileStaleRunning bumps `ts`
+        // for entries the agent's status file confirms busy. Only once an
+        // alive entry crosses ALIVE_PRUNE_CEILING_MS with no event and no
+        // "working" confirmation do we treat it as a lost terminal signal.
+        if (event.liveness === "alive" && age <= ALIVE_PRUNE_CEILING_MS) continue;
+        sessionInstances.delete(key);
+        this.unseenInstances.delete(this.unseenKey(session, key));
+        this.clearMissState(session, key);
       }
       if (sessionInstances.size === 0) {
         this.instances.delete(session);
       }
     }
+  }
+
+  /** Reconcile stale `running` entries against an authoritative per-agent probe.
+   *
+   *  An interactive agent (Claude Code, pi) keeps its process alive between
+   *  turns, so `liveness: "alive"` means "process exists", NOT "agent is
+   *  working" — pruneStuck can't distinguish a genuinely long tool call from a
+   *  turn whose terminal hook (Stop / SessionEnd / StopFailure) was lost or
+   *  mis-routed. This pass asks the owning watcher, which reads the agent's
+   *  status file (`~/.claude/sessions/<pid>.json` for Claude Code):
+   *    - "ended"   → the turn is over; mark `done` so the spinner clears
+   *                  (done + alive renders as "ready").
+   *    - "working" → genuinely busy; reset `ts` so it isn't re-probed until the
+   *                  next window and pruneStuck's ceiling can't fire on it.
+   *    - null      → no signal (file absent, sdk-cli, pid==null); leave as-is
+   *                  and let pruneStuck's ceiling be the last resort.
+   *
+   *  Only `running` + alive + stale entries with a pid are probed, so the file
+   *  read is paid only for the rare stuck row. Returns true if anything became
+   *  visibly different (an "ended" transition), so the caller can broadcast. */
+  reconcileStaleRunning(
+    staleMs: number,
+    probe: (event: AgentEvent) => "working" | "ended" | null,
+  ): boolean {
+    const now = Date.now();
+    let changed = false;
+    for (const sessionInstances of this.instances.values()) {
+      for (const event of sessionInstances.values()) {
+        if (event.status !== "running") continue;
+        if (event.liveness !== "alive") continue; // exited running is pruneStuck's job
+        if (event.pid == null) continue; // nothing to probe against
+        if (now - event.ts <= staleMs) continue;
+        const verdict = probe(event);
+        if (verdict === "ended") {
+          event.status = "done";
+          event.ts = now;
+          changed = true;
+        } else if (verdict === "working") {
+          // Genuinely busy (e.g. a long tool call) — reset the staleness clock
+          // so neither this pass nor pruneStuck's ceiling fires on real work.
+          // Not a visible change, so don't request a broadcast.
+          event.ts = now;
+        }
+      }
+    }
+    return changed;
   }
 
   /** Auto-prune entries whose process has exited. Two-tier policy:

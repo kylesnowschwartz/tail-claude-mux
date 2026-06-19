@@ -42,6 +42,18 @@ export interface AgentWatcher {
 
   /** Stop watching and clean up resources. */
   stop(): void;
+
+  /** Optional authoritative liveness probe for a stale `running` instance.
+   *  The tracker's reconcile pass calls this for a `running` + alive entry that
+   *  has gone quiet (no hook within the reconcile window) to decide whether the
+   *  agent is genuinely working or its terminal hook was lost. Implementations
+   *  read the agent's own status source (Claude Code: `~/.claude/sessions/<pid>.json`)
+   *  and return:
+   *    - "working" → still processing a turn (keep the spinner)
+   *    - "ended"   → the turn is over (clear the spinner)
+   *    - null      → no signal; the caller falls back to the prune ceiling
+   *  A watcher without a reliable status source simply omits this. */
+  probeLiveStatus?(pid: number, threadId: string): "working" | "ended" | null;
 }
 
 // --- Hook-based detection ---

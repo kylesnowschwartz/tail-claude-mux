@@ -6,6 +6,13 @@ export const SERVER_HOST = "127.0.0.1";
 export const PID_FILE = "/tmp/tcm.pid";
 export const SERVER_IDLE_TIMEOUT_MS = 30_000;
 export const STUCK_RUNNING_TIMEOUT_MS = 3 * 60 * 1000;
+/** How long a `running` + alive instance may go without any hook before the
+ *  server reconciles it against the agent's authoritative status file. Short,
+ *  because the probe is cheap (one small JSON read) and only fires for the
+ *  rare stale-running entry — a genuinely busy agent is re-confirmed and its
+ *  staleness clock reset, so the spinner recovers within one window of a lost
+ *  terminal hook rather than never. */
+export const RECONCILE_STALE_MS = 60 * 1000;
 
 export interface SessionData {
   name: string;

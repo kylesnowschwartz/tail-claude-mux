@@ -283,6 +283,66 @@ describe("AgentTracker", () => {
     expect(tracker.getState("sess-1")).not.toBeNull();
   });
 
+  test("pruneStuck keeps an alive running entry within the 30min ceiling", () => {
+    // Interactive agents stay alive between turns; a stale-but-recent alive
+    // entry must survive so reconcileStaleRunning gets a chance to confirm it.
+    const ts = Date.now() - 10 * 60 * 1000; // 10 min — past timeout, under ceiling
+    tracker.applyEvent(event({ session: "sess-1", status: "running", ts, liveness: "alive" }));
+
+    tracker.pruneStuck(3 * 60 * 1000);
+
+    expect(tracker.getState("sess-1")).not.toBeNull();
+  });
+
+  test("pruneStuck prunes an alive running entry past the 30min ceiling (lost terminal signal)", () => {
+    const ts = Date.now() - 31 * 60 * 1000; // beyond ALIVE_PRUNE_CEILING_MS
+    tracker.applyEvent(event({ session: "sess-1", status: "running", ts, liveness: "alive" }));
+
+    tracker.pruneStuck(3 * 60 * 1000);
+
+    expect(tracker.getState("sess-1")).toBeNull();
+  });
+
+  // --- reconcileStaleRunning ---
+
+  test("reconcileStaleRunning marks an 'ended' stale-alive running as done", () => {
+    const ts = Date.now() - 5 * 60 * 1000;
+    tracker.applyEvent(event({ session: "sess-1", status: "running", ts, liveness: "alive", pid: 100 }));
+
+    const changed = tracker.reconcileStaleRunning(60 * 1000, () => "ended");
+
+    expect(changed).toBe(true);
+    expect(tracker.getState("sess-1")!.status).toBe("done");
+  });
+
+  test("reconcileStaleRunning bumps ts (and stays running) when probe says working", () => {
+    const ts = Date.now() - 5 * 60 * 1000;
+    tracker.applyEvent(event({ session: "sess-1", status: "running", ts, liveness: "alive", pid: 100 }));
+
+    const changed = tracker.reconcileStaleRunning(60 * 1000, () => "working");
+
+    expect(changed).toBe(false);
+    const state = tracker.getState("sess-1")!;
+    expect(state.status).toBe("running");
+    expect(state.ts).toBeGreaterThan(ts); // staleness clock reset
+    // A subsequent pruneStuck must not fire on the freshly-bumped entry.
+    tracker.pruneStuck(3 * 60 * 1000);
+    expect(tracker.getState("sess-1")).not.toBeNull();
+  });
+
+  test("reconcileStaleRunning skips fresh, exited, non-running, and pid-less entries", () => {
+    const old = Date.now() - 5 * 60 * 1000;
+    tracker.applyEvent(event({ agent: "a", session: "s", threadId: "fresh", status: "running", ts: Date.now(), liveness: "alive", pid: 1 }));
+    tracker.applyEvent(event({ agent: "a", session: "s", threadId: "exited", status: "running", ts: old, liveness: "exited", pid: 2 }));
+    tracker.applyEvent(event({ agent: "a", session: "s", threadId: "done", status: "done", ts: old, liveness: "alive", pid: 3 }));
+    tracker.applyEvent(event({ agent: "a", session: "s", threadId: "nopid", status: "running", ts: old, liveness: "alive" }));
+
+    let probed = 0;
+    tracker.reconcileStaleRunning(60 * 1000, () => { probed++; return "ended"; });
+
+    expect(probed).toBe(0); // none of the four qualify
+  });
+
   // --- isUnseen ---
 
   test("isUnseen returns correct value", () => {

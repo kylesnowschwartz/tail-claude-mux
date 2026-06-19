@@ -112,6 +112,43 @@ function determineStatus(entry: JournalEntry): AgentStatus | null {
   return null;
 }
 
+// --- Authoritative liveness classification from ~/.claude/sessions/<pid>.json ---
+
+/** Shape of the fields we read from `~/.claude/sessions/<pid>.json`. Claude Code
+ *  writes `status` ∈ {busy, idle, waiting} for interactive (`cli`) sessions and
+ *  ticks `updatedAt` on turn/status changes (not a heartbeat). Print-mode
+ *  (`sdk-cli`) sessions write the file without `status`. */
+export interface SessionStatusFile {
+  sessionId?: string;
+  status?: string;
+  updatedAt?: number;
+}
+
+/** Decide whether a stale `running` instance is genuinely working from its
+ *  session file. Pure so it can be unit-tested without touching disk.
+ *    - file absent / no `status` (sdk-cli) → null (no signal)
+ *    - sessionId mismatch (pid reused for another session) → "ended"
+ *    - status "busy" + fresh `updatedAt` → "working"
+ *    - status "busy" + `updatedAt` older than BUSY_HUNG_MS → "ended" (hung)
+ *    - status "idle" | "waiting" | "done" → "ended" */
+export function classifySessionStatus(
+  file: SessionStatusFile | undefined,
+  threadId: string,
+  now: number,
+): "working" | "ended" | null {
+  if (!file) return null;
+  // PID reuse: the file now belongs to a different session, so the thread we
+  // were tracking on this pid is gone.
+  if (file.sessionId && threadId && file.sessionId !== threadId) return "ended";
+  const status = file.status;
+  if (status === "busy") {
+    if (typeof file.updatedAt === "number" && now - file.updatedAt > BUSY_HUNG_MS) return "ended";
+    return "working";
+  }
+  if (status === "idle" || status === "waiting" || status === "done") return "ended";
+  return null; // status absent (sdk-cli) — defer to the prune ceiling
+}
+
 // --- Thread name extraction (used for seed and one-time JSONL reads) ---
 
 function extractThreadName(entry: JournalEntry): string | undefined {
@@ -238,9 +275,19 @@ const HOOK_STATUS_MAP: Record<string, AgentStatus> = {
   PermissionRequest: "waiting",
   PostToolUse: "running",
   Stop: "done",
+  // A turn that dies on an API error (rate limit, server error, max output
+  // tokens) fires StopFailure instead of Stop. Without this it would never
+  // clear the "running" spinner. Surfaced as "error" — the truthful terminal
+  // state, mirroring pi's stop_reason:"error".
+  StopFailure: "error",
   SessionEnd: "done",
   // Notification is handled separately — status depends on notification_type
 };
+
+/** Treat a `busy` session whose `updatedAt` is older than this as hung /
+ *  abandoned rather than genuinely working. Longer than any realistic single
+ *  tool call so a long Bash/build is never misread as stuck. */
+const BUSY_HUNG_MS = 30 * 60 * 1000;
 
 // --- Adapter ---
 
@@ -282,9 +329,6 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
     const newStatus = this.resolveStatus(payload);
     if (!newStatus) { dbg("hook", "ignored", { event: payload.event, notification_type: payload.notification_type }); return; }
 
-    const session = this.ctx.resolveSession(payload.cwd);
-    if (!session) { dbg("hook", "no-session", { cwd: payload.cwd }); return; }
-
     const threadId = payload.session_id;
     let state = this.threads.get(threadId);
     let isNewThread = false;
@@ -305,6 +349,8 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
     // pid ($PPID) is the `sh -c` wrapper; walking ancestry against the
     // snapshot finds the actual claude process. Re-resolve on every hook
     // until we have a pid (a hook without process_snapshot can land first).
+    // This must precede session resolution: pid is the authoritative routing
+    // channel below, and it keys off the resolved long-lived pid.
     if (state.pid == null && payload.pid != null && payload.process_snapshot) {
       const proc = parseProcessSnapshot(payload.process_snapshot);
       const resolved = resolveAgentSessionPid(payload.pid, CLAUDE_CMD_RE, proc);
@@ -318,6 +364,23 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
         const info = proc.get(payload.pid);
         if (info && CLAUDE_CMD_RE.test(info.command)) state.pid = payload.pid;
       }
+    }
+
+    // Routing: pid is authoritative. The cwd resolver keys on the active pane's
+    // cwd, which drifts as the user navigates and silently mis-routes (or drops)
+    // hooks — the same fragility the pi adapter moved away from. Route by the
+    // resolved long-lived claude pid; the server walks its OS-tree ancestry up
+    // to the owning pane. When pid resolves but the pane lookup fails, drop
+    // rather than fall through to cwd: a fallback there would mask future
+    // pid-resolution regressions. Cwd remains the channel only when we have no
+    // pid yet (a hook landed before process_snapshot resolved one).
+    let session: string | null;
+    if (state.pid != null) {
+      session = this.ctx.resolveSessionByPid(state.pid);
+      if (!session) { dbg("hook", "no-session-by-pid", { pid: state.pid, event: payload.event }); return; }
+    } else {
+      session = this.ctx.resolveSession(payload.cwd);
+      if (!session) { dbg("hook", "no-session", { cwd: payload.cwd }); return; }
     }
 
     // Refresh subagent from sessions/<pid>.json. Failures are swallowed —
@@ -412,10 +475,21 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
   }
 
   /** Read sessions/<pid>.json and return the parsed payload (or undefined on failure). */
-  private readSessionFile(pid: number): { agent?: string; sessionId?: string } | undefined {
+  private readSessionFile(pid: number): (SessionStatusFile & { agent?: string }) | undefined {
     try {
       return JSON.parse(readFileSync(join(this.sessionsDir, `${pid}.json`), "utf-8"));
     } catch { return undefined; }
+  }
+
+  /** Authoritative liveness probe for the tracker's reconcile pass. Reads
+   *  `~/.claude/sessions/<pid>.json` and classifies it. On a definitive "ended"
+   *  verdict, drops any cached ThreadState for the thread so a resumed session
+   *  re-emits cleanly (the next hook is treated as a fresh thread and bypasses
+   *  dedup) rather than staying wrongly pinned to "running" in this adapter. */
+  probeLiveStatus(pid: number, threadId: string): "working" | "ended" | null {
+    const verdict = classifySessionStatus(this.readSessionFile(pid), threadId, Date.now());
+    if (verdict === "ended") this.threads.delete(threadId);
+    return verdict;
   }
 
   /** Refresh `state.subagent` from sessions/<pid>.json.
@@ -518,7 +592,16 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
 
         if (latestStatus === "idle" || TERMINAL_STATUSES.has(latestStatus)) continue;
 
-        const session = this.ctx?.resolveSession(projectDir);
+        // Resolve the long-lived pid from sessions/<pid>.json so the seeded
+        // entry routes by pid — the same channel live hooks use. Without this
+        // the seed (cwd) and the first hook (pid) can land under different
+        // session keys and split one conversation into two rows; and the
+        // seeded entry would carry no pid, so the tracker's liveness sweep and
+        // reconcile pass could never act on it. Fall back to cwd routing when
+        // the pid can't be resolved (stale file / sdk-cli).
+        const pid = this.resolvePidFromSessions(threadId);
+        const session = (pid != null ? this.ctx?.resolveSessionByPid(pid) : null)
+          ?? this.ctx?.resolveSession(projectDir);
         if (!session) continue;
 
         this.threads.set(threadId, {
@@ -526,6 +609,7 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
           threadName,
           projectDir,
           nameResolved: true,
+          pid: pid ?? undefined,
         });
 
         this.ctx?.emit({
@@ -535,6 +619,7 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
           ts: fileStat.mtimeMs,
           threadId,
           threadName,
+          pid: pid ?? undefined,
         });
       }
     }

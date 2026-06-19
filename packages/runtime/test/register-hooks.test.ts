@@ -27,11 +27,11 @@ describe("registerHooks", () => {
   test("creates settings.json with all hooks when file does not exist", () => {
     const added = registerHooks(fakeTcmDir, settingsPath);
 
-    expect(added).toEqual(["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop", "Notification", "SessionEnd"]);
+    expect(added).toEqual(["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop", "StopFailure", "Notification", "SessionEnd"]);
     expect(existsSync(settingsPath)).toBe(true);
 
     const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
-    expect(Object.keys(settings.hooks)).toHaveLength(8);
+    expect(Object.keys(settings.hooks)).toHaveLength(9);
 
     // Verify structure
     const hookScript = join(fakeTcmDir, "scripts", "hook.sh");
@@ -51,16 +51,16 @@ describe("registerHooks", () => {
 
     const added = registerHooks(fakeTcmDir, settingsPath);
 
-    expect(added).toHaveLength(8);
+    expect(added).toHaveLength(9);
     const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
     expect(settings.someOtherSetting).toBe(true);
     expect(settings.hooks.SomeOtherHook).toBeDefined();
-    expect(Object.keys(settings.hooks)).toHaveLength(9); // 8 new + 1 existing
+    expect(Object.keys(settings.hooks)).toHaveLength(10); // 9 new + 1 existing
   });
 
   test("is idempotent — running twice registers nothing the second time", () => {
     const first = registerHooks(fakeTcmDir, settingsPath);
-    expect(first).toHaveLength(8);
+    expect(first).toHaveLength(9);
 
     const second = registerHooks(fakeTcmDir, settingsPath);
     expect(second).toHaveLength(0);

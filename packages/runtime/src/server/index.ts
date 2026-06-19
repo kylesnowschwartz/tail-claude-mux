@@ -35,6 +35,7 @@ import {
   PID_FILE,
   SERVER_IDLE_TIMEOUT_MS,
   STUCK_RUNNING_TIMEOUT_MS,
+  RECONCILE_STALE_MS,
 } from "../shared";
 
 // --- Debug logger ---
@@ -231,7 +232,19 @@ function syncGitWatchers(sessions: SessionData[], broadcastFn: () => void) {
 
 export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   const allWatchers = watchers ?? [];
+  const watcherByName = new Map(allWatchers.map((w) => [w.name, w]));
   const tracker = new AgentTracker();
+
+  /** Probe used by the tracker's reconcile pass to ask the owning watcher
+   *  whether a stale `running` instance is genuinely working — see
+   *  AgentTracker.reconcileStaleRunning. Watchers without a probe (or events
+   *  without a pid) yield null, leaving pruneStuck's ceiling as the backstop. */
+  function probeAgentLiveness(event: AgentEvent): "working" | "ended" | null {
+    if (event.pid == null) return null;
+    const w = watcherByName.get(event.agent);
+    if (!w?.probeLiveStatus) return null;
+    return w.probeLiveStatus(event.pid, event.threadId ?? "");
+  }
   // PID-based liveness sweep: every 5s, mark any tracked instance whose
   // `pid` is no longer running as `liveness: "exited"`. Catches crashes
   // and `kill -9` cases where no SessionEnd hook fires.
@@ -681,6 +694,13 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
 
   function broadcastStateImmediate() {
     invalidateCurrentSessionCache();
+    // Reconcile before pruning: a stale "running" whose agent process is still
+    // alive (interactive sessions stay alive between turns) is invisible to
+    // pruneStuck's liveness guard. The probe reads the agent's status file and
+    // clears the spinner when the turn has actually ended, or resets the
+    // staleness clock when it's genuinely busy. pruneStuck's long ceiling is
+    // the last resort when the probe yields no signal.
+    tracker.reconcileStaleRunning(RECONCILE_STALE_MS, probeAgentLiveness);
     tracker.pruneStuck(STUCK_RUNNING_TIMEOUT_MS);
     tracker.pruneTerminal();
     lastState = computeState();

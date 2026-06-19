@@ -15,7 +15,10 @@ import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync } from
 import { join, dirname } from "path";
 import { homedir } from "os";
 
-const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop", "Notification", "SessionEnd"] as const;
+// StopFailure fires when a turn ends on an API error (rate limit, server
+// error, max output tokens) instead of a normal Stop — without it a turn that
+// dies mid-flight leaves the agent stuck showing "running".
+const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop", "StopFailure", "Notification", "SessionEnd"] as const;
 
 /**
  * Register tcm hooks in Claude Code's settings.json.

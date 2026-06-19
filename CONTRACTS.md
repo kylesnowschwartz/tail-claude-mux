@@ -24,15 +24,17 @@ built-in adapters claim payloads exclusively via the discriminator.
 
 ### Claude Code (Hook-Based)
 
-- Receives lifecycle hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `Stop`, `Notification`, `SessionEnd`) via `POST /hook`.
+- Receives lifecycle hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `Stop`, `StopFailure`, `Notification`, `SessionEnd`) via `POST /hook`.
 - Claude Code pushes events through `scripts/hook.sh`, registered in `~/.claude/settings.json`.
-- Maps hooks to status: `SessionStart` → `idle`, `UserPromptSubmit`/`PreToolUse`/`PostToolUse` → `running`, `PermissionRequest` → `waiting`, `Stop`/`SessionEnd` → `done`.
+- Maps hooks to status: `SessionStart` → `idle`, `UserPromptSubmit`/`PreToolUse`/`PostToolUse` → `running`, `PermissionRequest` → `waiting`, `Stop`/`SessionEnd` → `done`, `StopFailure` → `error` (a turn killed by an API error — rate limit, server error, max output tokens — fires `StopFailure`, not `Stop`; without it the row would stay stuck on `running`).
+- Routes hooks by pid, not cwd: resolves the long-lived `claude` pid from the hook's `process_snapshot` (ancestor walk), then `resolveSessionByPid`. Falls back to `resolveSession(cwd)` only when no pid is resolvable; drops the event if pid resolves but the pane lookup fails (no silent cwd fallback). Mirrors the pi adapter.
 - `Notification` branches on `notification_type`: `permission_prompt` → `waiting`, `idle_prompt` → `done`, others ignored.
 - `PreToolUse` and `PermissionRequest` extract `tool_name` + `tool_input` to generate human-readable descriptions (e.g. "Reading config.ts", "Running git status") emitted as `AgentEvent.toolDescription`.
 - `SessionEnd` cleans up thread state for immediate cleanup instead of waiting for pane scanner pruning.
-- On cold start, performs a one-time seed scan of `~/.claude/projects/` JSONL files to bootstrap state for sessions already running.
+- On cold start, performs a one-time seed scan of `~/.claude/projects/` JSONL files to bootstrap state for sessions already running. The seed resolves each thread's pid from `~/.claude/sessions/` and routes by pid (same channel as live hooks, falling back to cwd), so a seeded entry shares the live hook's session key and carries a pid the liveness sweep and reconcile pass can act on.
 - On first hook for an unknown session, reads the JSONL file once to resolve the thread name.
-- No polling, no `fs.watch`, no intervals after startup.
+- Implements `probeLiveStatus(pid, threadId)` for the tracker's reconcile pass (see Tracker Semantics): reads `~/.claude/sessions/<pid>.json` and returns `working` (status `busy` + fresh `updatedAt`), `ended` (status `idle`/`waiting`, a `busy` turn stale past 30 min, or pid reused for another session), or `null` (file absent / no `status`, e.g. `sdk-cli`). An `ended` verdict also drops the cached thread so a resumed session re-emits cleanly.
+- No proactive polling or `fs.watch` after startup. The only on-demand reads are the one-time thread-name resolve and `probeLiveStatus`, which the tracker calls solely for a stale-running entry — not a steady-state poll.
 
 #### Claude Code Hook Setup
 
@@ -51,6 +53,7 @@ Run `bun run scripts/setup-hooks.ts` to register hooks in `~/.claude/settings.js
   - `session_shutdown` → emits `done` with `ended: true` and drops thread state immediately so the tracker does not hold the instance through the terminal-prune window.
 - `threadId` is pi's session UUID (`ctx.sessionManager.getSessionId()`), so multiple concurrent pi instances in the same mux session render as separate sidebar rows.
 - On cold start, scans `~/.pi/agent/sessions/` for files modified within the last 5 minutes and reads `SessionHeader.cwd` from each to avoid pi's lossy directory-name encoding. Hooks always win if a thread is known from both sources.
+- Does not yet implement `probeLiveStatus`, so a stale pi `running` entry relies on the tracker's 30-minute prune ceiling rather than authoritative reconciliation. Follow-up: add a probe against `~/.pi/agent/sessions/`.
 
 #### Pi Extension Setup
 
@@ -102,7 +105,7 @@ interface AgentEvent {
 - A session can have multiple active agent instances.
 - Unseen state is tracked per instance, then derived to the session level.
 - Non-terminal updates clear unseen state for that instance.
-- Stale `running` events are pruned after 3 minutes.
+- Stale `running` events: an `exited` instance is pruned after 3 minutes. An `alive` instance (interactive agents keep their process alive between turns, so liveness ≠ "working") is first reconciled against the watcher's `probeLiveStatus` once it has gone ~60s without a hook — `ended` → marked `done` (renders "ready"), `working` → staleness clock reset. Only an alive instance that reaches a 30-minute ceiling with no event and no `working` confirmation (probe returned `null`) is pruned as a lost terminal signal.
 - Seen terminal instances are pruned after 5 minutes.
 
 ## `AgentWatcher`
@@ -112,6 +115,11 @@ interface AgentWatcher {
   readonly name: string;
   start(ctx: AgentWatcherContext): void;
   stop(): void;
+  /** Optional authoritative liveness probe. The tracker's reconcile pass calls
+   *  this for a stale `running` + alive instance to decide whether the agent is
+   *  genuinely working or its terminal hook was lost. Omit it if the watcher has
+   *  no reliable status source. */
+  probeLiveStatus?(pid: number, threadId: string): "working" | "ended" | null;
 }
 ```
 

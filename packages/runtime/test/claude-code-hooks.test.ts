@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, unlinkSync, mkdirSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { ClaudeCodeHookAdapter, toolDescription } from "../src/agents/watchers/claude-code-hooks";
+import { ClaudeCodeHookAdapter, toolDescription, classifySessionStatus } from "../src/agents/watchers/claude-code-hooks";
 import type { AgentEvent } from "../src/contracts/agent";
 import type { AgentWatcherContext, HookPayload } from "../src/contracts/agent-watcher";
 import { isHookReceiver } from "../src/contracts/agent-watcher";
@@ -409,6 +409,10 @@ describe("ClaudeCodeHookAdapter subagent enrichment", () => {
     sessionsDir = mkdtempSync(join(tmpdir(), "cc-sessions-"));
     adapter = new ClaudeCodeHookAdapter(undefined, sessionsDir);
     ctx = makeCtx({ "/tmp/myproject": "myproject" });
+    // These tests exercise subagent enrichment, not routing — once
+    // refreshSubagent resolves a pid from the sessions file, later hooks route
+    // by it, so make pid routing always resolve to the project session.
+    ctx.resolveSessionByPid = () => "myproject";
     adapter.start(ctx);
   });
 
@@ -641,6 +645,8 @@ describe("ClaudeCodeHookAdapter — pid resolution", () => {
   beforeEach(() => {
     adapter = new ClaudeCodeHookAdapter();
     ctx = makeCtx({ "/tmp/myproject": "myproject" });
+    // Pid is the routing channel; route any resolved claude pid to the project.
+    ctx.resolveSessionByPid = () => "myproject";
     adapter.start(ctx);
   });
 
@@ -722,5 +728,169 @@ describe("ClaudeCodeHookAdapter — pid resolution", () => {
     adapter.handleHook(hook("SessionStart", "sess-1", "/tmp/myproject"));
     expect(ctx.events).toHaveLength(1);
     expect(ctx.events[0].pid).toBeUndefined();
+  });
+});
+
+describe("ClaudeCodeHookAdapter — pid-first session routing", () => {
+  let adapter: ClaudeCodeHookAdapter;
+
+  beforeEach(() => {
+    adapter = new ClaudeCodeHookAdapter();
+  });
+  afterEach(() => adapter.stop());
+
+  function snapshotClaudeAt200(): string {
+    return [
+      "  100     1 /sbin/launchd",
+      "  200   100 node /path/@anthropic-ai/claude-code/cli.js",
+      "  400   200 /bin/sh -c hook.sh PreToolUse",
+    ].join("\n");
+  }
+
+  test("routes by resolved pid, not cwd, when a pid is available", () => {
+    const ctx = makeCtx({ "/tmp/myproject": "cwd-session" }, { 200: "pid-session" });
+    adapter.start(ctx);
+    adapter.handleHook(hook("SessionStart", "sess-1", "/tmp/myproject", {
+      pid: 400,
+      process_snapshot: snapshotClaudeAt200(),
+    }));
+    expect(ctx.events).toHaveLength(1);
+    expect(ctx.events[0].session).toBe("pid-session"); // pid wins over cwd
+  });
+
+  test("drops the event when pid resolves but the pane lookup fails", () => {
+    const ctx = makeCtx({ "/tmp/myproject": "cwd-session" }, {}); // empty pidMap
+    adapter.start(ctx);
+    adapter.handleHook(hook("SessionStart", "sess-1", "/tmp/myproject", {
+      pid: 400,
+      process_snapshot: snapshotClaudeAt200(),
+    }));
+    expect(ctx.events).toHaveLength(0); // no silent cwd fallback
+  });
+
+  test("falls back to cwd routing when no pid is resolved", () => {
+    const ctx = makeCtx({ "/tmp/myproject": "cwd-session" }, {});
+    adapter.start(ctx);
+    adapter.handleHook(hook("SessionStart", "sess-1", "/tmp/myproject")); // no pid
+    expect(ctx.events).toHaveLength(1);
+    expect(ctx.events[0].session).toBe("cwd-session");
+  });
+});
+
+describe("ClaudeCodeHookAdapter — StopFailure", () => {
+  test("StopFailure maps to error, clearing the running spinner", () => {
+    const ctx = makeCtx({ "/tmp/myproject": "myproject" });
+    const adapter = new ClaudeCodeHookAdapter();
+    adapter.start(ctx);
+    adapter.handleHook(hook("UserPromptSubmit", "sess-1", "/tmp/myproject")); // → running
+    adapter.handleHook(hook("StopFailure", "sess-1", "/tmp/myproject"));
+    const last = ctx.events[ctx.events.length - 1];
+    expect(last.status).toBe("error");
+    adapter.stop();
+  });
+});
+
+describe("classifySessionStatus", () => {
+  const now = 1_000_000_000_000;
+  const HUNG = 30 * 60 * 1000;
+
+  test("absent file → null (no signal)", () => {
+    expect(classifySessionStatus(undefined, "t", now)).toBeNull();
+  });
+
+  test("status absent (sdk-cli) → null", () => {
+    expect(classifySessionStatus({ sessionId: "t" }, "t", now)).toBeNull();
+  });
+
+  test("busy + fresh updatedAt → working", () => {
+    expect(classifySessionStatus({ sessionId: "t", status: "busy", updatedAt: now - 1000 }, "t", now)).toBe("working");
+  });
+
+  test("busy + updatedAt older than hung ceiling → ended", () => {
+    expect(classifySessionStatus({ sessionId: "t", status: "busy", updatedAt: now - HUNG - 1 }, "t", now)).toBe("ended");
+  });
+
+  test("busy with no updatedAt → working (no staleness evidence)", () => {
+    expect(classifySessionStatus({ sessionId: "t", status: "busy" }, "t", now)).toBe("working");
+  });
+
+  test("idle / waiting → ended", () => {
+    expect(classifySessionStatus({ sessionId: "t", status: "idle" }, "t", now)).toBe("ended");
+    expect(classifySessionStatus({ sessionId: "t", status: "waiting" }, "t", now)).toBe("ended");
+  });
+
+  test("sessionId mismatch (pid reused) → ended even if busy", () => {
+    expect(classifySessionStatus({ sessionId: "other", status: "busy", updatedAt: now }, "t", now)).toBe("ended");
+  });
+});
+
+describe("ClaudeCodeHookAdapter.probeLiveStatus", () => {
+  let sessionsDir: string;
+  let adapter: ClaudeCodeHookAdapter;
+
+  beforeEach(() => {
+    sessionsDir = mkdtempSync(join(tmpdir(), "cc-probe-"));
+    adapter = new ClaudeCodeHookAdapter(undefined, sessionsDir);
+  });
+  afterEach(() => {
+    adapter.stop();
+    rmSync(sessionsDir, { recursive: true, force: true });
+  });
+
+  test("reads sessions/<pid>.json and classifies an idle session as ended", () => {
+    writeFileSync(join(sessionsDir, "555.json"), JSON.stringify({ pid: 555, sessionId: "t-1", status: "idle", updatedAt: Date.now() }));
+    expect(adapter.probeLiveStatus(555, "t-1")).toBe("ended");
+  });
+
+  test("classifies a busy fresh session as working", () => {
+    writeFileSync(join(sessionsDir, "556.json"), JSON.stringify({ pid: 556, sessionId: "t-2", status: "busy", updatedAt: Date.now() }));
+    expect(adapter.probeLiveStatus(556, "t-2")).toBe("working");
+  });
+
+  test("missing file → null", () => {
+    expect(adapter.probeLiveStatus(999, "t-3")).toBeNull();
+  });
+});
+
+describe("ClaudeCodeHookAdapter — cold-start seed routes by pid", () => {
+  let projectsDir: string;
+  let sessionsDir: string;
+  let adapter: ClaudeCodeHookAdapter;
+
+  beforeEach(() => {
+    projectsDir = mkdtempSync(join(tmpdir(), "cc-proj-"));
+    sessionsDir = mkdtempSync(join(tmpdir(), "cc-sess-"));
+    adapter = new ClaudeCodeHookAdapter(projectsDir, sessionsDir);
+  });
+  afterEach(() => {
+    adapter.stop();
+    rmSync(projectsDir, { recursive: true, force: true });
+    rmSync(sessionsDir, { recursive: true, force: true });
+  });
+
+  test("seeded running entry routes by pid (not cwd) and carries the resolved pid", async () => {
+    const threadId = "seed-thread-1";
+    // A project dir holding one running conversation transcript.
+    const projDir = join(projectsDir, "-tmp-myproject");
+    mkdirSync(projDir, { recursive: true });
+    writeFileSync(
+      join(projDir, `${threadId}.jsonl`),
+      JSON.stringify({ message: { role: "user", content: [{ type: "text", text: "do the thing" }] } }) + "\n",
+    );
+    // sessions/<pid>.json lets the seed resolve the long-lived pid from threadId.
+    writeFileSync(join(sessionsDir, "4242.json"), JSON.stringify({ pid: 4242, sessionId: threadId }));
+
+    // cwd resolves to one session, pid to another — pid must win.
+    const ctx = makeCtx({}, { 4242: "pid-session" });
+    ctx.resolveSession = () => "cwd-session";
+    adapter.start(ctx);
+
+    // seedFromJsonl is async and not awaited by start(); let it settle.
+    await new Promise((r) => setTimeout(r, 50));
+
+    const seeded = ctx.events.find((e) => e.threadId === threadId);
+    expect(seeded).toBeDefined();
+    expect(seeded!.session).toBe("pid-session");
+    expect(seeded!.pid).toBe(4242);
   });
 });
