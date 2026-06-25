@@ -1167,6 +1167,33 @@ describe("AgentTracker", () => {
       const t = new AgentTracker({ isPidAlive: () => true });
       t.stopLivenessCheck(); // no-op
     });
+
+    test("onChange fires when a sweep flips an instance to exited", async () => {
+      let alive = true;
+      const t = new AgentTracker({ isPidAlive: () => alive });
+      t.applyEvent(event({ session: "s", threadId: "t1", status: "running", pid: 4242, liveness: "alive" }));
+      let calls = 0;
+      t.startLivenessCheck(5, () => { calls++; });
+      // First tick: pid still alive → no flip → no callback.
+      await new Promise((r) => setTimeout(r, 12));
+      const afterAlive = calls;
+      // Kill the pid → next sweep flips to exited → callback fires.
+      alive = false;
+      await new Promise((r) => setTimeout(r, 12));
+      t.stopLivenessCheck();
+      expect(afterAlive).toBe(0);
+      expect(calls).toBeGreaterThanOrEqual(1);
+    });
+
+    test("onChange does not fire on a no-op sweep (nothing to flip)", async () => {
+      const t = new AgentTracker({ isPidAlive: () => true });
+      t.applyEvent(event({ session: "s", threadId: "t1", status: "running", pid: 4242, liveness: "alive" }));
+      let calls = 0;
+      t.startLivenessCheck(5, () => { calls++; });
+      await new Promise((r) => setTimeout(r, 18));
+      t.stopLivenessCheck();
+      expect(calls).toBe(0);
+    });
   });
 
   // --- subagent preservation ---

@@ -511,10 +511,17 @@ export class AgentTracker {
     return changed;
   }
 
-  /** Start the periodic liveness check. Caller is responsible for stopLivenessCheck(). */
-  startLivenessCheck(intervalMs = 5_000): void {
+  /** Start the periodic liveness check. Caller is responsible for stopLivenessCheck().
+   *  `onChange` (when supplied) fires after any sweep that flipped an instance
+   *  to "exited", so the server can broadcast + prune immediately. Without it a
+   *  crashed/killed agent would sit as "<status> + exited" until the next
+   *  unrelated broadcast — e.g. an idle pane whose process is gone lingers in
+   *  the sidebar because pruneTerminal only runs on the broadcast path. */
+  startLivenessCheck(intervalMs = 5_000, onChange?: () => void): void {
     if (this.livenessTimer != null) return;
-    this.livenessTimer = setInterval(() => this.runLivenessSweepOnce(), intervalMs);
+    this.livenessTimer = setInterval(() => {
+      if (this.runLivenessSweepOnce() && onChange) onChange();
+    }, intervalMs);
   }
 
   /** Stop the periodic liveness check. Safe to call when not started. */

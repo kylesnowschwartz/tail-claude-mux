@@ -249,8 +249,10 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
   }
   // PID-based liveness sweep: every 5s, mark any tracked instance whose
   // `pid` is no longer running as `liveness: "exited"`. Catches crashes
-  // and `kill -9` cases where no SessionEnd hook fires.
-  tracker.startLivenessCheck();
+  // and `kill -9` cases where no SessionEnd hook fires. Broadcast on any
+  // flip so the broadcast path's pruneTerminal removes the dead row now,
+  // instead of leaving it until the next unrelated broadcast.
+  tracker.startLivenessCheck(5_000, () => broadcastState());
   const metadataStore = new SessionMetadataStore();
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
   const sessionOrderPath = join(home, ".config", "tcm", "session-order.json");
