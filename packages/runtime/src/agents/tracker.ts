@@ -2,7 +2,9 @@ import type { AgentEvent, PanePresenceInput } from "../contracts/agent";
 import { TERMINAL_STATUSES } from "../contracts/agent";
 
 const MAX_EVENT_TIMESTAMPS = 30;
-const TERMINAL_PRUNE_MS = 5 * 60 * 1000;
+/** Exported so the /explain diagnostic can report the same prune deadline the
+ *  tracker enforces (see buildExplain). */
+export const TERMINAL_PRUNE_MS = 5 * 60 * 1000;
 /** Window after a watcher signals SessionEnd during which the pane scanner
  *  must NOT mint a synthetic for that pane/agent. SessionEnd fires while the
  *  agent process is still wrapping up — ps shows it for a beat after — so
@@ -25,7 +27,9 @@ const DEFAULT_MISS_THRESHOLD = 2;
 // (probe returned null: file absent, sdk-cli, pid reused, or a watcher with no
 // probe) and gets pruned rather than spinning indefinitely. Far longer than any
 // real single tool call, so it never truncates genuine work.
-const ALIVE_PRUNE_CEILING_MS = 30 * 60 * 1000;
+//
+// Exported so the /explain diagnostic can surface the same ceiling.
+export const ALIVE_PRUNE_CEILING_MS = 30 * 60 * 1000;
 
 const STATUS_PRIORITY: Record<string, number> = {
   running: 5,
@@ -156,6 +160,9 @@ export class AgentTracker {
     // the paneId-only graduation branch below — the very ambiguity the
     // pid-keyed branch exists to avoid.
     event.pid = event.pid ?? prev?.pid;
+    // Preserve the pane title (scanner-sourced) across watcher updates so the
+    // probe always has the latest OSC-title state to fall back on.
+    event.paneTitle = event.paneTitle ?? prev?.paneTitle;
     // Preserve subagent across PostToolUse-style events that don't re-read sessions/
     if (event.subagent === undefined && prev?.subagent !== undefined) {
       event.subagent = prev.subagent;
@@ -188,6 +195,7 @@ export class AgentTracker {
         event.liveness = event.liveness ?? ev.liveness;
         event.windowIndex = event.windowIndex ?? ev.windowIndex;
         event.paneIndex = event.paneIndex ?? ev.paneIndex;
+        event.paneTitle = event.paneTitle ?? ev.paneTitle;
         graduateKey = k;
         break;
       }
@@ -208,6 +216,7 @@ export class AgentTracker {
           event.liveness = ev.liveness;
           event.windowIndex = event.windowIndex ?? ev.windowIndex;
           event.paneIndex = event.paneIndex ?? ev.paneIndex;
+          event.paneTitle = event.paneTitle ?? ev.paneTitle;
           graduateKey = k;
           break;
         }
@@ -704,6 +713,9 @@ export class AgentTracker {
         bestEvent.liveness = "alive";
         bestEvent.windowIndex = pa.windowIndex;
         bestEvent.paneIndex = pa.paneIndex;
+        // Pane title rides along but never drives a broadcast — the spinner
+        // glyph animates every frame, and only the probe reads it.
+        bestEvent.paneTitle = pa.paneTitle;
         // Resolved — any pending miss for this entry is no longer relevant.
         this.clearMissState(session, bestKey);
         if (wasDifferent) changed = true;
@@ -731,6 +743,7 @@ export class AgentTracker {
           windowIndex: pa.windowIndex,
           paneIndex: pa.paneIndex,
           pid: pa.pid,
+          paneTitle: pa.paneTitle,
         });
         changed = true;
       } else {
@@ -746,6 +759,7 @@ export class AgentTracker {
         existing.windowIndex = pa.windowIndex;
         existing.paneIndex = pa.paneIndex;
         existing.pid = pa.pid;
+        existing.paneTitle = pa.paneTitle;
         this.clearMissState(session, syntheticKey);
         if (wasDifferent) changed = true;
       }

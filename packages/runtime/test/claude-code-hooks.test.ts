@@ -850,6 +850,31 @@ describe("ClaudeCodeHookAdapter.probeLiveStatus", () => {
   test("missing file → null", () => {
     expect(adapter.probeLiveStatus(999, "t-3")).toBeNull();
   });
+
+  // OSC-title cross-check: the session file is authoritative; the pane title
+  // only fills the gap when the file yields no verdict (sdk-cli / absent).
+  test("file null + braille title → working (title fills the gap)", () => {
+    // No session file written for this pid → file verdict is null.
+    expect(adapter.probeLiveStatus(701, "t-osc-1", "⠋ Reading config.ts")).toBe("working");
+  });
+
+  test("file null + sparkle title → ended (title fills the gap)", () => {
+    expect(adapter.probeLiveStatus(702, "t-osc-2", "✳ ~/Code/project")).toBe("ended");
+  });
+
+  test("file null + plain title → null (no signal from either source)", () => {
+    expect(adapter.probeLiveStatus(703, "t-osc-3", "~/Code/project")).toBeNull();
+  });
+
+  test("file busy wins over a sparkle title — definitive file verdict is never overridden", () => {
+    writeFileSync(join(sessionsDir, "704.json"), JSON.stringify({ pid: 704, sessionId: "t-osc-4", status: "busy", updatedAt: Date.now() }));
+    expect(adapter.probeLiveStatus(704, "t-osc-4", "✳ idle-looking title")).toBe("working");
+  });
+
+  test("file idle wins over a braille title — file ended is never overridden to working", () => {
+    writeFileSync(join(sessionsDir, "705.json"), JSON.stringify({ pid: 705, sessionId: "t-osc-5", status: "idle", updatedAt: Date.now() }));
+    expect(adapter.probeLiveStatus(705, "t-osc-5", "⠋ busy-looking title")).toBe("ended");
+  });
 });
 
 describe("ClaudeCodeHookAdapter — cold-start seed routes by pid", () => {

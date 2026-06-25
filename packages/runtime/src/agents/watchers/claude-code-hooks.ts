@@ -22,6 +22,7 @@ import type { AgentStatus } from "../../contracts/agent";
 import { TERMINAL_STATUSES } from "../../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext, HookPayload, HookReceiver } from "../../contracts/agent-watcher";
 import { parseProcessSnapshot, resolveAgentSessionPid } from "../resolve-agent-pid";
+import { classifyTitleStatus } from "../title-status";
 import { sanitizeForDisplay, truncateToWidth } from "../../text";
 
 // Path-segment aware matcher for the long-lived claude process. Matches
@@ -485,9 +486,17 @@ export class ClaudeCodeHookAdapter implements AgentWatcher, HookReceiver {
    *  `~/.claude/sessions/<pid>.json` and classifies it. On a definitive "ended"
    *  verdict, drops any cached ThreadState for the thread so a resumed session
    *  re-emits cleanly (the next hook is treated as a fresh thread and bypasses
-   *  dedup) rather than staying wrongly pinned to "running" in this adapter. */
-  probeLiveStatus(pid: number, threadId: string): "working" | "ended" | null {
-    const verdict = classifySessionStatus(this.readSessionFile(pid), threadId, Date.now());
+   *  dedup) rather than staying wrongly pinned to "running" in this adapter.
+   *
+   *  Fill-gaps-only OSC-title cross-check: the session file stays authoritative
+   *  (it always wins when definitive). Only when it returns null — sdk-cli /
+   *  print-mode sessions write the file without a `status`, and absent files
+   *  yield null too — do we fall back to the pane's OSC title, which Claude
+   *  Code drives with a braille spinner (working) / ✳ sparkle (idle). This adds
+   *  no new false-"ended" risk: a busy file verdict is never overridden. */
+  probeLiveStatus(pid: number, threadId: string, paneTitle?: string): "working" | "ended" | null {
+    const fileVerdict = classifySessionStatus(this.readSessionFile(pid), threadId, Date.now());
+    const verdict = fileVerdict ?? (paneTitle ? classifyTitleStatus(paneTitle) : null);
     if (verdict === "ended") this.threads.delete(threadId);
     return verdict;
   }

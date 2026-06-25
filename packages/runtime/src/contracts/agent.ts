@@ -37,6 +37,13 @@ export interface AgentEvent {
   pid?: number;
   /** Human-readable description of current activity, e.g. "Reading config.ts" or "Bash: git push" */
   toolDescription?: string;
+  /** tmux `pane_title` for this agent's pane, captured by the scanner. Claude
+   *  Code encodes turn state in its OSC title (braille = working, ✳ = idle);
+   *  the watcher's probe uses it to fill the gap when the session file yields
+   *  no verdict (sdk-cli / absent). Preserved across updates like `paneId` and
+   *  deliberately excluded from broadcast-change detection (the spinner glyph
+   *  animates every frame). */
+  paneTitle?: string;
   /** Active subagent name when CC is running a Task tool call (e.g. "rb-orchestrator").
    *  Sourced from ~/.claude/sessions/<pid>.json `agent` field; undefined when the
    *  parent thread is in control. */
@@ -65,4 +72,7 @@ export interface PanePresenceInput {
   windowIndex?: number;
   /** tmux pane index within the window. Secondary sort key for the TUI list. */
   paneIndex?: number;
+  /** tmux `pane_title` — carried to the watcher probe so a Claude OSC-title
+   *  state marker can fill the gap when the session file yields no verdict. */
+  paneTitle?: string;
 }

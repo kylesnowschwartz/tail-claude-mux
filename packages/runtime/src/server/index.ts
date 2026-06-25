@@ -8,7 +8,9 @@ import type { AgentWatcher, AgentWatcherContext } from "../contracts/agent-watch
 import { isHookReceiver } from "../contracts/agent-watcher";
 import { parseHookPayload } from "../contracts/parse-hook-payload";
 import { AgentTracker } from "../agents/tracker";
+import { buildExplain } from "../agents/explain";
 import { parseProcessSnapshot } from "../agents/resolve-agent-pid";
+import { agentFromCommand } from "../agents/agent-from-command";
 import {
   buildPanePidIndex,
   resolveSessionByPid as resolveSessionByPidPure,
@@ -243,7 +245,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     if (event.pid == null) return null;
     const w = watcherByName.get(event.agent);
     if (!w?.probeLiveStatus) return null;
-    return w.probeLiveStatus(event.pid, event.threadId ?? "");
+    return w.probeLiveStatus(event.pid, event.threadId ?? "", event.paneTitle);
   }
   // PID-based liveness sweep: every 5s, mark any tracked instance whose
   // `pid` is no longer running as `liveness: "exited"`. Catches crashes
@@ -1387,8 +1389,17 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
 
   // Pane presence is now folded into the tracker via applyPanePresence().
 
-  /** Build parent→children map from a single ps snapshot (avoids per-pane pgrep calls). */
-  function buildProcessTree(): { childrenOf: Map<number, number[]>; commOf: Map<number, string> } {
+  /** Build parent→children map from ps snapshots (avoids per-pane pgrep calls).
+   *  Two passes: `comm=` for the lowercased basename (the existing commMatches
+   *  fast path) and `command=` for the full argv (the agentFromCommand fallback
+   *  that unwraps node/bun/npx/nix-wrapped agents whose comm is just the
+   *  runtime). The full-argv pass reuses parseProcessSnapshot for robust
+   *  fixed-width pid/ppid parsing. */
+  function buildProcessTree(): {
+    childrenOf: Map<number, number[]>;
+    commOf: Map<number, string>;
+    cmdlineOf: Map<number, string>;
+  } {
     const childrenOf = new Map<number, number[]>();
     const commOf = new Map<number, string>();
     const psResult = Bun.spawnSync(["ps", "-eo", "pid=,ppid=,comm="], { stdout: "pipe", stderr: "pipe" });
@@ -1404,7 +1415,12 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
       if (!arr) { arr = []; childrenOf.set(ppid, arr); }
       arr.push(pid);
     }
-    return { childrenOf, commOf };
+    const cmdlineOf = new Map<number, string>();
+    const snapResult = Bun.spawnSync(["ps", "-axww", "-o", "pid=,ppid=,command="], { stdout: "pipe", stderr: "pipe" });
+    for (const info of parseProcessSnapshot(snapResult.stdout.toString()).values()) {
+      cmdlineOf.set(info.pid, info.command);
+    }
+    return { childrenOf, commOf, cmdlineOf };
   }
 
   // commMatches is hoisted to module scope (see export at file bottom) so
@@ -1417,7 +1433,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
    *  with the same agent name — watcher event.pid is the same claude PID,
    *  so the claim is unambiguous when both sides agree. */
   function matchProcessTreeFast(
-    pid: number, patterns: string[],
+    pid: number, patterns: string[], agentName: string,
     tree: ReturnType<typeof buildProcessTree>, depth = 0,
   ): number | undefined {
     if (depth > 2) return undefined;
@@ -1426,7 +1442,12 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
     for (const childPid of children) {
       const comm = tree.commOf.get(childPid);
       if (comm && patterns.some((pat) => commMatches(comm, pat))) return childPid;
-      const deeper = matchProcessTreeFast(childPid, patterns, tree, depth + 1);
+      // Fallback: comm is a runtime/wrapper (node/bun/npx/nix), so the agent
+      // identity lives in the full command line. agentFromCommand only knows
+      // pi + claude-code; for other agents it returns undefined and this never
+      // matches — preserving the comm-only behaviour for amp/codex/opencode.
+      if (agentFromCommand(comm ?? "", tree.cmdlineOf.get(childPid)) === agentName) return childPid;
+      const deeper = matchProcessTreeFast(childPid, patterns, agentName, tree, depth + 1);
       if (deeper !== undefined) return deeper;
     }
     return undefined;
@@ -1478,7 +1499,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
       for (const [agentName, patterns] of Object.entries(AGENT_COMM_PATTERNS)) {
         // Only use process tree matching — title matching produces false positives
         // (e.g. an Amp thread named "Detect Claude session names" matches "claude")
-        const agentPid = matchProcessTreeFast(pane.pid, patterns, tree);
+        const agentPid = matchProcessTreeFast(pane.pid, patterns, agentName, tree);
         if (agentPid === undefined) continue;
 
         let sessionAgents = result.get(pane.session);
@@ -1492,6 +1513,7 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
           pid: agentPid,
           windowIndex: Number.isFinite(pane.windowIndex) ? pane.windowIndex : undefined,
           paneIndex: Number.isFinite(pane.paneIndex) ? pane.paneIndex : undefined,
+          paneTitle: pane.title,
         });
         break; // One agent per pane — first match wins (ordered so parents precede child tools)
       }
@@ -1744,6 +1766,33 @@ export function startServer(mux: MuxProvider, watchers?: AgentWatcher[]): void {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      // Introspection: explain why a tracked agent row is in its current state
+      // and which prune tier governs it. `?session=<name>` is required;
+      // `?thread=<id>` narrows to one instance, else all of the session's
+      // agents are reported. Runs a fresh liveness probe per entry so the
+      // reported verdict matches what reconcileStaleRunning would see.
+      // localhost-only server — no auth needed.
+      if (req.method === "GET" && url.pathname === "/explain") {
+        const session = url.searchParams.get("session");
+        const thread = url.searchParams.get("thread") ?? undefined;
+        const headers = { "Content-Type": "application/json" };
+        if (!session) {
+          return new Response(
+            JSON.stringify({ error: "missing required query parameter: session" }),
+            { status: 400, headers },
+          );
+        }
+        const now = Date.now();
+        const agents = tracker.getAgents(session);
+        const selected = thread ? agents.filter((a) => a.threadId === thread) : agents;
+        const reports = selected.map((ev) => buildExplain(ev, now, probeAgentLiveness(ev)));
+        log("explain", "served", { session, thread: thread ?? null, count: reports.length });
+        return new Response(
+          JSON.stringify({ session, thread: thread ?? null, count: reports.length, reports }, null, 2),
+          { status: 200, headers },
+        );
       }
 
       if (req.method === "POST" && url.pathname === "/refresh") {

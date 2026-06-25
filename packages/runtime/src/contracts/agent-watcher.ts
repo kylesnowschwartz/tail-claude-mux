@@ -52,8 +52,11 @@ export interface AgentWatcher {
    *    - "working" → still processing a turn (keep the spinner)
    *    - "ended"   → the turn is over (clear the spinner)
    *    - null      → no signal; the caller falls back to the prune ceiling
-   *  A watcher without a reliable status source simply omits this. */
-  probeLiveStatus?(pid: number, threadId: string): "working" | "ended" | null;
+   *  A watcher without a reliable status source simply omits this.
+   *  `paneTitle` is the agent pane's tmux title (when known); Claude Code
+   *  encodes turn state in its OSC title, so the watcher can use it to fill the
+   *  gap when its primary status source returns null. */
+  probeLiveStatus?(pid: number, threadId: string, paneTitle?: string): "working" | "ended" | null;
 }
 
 // --- Hook-based detection ---
