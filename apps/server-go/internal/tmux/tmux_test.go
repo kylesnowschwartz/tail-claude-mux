@@ -128,3 +128,83 @@ func TestSwitchClient_Args(t *testing.T) {
 		t.Errorf("args without tty = %v", captured)
 	}
 }
+
+// captureRunner serves canned output per subcommand and records every
+// command issued, so tests can pin exact tmux traffic.
+func captureRunner(outputs map[string]string, cmds *[][]string) Runner {
+	return func(args ...string) (string, error) {
+		*cmds = append(*cmds, args)
+		return outputs[args[0]], nil
+	}
+}
+
+// mutations strips read-only listing calls, leaving the state-changing
+// tmux traffic a behavior-freeze can pin across refactors.
+func mutations(cmds [][]string) [][]string {
+	var out [][]string
+	for _, c := range cmds {
+		if c[0] == "list-panes" {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// TestSpawnSidebar_CommandSequenceFrozen pins SpawnSidebar's exact tmux
+// mutation traffic: the SpawnManagedPane extraction must leave the
+// sidebar path byte-identical (CS-007 behavior freeze).
+func TestSpawnSidebar_CommandSequenceFrozen(t *testing.T) {
+	mainPane := paneRow("proj", "%1", "100", "/p", "1", "", "0", "0", "@1", "0", "119", "120", "153", "zsh")
+	stashSidebar := paneRow(StashSession, "%8", "108", "/p", "1", "1", "0", "0", "@9", "0", "119", "120", "153", "tcm-sidebar")
+	cases := []struct {
+		name     string
+		position string
+		listing  string
+		want     [][]string
+	}{
+		{
+			name:     "fresh spawn right",
+			position: "right",
+			listing:  mainPane,
+			want: [][]string{
+				{"split-window", "-h", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "REFOCUS_WINDOW=@1 exec /scripts/start.sh"},
+				{"select-pane", "-t", "%9", "-T", "tcm-sidebar"},
+				{"set-option", "-p", "-t", "%9", "@tcm-sidebar", "1"},
+			},
+		},
+		{
+			name:     "fresh spawn left",
+			position: "left",
+			listing:  mainPane,
+			want: [][]string{
+				{"split-window", "-h", "-b", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "REFOCUS_WINDOW=@1 exec /scripts/start.sh"},
+				{"select-pane", "-t", "%9", "-T", "tcm-sidebar"},
+				{"set-option", "-p", "-t", "%9", "@tcm-sidebar", "1"},
+			},
+		},
+		{
+			name:     "restore from stash left",
+			position: "left",
+			listing:  mainPane + "\n" + stashSidebar,
+			want: [][]string{
+				{"join-pane", "-hb", "-f", "-l", "33", "-s", "%8", "-t", "%1"},
+				{"select-pane", "-t", "%8", "-T", "tcm-sidebar"},
+				{"set-option", "-p", "-t", "%8", "@tcm-sidebar", "1"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var cmds [][]string
+			tm := &Tmux{Run: captureRunner(map[string]string{
+				"list-panes":   tc.listing,
+				"split-window": "%9",
+			}, &cmds)}
+			tm.SpawnSidebar("@1", 33, tc.position, "/scripts")
+			if got := mutations(cmds); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("mutations = %v\nwant %v", got, tc.want)
+			}
+		})
+	}
+}

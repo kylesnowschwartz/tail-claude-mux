@@ -237,7 +237,7 @@ func (s *Server) handleToggle(w http.ResponseWriter, _ *http.Request) {
 	if wasVisible {
 		panes := t.ListAllPanes()
 		for _, p := range tmux.SidebarPanes(panes) {
-			t.HideSidebar(p.ID, panes)
+			t.StashPane(p.ID, panes)
 		}
 		log.Printf("sidebar: toggle off — stashed panes")
 	} else {

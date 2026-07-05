@@ -12,7 +12,7 @@ const (
 	// rewriting by escape sequences the TUI emits).
 	SidebarPaneTitle    = "tcm-sidebar"
 	sidebarMarkerOption = "@tcm-sidebar"
-	sidebarMarkerValue  = "1"
+	markerValue         = "1"
 )
 
 // SidebarPanes derives the non-stash sidebar panes from a listing.
@@ -48,11 +48,11 @@ func (t *Tmux) ResizePane(paneID string, width int) {
 	_, _ = t.Run("resize-pane", "-t", paneID, "-x", strconv.Itoa(width))
 }
 
-// HideSidebar parks a live sidebar pane in the stash session instead of
-// killing it, so toggle-on restores the running TUI (provider.ts
+// StashPane parks a live tcm-managed pane in the stash session instead
+// of killing it, so toggle-on restores the running process (provider.ts
 // hideSidebar). The stash window is resized first: join-pane fails with
 // "pane too small" when stash panes fill up.
-func (t *Tmux) HideSidebar(paneID string, panes []Pane) {
+func (t *Tmux) StashPane(paneID string, panes []Pane) {
 	t.ensureStash()
 	t.PruneStashOrphans(panes)
 	_, _ = t.Run("resize-window", "-t", StashSession+":", "-x", "200", "-y", "200")
@@ -117,26 +117,36 @@ func (t *Tmux) SpawnSidebar(windowID string, width int, position, scriptsDir str
 		if _, err := t.Run("join-pane", joinFlag, "-f", "-l", strconv.Itoa(width), "-s", p.ID, "-t", target.ID); err != nil {
 			break // fall through to a fresh spawn
 		}
-		t.markSidebar(p.ID)
+		t.markPane(p.ID, sidebarMarkerOption, SidebarPaneTitle)
 		return p.ID
 	}
 
-	args := []string{"split-window", "-h"}
+	splitFlags := []string{"-h", "-f"}
 	if position == "left" {
-		args = append(args, "-b")
+		splitFlags = []string{"-h", "-b", "-f"}
 	}
-	args = append(args, "-f", "-l", strconv.Itoa(width), "-t", target.ID, "-P", "-F", "#{pane_id}",
-		"REFOCUS_WINDOW="+windowID+" exec "+scriptsDir+"/start.sh")
+	return t.SpawnManagedPane(target.ID, splitFlags, width,
+		"REFOCUS_WINDOW="+windowID+" exec "+scriptsDir+"/start.sh",
+		sidebarMarkerOption, SidebarPaneTitle)
+}
+
+// SpawnManagedPane splits targetPane, sizes the new pane, runs command
+// inside it, and marks it as tcm-managed. Returns the new pane id ("" on
+// failure). splitFlags travel verbatim to split-window so each caller
+// pins its exact orientation/placement arg sequence.
+func (t *Tmux) SpawnManagedPane(targetPane string, splitFlags []string, size int, command, markerOption, title string) string {
+	args := append([]string{"split-window"}, splitFlags...)
+	args = append(args, "-l", strconv.Itoa(size), "-t", targetPane, "-P", "-F", "#{pane_id}", command)
 	newID, err := t.Run(args...)
 	if err != nil || newID == "" {
 		return ""
 	}
-	t.markSidebar(newID)
+	t.markPane(newID, markerOption, title)
 	return newID
 }
 
-// markSidebar stamps the identification title + stable marker option.
-func (t *Tmux) markSidebar(paneID string) {
-	_, _ = t.Run("select-pane", "-t", paneID, "-T", SidebarPaneTitle)
-	_, _ = t.Run("set-option", "-p", "-t", paneID, sidebarMarkerOption, sidebarMarkerValue)
+// markPane stamps the identification title + stable marker option.
+func (t *Tmux) markPane(paneID, markerOption, title string) {
+	_, _ = t.Run("select-pane", "-t", paneID, "-T", title)
+	_, _ = t.Run("set-option", "-p", "-t", paneID, markerOption, markerValue)
 }
