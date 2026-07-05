@@ -12,6 +12,7 @@ import (
 	"github.com/kylesnowschwartz/agent-ouija/claude/claudedir"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
@@ -213,7 +214,8 @@ func (s *Server) paneScanLoop() {
 			continue
 		}
 
-		next := s.Scanner.Scan()
+		panes := s.Builder.Tmux.ListAllPanes()
+		next := s.Scanner.Scan(panes)
 
 		s.mu.Lock()
 		changed := false
@@ -295,7 +297,7 @@ func (s *Server) dirSessionMapLocked() map[string]string {
 		return s.dirSessionCache
 	}
 	m := map[string]string{}
-	activeDirs := s.Builder.Tmux.ActiveSessionDirs()
+	activeDirs := tmux.ActiveDirs(s.panesLocked())
 	for _, sess := range s.Builder.Tmux.ListSessions() {
 		dir := sess.Dir
 		if d, ok := activeDirs[sess.Name]; ok {
@@ -310,6 +312,17 @@ func (s *Server) dirSessionMapLocked() map[string]string {
 	return m
 }
 
+// panesLocked returns the pane listing behind every routing lookup, cached
+// for dirCacheTTL (one tmux exec serves the dir map and the pid index).
+func (s *Server) panesLocked() []tmux.Pane {
+	if s.panesCache != nil && time.Since(s.panesCacheAt) < dirCacheTTL {
+		return s.panesCache
+	}
+	s.panesCache = s.Builder.Tmux.ListAllPanes()
+	s.panesCacheAt = time.Now()
+	return s.panesCache
+}
+
 // resolveSessionByPidLocked ports resolveSessionByPidLive: walk the OS
 // process tree from an agent pid up to the pane shell pid that owns it.
 // The ps snapshot is read per call (cost is paid per hook, not per render);
@@ -322,21 +335,7 @@ func (s *Server) resolveSessionByPidLocked(pid int) string {
 	if err != nil {
 		return ""
 	}
-	return procwalk.ResolveSessionByPid(pid, s.panePidIndexLocked(), procwalk.ParseProcessSnapshot(raw))
-}
-
-// panePidIndexLocked is getPanePidIndex: pane shell pid → session name.
-func (s *Server) panePidIndexLocked() map[int]string {
-	if s.panePidCache != nil && time.Since(s.panePidCacheAt) < dirCacheTTL {
-		return s.panePidCache
-	}
-	raw, err := s.Builder.Tmux.Run("list-panes", "-a", "-F", "#{session_name}|#{pane_pid}")
-	if err != nil {
-		raw = ""
-	}
-	s.panePidCache = procwalk.BuildPanePidIndex(raw)
-	s.panePidCacheAt = time.Now()
-	return s.panePidCache
+	return procwalk.ResolveSessionByPid(pid, tmux.PanePidIndex(s.panesLocked()), procwalk.ParseProcessSnapshot(raw))
 }
 
 // focusAgentPane ports the select-window/select-pane navigation plus the

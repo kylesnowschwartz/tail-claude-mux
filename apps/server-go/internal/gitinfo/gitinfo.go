@@ -60,17 +60,6 @@ func (c *Cache) Get(dir string) Info {
 	return info
 }
 
-// Invalidate drops one directory's cache entry (or all with "").
-func (c *Cache) Invalidate(dir string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if dir == "" {
-		c.entries = map[string]cached{}
-		return
-	}
-	delete(c.entries, dir)
-}
-
 // probeGit runs the two git commands the TS pipeline combined:
 // rev-parse for branch + git-dir (one exec, two output lines), then
 // status --porcelain for dirtiness. A non-repo directory returns the

@@ -48,10 +48,6 @@ var statusPriority = map[string]int{
 	wire.StatusIdle:        0,
 }
 
-var terminalStatuses = map[string]bool{
-	wire.StatusDone: true, wire.StatusError: true, wire.StatusInterrupted: true,
-}
-
 // InstanceKey mirrors tracker.ts instanceKey.
 func InstanceKey(agent, threadID string) string {
 	if threadID != "" {
@@ -285,7 +281,7 @@ func (t *Tracker) ApplyEvent(event wire.AgentEvent, seed bool) {
 	// Unseen policy: terminal/waiting in an inactive (or seeded) session
 	// is unseen; anything else marks the instance seen.
 	ukey := unseenKey(event.Session, key)
-	if terminalStatuses[event.Status] || event.Status == wire.StatusWaiting {
+	if wire.IsTerminalStatus(event.Status) || event.Status == wire.StatusWaiting {
 		if seed || !t.active[event.Session] {
 			t.unseen[ukey] = true
 		}
@@ -532,7 +528,7 @@ func (t *Tracker) PruneTerminal() {
 			if t.unseen[unseenKey(session, key)] {
 				continue
 			}
-			if terminalStatuses[ev.Status] {
+			if wire.IsTerminalStatus(ev.Status) {
 				if now-ev.TS > TerminalPruneMS {
 					t.deleteInstance(session, key)
 				}
@@ -551,7 +547,7 @@ func (t *Tracker) RunLivenessSweepOnce() bool {
 	changed := false
 	for _, si := range t.instances {
 		for _, ev := range si {
-			if ev.PID == 0 || ev.Liveness == wire.LivenessExited || terminalStatuses[ev.Status] {
+			if ev.PID == 0 || ev.Liveness == wire.LivenessExited || wire.IsTerminalStatus(ev.Status) {
 				continue
 			}
 			if !t.isPidAlive(ev.PID) {
@@ -720,7 +716,7 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 			if claimed[key] || isSyntheticKey(key) || ev.Liveness != "" {
 				continue
 			}
-			if !terminalStatuses[ev.Status] && ev.Status != wire.StatusIdle && ev.Status != wire.StatusWaiting {
+			if !wire.IsTerminalStatus(ev.Status) && ev.Status != wire.StatusIdle && ev.Status != wire.StatusWaiting {
 				continue
 			}
 			ev.Liveness = wire.LivenessExited

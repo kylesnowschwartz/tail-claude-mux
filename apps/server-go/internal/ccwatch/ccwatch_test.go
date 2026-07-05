@@ -71,7 +71,6 @@ func newStartedAdapter(t *testing.T, tc *testCtx) *Adapter {
 	t.Helper()
 	a := New(t.TempDir(), t.TempDir())
 	a.Start(&tc.ctx)
-	t.Cleanup(a.Stop)
 	return a
 }
 
@@ -543,7 +542,6 @@ func TestClaudeCodeHookAdapterSubagentEnrichment(t *testing.T) {
 		// route by it, so make pid routing always resolve to the project session.
 		tc.ctx.ResolveSessionByPid = func(int) string { return "myproject" }
 		a.Start(&tc.ctx)
-		t.Cleanup(a.Stop)
 		return a, tc, sessionsDir
 	}
 
@@ -946,7 +944,6 @@ func TestClaudeCodeHookAdapterProbeLiveStatus(t *testing.T) {
 	setup := func(t *testing.T) (*Adapter, string) {
 		sessionsDir := t.TempDir()
 		a := New(t.TempDir(), sessionsDir)
-		t.Cleanup(a.Stop)
 		return a, sessionsDir
 	}
 	nowMS := func() int64 { return time.Now().UnixMilli() }
@@ -1029,7 +1026,6 @@ func TestClaudeCodeHookAdapterColdStartSeedRoutesByPid(t *testing.T) {
 		projectsDir := t.TempDir()
 		sessionsDir := t.TempDir()
 		a := New(projectsDir, sessionsDir)
-		t.Cleanup(a.Stop)
 
 		const threadID = "seed-thread-1"
 		// A project dir holding one running conversation transcript.

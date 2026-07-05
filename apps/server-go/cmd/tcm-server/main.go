@@ -39,8 +39,6 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
-const pidFile = "/tmp/tcm.pid" // shared.ts PID_FILE
-
 func main() {
 	port := flag.Int("port", wire.ServerPort, "listen port (use a non-default port to A/B against the bun server)")
 	refresh := flag.Duration("refresh", 2*time.Second, "state refresh interval")
@@ -70,7 +68,7 @@ func main() {
 	srv := server.New(builder, tracker.New(), watcher, panescan.New())
 	srv.Restart = restartInPlace
 	srv.Quit = func() {
-		_ = os.Remove(pidFile)
+		_ = os.Remove(wire.PIDFile)
 		os.Exit(0)
 	}
 
@@ -98,7 +96,7 @@ func main() {
 // writePidFile records this process for the launcher/stop tooling. Best
 // effort — the tooling also checks the port.
 func writePidFile() {
-	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(wire.PIDFile, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644); err != nil {
 		log.Printf("pid file: %v", err)
 	}
 }
@@ -110,7 +108,7 @@ func cleanupOnSignal() {
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-ch
-		_ = os.Remove(pidFile)
+		_ = os.Remove(wire.PIDFile)
 		os.Exit(0)
 	}()
 }

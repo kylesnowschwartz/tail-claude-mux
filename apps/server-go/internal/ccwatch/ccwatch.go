@@ -66,10 +66,6 @@ var hookStatusMap = map[string]string{
 	"SessionEnd":        wire.StatusDone,
 }
 
-var terminalStatuses = map[string]bool{
-	wire.StatusDone: true, wire.StatusError: true, wire.StatusInterrupted: true,
-}
-
 // Context is what the server provides the adapter: session routing, event
 // delivery, and re-entry into the serialized state loop for async work.
 type Context struct {
@@ -131,12 +127,6 @@ func (a *Adapter) Name() string { return "claude-code" }
 func (a *Adapter) Start(ctx *Context) {
 	a.ctx = ctx
 	a.seedFromJSONL()
-}
-
-// Stop clears all state.
-func (a *Adapter) Stop() {
-	a.threads = map[string]*threadState{}
-	a.ctx = nil
 }
 
 // HandleHook routes one validated hook payload. Call with the server lock
@@ -433,7 +423,7 @@ func (a *Adapter) seedFromJSONL() {
 			}
 
 			latestStatus, threadName := scanTranscript(filepath.Join(dirPath, name))
-			if latestStatus == wire.StatusIdle || terminalStatuses[latestStatus] {
+			if latestStatus == wire.StatusIdle || wire.IsTerminalStatus(latestStatus) {
 				continue
 			}
 
@@ -501,9 +491,10 @@ func scanTranscript(path string) (status, threadName string) {
 
 // --- One-time thread name resolution ---
 
-// resolveThreadNameAsync finds the thread's transcript, reads it off-lock,
-// and re-emits with the resolved name under Context.Locked. Fire-once per
-// thread (nameResolved), same as the TS adapter's async path.
+// resolveThreadNameAsync finds the thread's transcript, reads it off-lock
+// (through the same scanTranscript the seed uses), and re-emits with the
+// resolved name under Context.Locked. Fire-once per thread (nameResolved),
+// same as the TS adapter's async path.
 func (a *Adapter) resolveThreadNameAsync(threadID string, state *threadState) {
 	if state.nameResolved {
 		return
@@ -518,27 +509,10 @@ func (a *Adapter) resolveThreadNameAsync(threadID string, state *threadState) {
 		}
 		for _, dir := range dirs {
 			path := filepath.Join(projectsDir, dir.Name(), threadID+".jsonl")
-			raw, err := os.ReadFile(path)
-			if err != nil {
+			if _, err := os.Stat(path); err != nil {
 				continue
 			}
-			var threadName string
-			for line := range strings.SplitSeq(string(raw), "\n") {
-				if line == "" {
-					continue
-				}
-				entry, ok := transcript.ParseEntryLenient([]byte(line))
-				if !ok {
-					continue
-				}
-				if title := extractCustomTitle(entry); title != "" {
-					threadName = title
-					break
-				}
-				if threadName == "" {
-					threadName = extractThreadName(entry)
-				}
-			}
+			_, threadName := scanTranscript(path)
 			if threadName != "" && ctx != nil {
 				ctx.Locked(func() {
 					// The thread may have ended while we read.

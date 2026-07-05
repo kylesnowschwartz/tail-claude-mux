@@ -89,8 +89,9 @@ func (b *Builder) Build() wire.ServerState {
 	}
 	ordered := b.Order.Apply(names)
 
-	activeDirs := b.Tmux.ActiveSessionDirs()
-	paneCounts := b.Tmux.AllPaneCounts()
+	panes := b.Tmux.ListAllPanes()
+	activeDirs := tmux.ActiveDirs(panes)
+	paneCounts := tmux.PaneCounts(panes)
 	now := time.Now()
 
 	sessions := make([]wire.SessionData, 0, len(ordered))

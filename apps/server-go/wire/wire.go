@@ -35,6 +35,13 @@ const (
 	StatusInterrupted = "interrupted"
 )
 
+// IsTerminalStatus reports whether a status is terminal (contracts/agent.ts
+// TERMINAL_STATUSES): the turn is over and the row is a candidate for the
+// prune tiers.
+func IsTerminalStatus(status string) bool {
+	return status == StatusDone || status == StatusError || status == StatusInterrupted
+}
+
 // AgentLiveness values (contracts/agent.ts AgentLiveness).
 const (
 	LivenessAlive   = "alive"

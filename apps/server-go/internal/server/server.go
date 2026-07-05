@@ -28,6 +28,7 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/metadata"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ws"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
@@ -61,8 +62,8 @@ type Server struct {
 	lastSeenByThread  map[string]lastSeen
 	dirSessionCache   map[string]string
 	dirSessionCacheAt time.Time
-	panePidCache      map[int]string
-	panePidCacheAt    time.Time
+	panesCache        []tmux.Pane
+	panesCacheAt      time.Time
 }
 
 // client is one connected TUI instance plus the identity it reported.
@@ -158,18 +159,8 @@ func (s *Server) handleState(w http.ResponseWriter, _ *http.Request) {
 // under the state lock. The contract: always 200, a malformed payload
 // never blocks the agent (dropped, not 4xx'd).
 func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
-	body := make([]byte, 0, 4096)
-	buf := make([]byte, 4096)
-	for {
-		n, err := r.Body.Read(buf)
-		body = append(body, buf[:n]...)
-		if err != nil {
-			break
-		}
-		if len(body) > 1<<20 { // matches the bun server's tolerance for big ps snapshots
-			break
-		}
-	}
+	// 1 MiB bound matches the bun server's tolerance for big ps snapshots.
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if p, ok := wire.ParseHookPayload(body); ok {
 		if s.Watcher != nil {
 			s.mu.Lock()

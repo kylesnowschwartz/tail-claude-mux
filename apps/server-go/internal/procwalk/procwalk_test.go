@@ -175,42 +175,6 @@ func TestResolveAgentSessionPidFromSnapshot(t *testing.T) {
 	})
 }
 
-func TestBuildPanePidIndex(t *testing.T) {
-	t.Run("parses tmux list-panes output into pid → session map", func(t *testing.T) {
-		// Production format: "#{session_name}|#{pane_pid}"
-		out := BuildPanePidIndex(lines("pi-dev|5055", "pi-dev|89112", "ai-engineering-domain|12345"))
-		if len(out) != 3 {
-			t.Fatalf("len = %d, want 3", len(out))
-		}
-		if got := out[5055]; got != "pi-dev" {
-			t.Errorf("out[5055] = %q, want pi-dev", got)
-		}
-		if got := out[89112]; got != "pi-dev" {
-			t.Errorf("out[89112] = %q, want pi-dev", got)
-		}
-		if got := out[12345]; got != "ai-engineering-domain" {
-			t.Errorf("out[12345] = %q, want ai-engineering-domain", got)
-		}
-	})
-
-	t.Run("ignores blank lines and malformed entries", func(t *testing.T) {
-		out := BuildPanePidIndex(lines("", "pi-dev|5055", "junk-no-pipe", "name|notanumber", "  "))
-		if len(out) != 1 {
-			t.Fatalf("len = %d, want 1", len(out))
-		}
-		if got := out[5055]; got != "pi-dev" {
-			t.Errorf("out[5055] = %q, want pi-dev", got)
-		}
-	})
-
-	t.Run("rejects non-positive pids", func(t *testing.T) {
-		out := BuildPanePidIndex(lines("s|0", "s|-1"))
-		if len(out) != 0 {
-			t.Fatalf("len = %d, want 0", len(out))
-		}
-	})
-}
-
 func TestResolveSessionByPid(t *testing.T) {
 	// Realistic chain: tmux pane shell (89112) → bash spawning pi (89539)
 	//                 → pi process (89555).
@@ -222,7 +186,7 @@ func TestResolveSessionByPid(t *testing.T) {
 		"89555 89539 pi",
 	))
 
-	panePidIndex := BuildPanePidIndex("pi-dev|89112")
+	panePidIndex := map[int]string{89112: "pi-dev"}
 
 	t.Run("walks up from pi pid to its pane and returns the session", func(t *testing.T) {
 		if got := ResolveSessionByPid(89555, panePidIndex, snapshot); got != "pi-dev" {
@@ -260,7 +224,7 @@ func TestResolveSessionByPid(t *testing.T) {
 	})
 
 	t.Run("multi-session: each pane resolves to its own session", func(t *testing.T) {
-		multiIndex := BuildPanePidIndex(lines("pi-dev|89112", "ai-eng|5055"))
+		multiIndex := map[int]string{89112: "pi-dev", 5055: "ai-eng"}
 		multiSnapshot := ParseProcessSnapshot(lines(
 			"89112     1 bash",
 			"89555 89112 pi",
@@ -290,7 +254,7 @@ func TestResolveSessionByPid(t *testing.T) {
 		// Defensive: a corrupt snapshot where a pid is its own parent must not
 		// hang the resolver.
 		cycleSnapshot := ParseProcessSnapshot("44444 44444 weird-self-cycle")
-		idx := BuildPanePidIndex("s|99999")
+		idx := map[int]string{99999: "s"}
 		if got := ResolveSessionByPid(44444, idx, cycleSnapshot); got != "" {
 			t.Errorf("got %q, want \"\"", got)
 		}
@@ -311,7 +275,7 @@ func TestLiveBugScenarioReproduction(t *testing.T) {
 		// Only pi-dev runs pi here. The fact that pi-dev's active pane is
 		// currently in /Users/kyle/Code/my-projects/kylesnowschwartz.github.io
 		// is irrelevant — we route by pid, not by path.
-		panePidIndex := BuildPanePidIndex("pi-dev|89112")
+		panePidIndex := map[int]string{89112: "pi-dev"}
 
 		if got := ResolveSessionByPid(89555, panePidIndex, snapshot); got != "pi-dev" {
 			t.Errorf("got %q, want pi-dev", got)

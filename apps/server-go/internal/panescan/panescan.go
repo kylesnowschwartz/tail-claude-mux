@@ -1,9 +1,9 @@
 // Package panescan ports the bun server's pane agent scanner
 // (server/index.ts buildProcessTree / matchProcessTreeFast /
-// scanAllTmuxPaneAgents): every PANE_SCAN_INTERVAL it lists all tmux panes,
-// builds one process tree from two ps snapshots, and reports which panes
-// host a live agent process. The tracker folds the result in via
-// ApplyPanePresence.
+// scanAllTmuxPaneAgents): every PANE_SCAN_INTERVAL the server hands it the
+// tmux pane listing, it builds one process tree from two ps snapshots, and
+// reports which panes host a live agent process. The tracker folds the
+// result in via ApplyPanePresence.
 //
 // The scanner returns only {agent, paneId, pid, indices, title} — watchers
 // remain the single source of truth for threadId, status, and thread names.
@@ -16,6 +16,7 @@ import (
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/agentmatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 )
 
@@ -35,23 +36,7 @@ var AgentCommPatterns = []AgentPattern{
 	{Name: "pi", Patterns: []string{"pi"}},
 }
 
-// HasCommPatterns reports whether an agent name has a comm-pattern entry
-// (the kill-agent-pane pid-verification gate needs this).
-func HasCommPatterns(agent string) bool {
-	for _, p := range AgentCommPatterns {
-		if p.Name == agent {
-			return true
-		}
-	}
-	return false
-}
-
-const (
-	sidebarMarkerValue = "1"
-	sidebarPaneTitle   = "tcm-sidebar"
-	stashSession       = "_tcm_stash"
-	maxTreeDepth       = 2
-)
+const maxTreeDepth = 2
 
 // Exec runs a command and returns its stdout. Injectable for tests.
 type Exec func(name string, args ...string) (string, error)
@@ -135,94 +120,44 @@ func matchTree(pid int, patterns []string, agentName string, tree processTree, d
 	return 0
 }
 
-// pane is one parsed list-panes row.
-type pane struct {
-	session     string
-	id          string
-	pid         int
-	windowIndex int
-	paneIndex   int
-	sidebar     bool
-	title       string
-}
-
-// Scan lists all panes across all tmux sessions and identifies running
-// agents, keyed by session name. Sidebar panes (the @tcm-sidebar marker or
-// the legacy tcm-sidebar title) and the stash session are excluded.
-func (s *Scanner) Scan() map[string][]tracker.PanePresence {
+// Scan identifies running agents in the given panes, keyed by session
+// name. Sidebar panes and the stash session are excluded. The pane listing
+// comes from the caller (tmux.ListAllPanes) so one tmux exec serves every
+// consumer; the scanner spends its own execs on the two ps snapshots.
+func (s *Scanner) Scan(panes []tmux.Pane) map[string][]tracker.PanePresence {
 	result := map[string][]tracker.PanePresence{}
-
-	raw, err := s.Run("tmux", "list-panes", "-a", "-F",
-		"#{session_name}|#{pane_id}|#{pane_pid}|#{window_index}|#{pane_index}|#{@tcm-sidebar}|#{pane_title}")
-	if err != nil || strings.TrimSpace(raw) == "" {
+	if len(panes) == 0 {
 		return result
-	}
-
-	var panes []pane
-	for line := range strings.SplitSeq(raw, "\n") {
-		if line == "" {
-			continue
-		}
-		// Title is last on purpose: it is the only field that can contain
-		// the separator, so split a bounded number of times.
-		fields := strings.SplitN(line, "|", 7)
-		if len(fields) != 7 {
-			continue
-		}
-		pid, err := strconv.Atoi(fields[2])
-		if err != nil {
-			continue
-		}
-		wi, wiErr := strconv.Atoi(fields[3])
-		pi, piErr := strconv.Atoi(fields[4])
-		p := pane{
-			session: fields[0],
-			id:      fields[1],
-			pid:     pid,
-			sidebar: fields[5] == sidebarMarkerValue || fields[6] == sidebarPaneTitle,
-			title:   fields[6],
-		}
-		if wiErr == nil {
-			p.windowIndex = wi
-		} else {
-			p.windowIndex = -1
-		}
-		if piErr == nil {
-			p.paneIndex = pi
-		} else {
-			p.paneIndex = -1
-		}
-		panes = append(panes, p)
 	}
 
 	tree := s.buildProcessTree()
 
 	for _, p := range panes {
-		if p.sidebar || p.session == stashSession {
+		if p.Sidebar || p.Session == tmux.StashSession {
 			continue
 		}
 		for _, ap := range AgentCommPatterns {
 			// Process-tree matching only — title matching produces false
 			// positives (a thread named "Detect Claude session names").
-			agentPid := matchTree(p.pid, ap.Patterns, ap.Name, tree, 0)
+			agentPid := matchTree(p.PID, ap.Patterns, ap.Name, tree, 0)
 			if agentPid == 0 {
 				continue
 			}
 			pp := tracker.PanePresence{
 				Agent:     ap.Name,
-				PaneID:    p.id,
+				PaneID:    p.ID,
 				PID:       agentPid,
-				PaneTitle: p.title,
+				PaneTitle: p.Title,
 			}
-			if p.windowIndex >= 0 {
-				wi := p.windowIndex
+			if p.WindowIndex >= 0 {
+				wi := p.WindowIndex
 				pp.WindowIndex = &wi
 			}
-			if p.paneIndex >= 0 {
-				pi := p.paneIndex
+			if p.PaneIndex >= 0 {
+				pi := p.PaneIndex
 				pp.PaneIndex = &pi
 			}
-			result[p.session] = append(result[p.session], pp)
+			result[p.Session] = append(result[p.Session], pp)
 			break // one agent per pane — first match wins
 		}
 	}

@@ -79,30 +79,6 @@ func ResolveAgentSessionPid(reportedPid int, pattern *regexp.Regexp, snapshot ma
 	return reportedPid
 }
 
-// BuildPanePidIndex builds a pane shell pid → tmux session-name index from
-// `tmux list-panes -a -F "#{session_name}|#{pane_pid}"` output. Blank
-// lines, malformed entries, and non-positive pids are skipped.
-func BuildPanePidIndex(listPanesOutput string) map[int]string {
-	m := map[int]string{}
-	for line := range strings.SplitSeq(listPanesOutput, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		sep := strings.IndexByte(line, '|')
-		if sep < 0 {
-			continue
-		}
-		session := line[:sep]
-		pid, err := strconv.Atoi(strings.TrimSpace(line[sep+1:]))
-		if err != nil || pid <= 0 || session == "" {
-			continue
-		}
-		m[pid] = session
-	}
-	return m
-}
-
 // ResolveSessionByPid walks up from targetPid through the snapshot's parent
 // chain, returning the session of the first pid (targetPid included) found
 // in panePidIndex. Returns "" when the target is not in the snapshot, the

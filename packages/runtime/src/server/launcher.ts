@@ -1,16 +1,7 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync } from "fs";
 import { join } from "path";
 import { connect } from "net";
-import { SERVER_PORT, SERVER_HOST, PID_FILE } from "../shared";
-
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { SERVER_PORT, SERVER_HOST } from "../shared";
 
 async function isPortOpen(host: string, port: number, timeoutMs = 200): Promise<boolean> {
   return new Promise((resolve) => {
@@ -53,15 +44,9 @@ function resolveServerCmd(): string[] {
 }
 
 export async function ensureServer(): Promise<void> {
-  // A live server on the port wins regardless of the pid file — the Go
-  // server may have been started by hand (A/B, QA) without one.
+  // A live server on the port wins — the pid file is for stop.sh, not the
+  // spawn gate (a hand-started A/B server may not have written one).
   if (await isPortOpen(SERVER_HOST, SERVER_PORT)) return;
-  if (existsSync(PID_FILE)) {
-    const pid = parseInt(readFileSync(PID_FILE, "utf-8").trim(), 10);
-    if (!isNaN(pid) && isProcessAlive(pid) && await isPortOpen(SERVER_HOST, SERVER_PORT)) {
-      return;
-    }
-  }
 
   const proc = Bun.spawn(resolveServerCmd(), {
     stdio: ["ignore", "ignore", "ignore"],

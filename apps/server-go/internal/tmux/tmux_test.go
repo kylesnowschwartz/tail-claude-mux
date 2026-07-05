@@ -52,22 +52,63 @@ func TestResolveCurrentSession(t *testing.T) {
 	}
 }
 
-func TestActiveSessionDirs_FirstHitWins(t *testing.T) {
+// paneRow builds one ListAllPanes -F row (9 tab-separated fields, title last).
+func paneRow(fields ...string) string { return strings.Join(fields, "\t") }
+
+func TestListAllPanes_Parses(t *testing.T) {
 	tm := &Tmux{Run: fake(map[string]string{
-		"list-panes": "proj\t/Users/u/proj/sub\nproj\t/Users/u/elsewhere\nother\t/tmp",
+		"list-panes": paneRow("proj", "%1", "100", "/Users/u/proj", "1", "", "0", "0", "zsh") + "\n" +
+			paneRow("proj", "%2", "101", "/Users/u/proj", "1", "1", "0", "1", "sidebar via option") + "\n" +
+			paneRow("proj", "%3", "102", "/Users/u/proj", "0", "", "1", "0", "tcm-sidebar") + "\n" +
+			paneRow("other", "%4", "103", "/tmp", "0", "", "x", "y", "title\twith\ttabs") + "\n" +
+			paneRow("bad", "%5", "notapid", "/", "0", "", "0", "0", "t") + "\n" +
+			"malformed",
 	})}
-	got := tm.ActiveSessionDirs()
-	if got["proj"] != "/Users/u/proj/sub" || got["other"] != "/tmp" {
+	got := tm.ListAllPanes()
+	want := []Pane{
+		{Session: "proj", ID: "%1", PID: 100, Dir: "/Users/u/proj", WindowActive: true, WindowIndex: 0, PaneIndex: 0, Title: "zsh"},
+		{Session: "proj", ID: "%2", PID: 101, Dir: "/Users/u/proj", WindowActive: true, Sidebar: true, WindowIndex: 0, PaneIndex: 1, Title: "sidebar via option"},
+		{Session: "proj", ID: "%3", PID: 102, Dir: "/Users/u/proj", Sidebar: true, WindowIndex: 1, PaneIndex: 0, Title: "tcm-sidebar"},
+		{Session: "other", ID: "%4", PID: 103, Dir: "/tmp", WindowIndex: -1, PaneIndex: -1, Title: "title\twith\ttabs"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestActiveDirs_FirstHitWins_SkipsSidebarAndInactive(t *testing.T) {
+	panes := []Pane{
+		{Session: "proj", Dir: "/sidebar", WindowActive: true, Sidebar: true},
+		{Session: "proj", Dir: "/Users/u/proj/sub", WindowActive: true},
+		{Session: "proj", Dir: "/Users/u/elsewhere", WindowActive: true},
+		{Session: "other", Dir: "/inactive-window"},
+		{Session: "other", Dir: "/tmp", WindowActive: true},
+	}
+	got := ActiveDirs(panes)
+	if len(got) != 2 || got["proj"] != "/Users/u/proj/sub" || got["other"] != "/tmp" {
 		t.Errorf("got %v", got)
 	}
 }
 
-func TestAllPaneCounts(t *testing.T) {
-	tm := &Tmux{Run: fake(map[string]string{
-		"list-panes": "proj\nproj\nproj\nother",
-	})}
-	got := tm.AllPaneCounts()
+func TestPaneCounts_CountsSidebarsToo(t *testing.T) {
+	panes := []Pane{
+		{Session: "proj"}, {Session: "proj"}, {Session: "proj", Sidebar: true},
+		{Session: "other"},
+	}
+	got := PaneCounts(panes)
 	if got["proj"] != 3 || got["other"] != 1 {
+		t.Errorf("got %v", got)
+	}
+}
+
+func TestPanePidIndex_SkipsNonPositivePids(t *testing.T) {
+	panes := []Pane{
+		{Session: "proj", PID: 100},
+		{Session: "other", PID: 200},
+		{Session: "zero", PID: 0},
+	}
+	got := PanePidIndex(panes)
+	if len(got) != 2 || got[100] != "proj" || got[200] != "other" {
 		t.Errorf("got %v", got)
 	}
 }
