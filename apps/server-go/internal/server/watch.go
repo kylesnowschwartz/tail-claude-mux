@@ -185,7 +185,14 @@ func (s *Server) deriveLogEntriesLocked(ev wire.AgentEvent) []wire.MetadataLogEn
 	if ev.Status != last.status {
 		switch ev.Status {
 		case wire.StatusError:
-			out = append(out, wire.MetadataLogEntry{Source: source, Message: "errored", Tone: "error"})
+			// pi's agent_end error carries the truncated error text as the
+			// description (ToolInvoked=false, so the tool-entry path above
+			// skips it) — surface it instead of the bare status word.
+			msg := "errored"
+			if ev.ToolDescription != "" {
+				msg = ev.ToolDescription
+			}
+			out = append(out, wire.MetadataLogEntry{Source: source, Message: msg, Tone: "error"})
 		case wire.StatusWaiting:
 			out = append(out, wire.MetadataLogEntry{Source: source, Message: "awaiting input", Tone: "info"})
 		case wire.StatusInterrupted:

@@ -350,6 +350,17 @@ func TestPiHookAdapter(t *testing.T) {
 		}
 	})
 
+	t.Run("tool_execution_start with an empty description does not emit when nothing changed", func(t *testing.T) {
+		a, tc := setup(t)
+		a.HandleHook(hook("agent_start", "sess-1", "/tmp/myproject"))
+		a.HandleHook(toolHook("tool_execution_start", "sess-1", "/tmp/myproject", "", nil))
+
+		// The empty tool name resolves to an empty description; with status
+		// unchanged the emit would be a pure no-op (the activity log skips
+		// empty descriptions), so dedup suppresses it.
+		wantLen(t, tc.events, 1)
+	})
+
 	t.Run("agent_start after tool_execution_start clears toolDescription", func(t *testing.T) {
 		a, tc := setup(t)
 		a.HandleHook(toolHook("tool_execution_start", "sess-1", "/tmp/myproject", "read",

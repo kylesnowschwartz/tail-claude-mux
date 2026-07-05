@@ -15,11 +15,14 @@ import (
 const (
 	// maxLogs must cover the TUI seismograph's visible window, which scales
 	// with sidebar width: buckets = contentWidth / BUCKET_COLS(3), 8 s each,
-	// so a 90-col pane shows ~29 buckets ≈ 4 min. A smaller cap lets
-	// in-window buckets decay to a false-calm baseline as eviction removes
-	// their entries. 400 covers ~4 min at a busy ~1.5 entries/s with
-	// headroom; memory cost is trivial (≤ ~250 KB/session).
-	maxLogs          = 400
+	// so a 90-col pane shows ~29 buckets ≈ 4 min (~232 s). A smaller cap
+	// lets in-window buckets decay to a false-calm baseline as eviction
+	// removes their entries. Tool entries are per-INVOCATION (identical
+	// repeated calls each count — watch.go's ToolInvoked keying), and one
+	// session can host several threads plus parallel subagents, so budget
+	// ~3 entries/s sustained: 800 covers the window with headroom; memory
+	// cost is trivial (≤ ~500 KB/session).
+	maxLogs          = 800
 	maxMessageLength = 500
 	maxLabelLength   = 100
 	maxSourceLength  = 50

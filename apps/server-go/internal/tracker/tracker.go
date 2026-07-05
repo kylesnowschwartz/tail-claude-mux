@@ -229,6 +229,10 @@ func (t *Tracker) ApplyEvent(event wire.AgentEvent, seed bool) {
 		event.FirstSeenTS = event.TS
 	}
 	stored := event
+	// ToolInvoked is edge semantics ("this event STARTS a tool call") and
+	// must not persist as level state in snapshots — like Ended (consumed
+	// above) and Unseen (side map), it never survives the store.
+	stored.ToolInvoked = false
 	si[key] = &stored
 
 	// Graduate at most one synthetic: PID match first, then paneId /

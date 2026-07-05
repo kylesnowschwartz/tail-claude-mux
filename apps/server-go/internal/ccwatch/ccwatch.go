@@ -96,10 +96,6 @@ type threadState struct {
 	// lastToolVerb is the structured verb for lastToolDescription — same
 	// lifecycle.
 	lastToolVerb string
-	// permissionDesc is the description last flagged as a tool invocation by
-	// a PermissionRequest. The approved call's PreToolUse arrives with the
-	// same description and must not count as a second invocation.
-	permissionDesc string
 	// subagent from sessions/<pid>.json `agent`, "" when the parent thread
 	// is in control.
 	subagent string
@@ -204,25 +200,24 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		state.status = newStatus
 		state.lastToolDescription = ""
 		state.lastToolVerb = ""
-		a.emit(threadID, state, session, false, true)
+		a.emit(threadID, state, session, emitEnded)
 		delete(a.threads, threadID)
 		return
 	}
 
 	hasToolContext := payload.Event == "PreToolUse" || payload.Event == "PermissionRequest"
-	toolInvoked := false
+	// PreToolUse fires exactly once per tool call, BEFORE the permission
+	// system evaluates (its hook output can allow/deny), and never re-fires
+	// after approval — the prompted sequence is PreToolUse →
+	// PermissionRequest → [approve] → PostToolUse. So PreToolUse alone marks
+	// the invocation; PermissionRequest only refreshes the visible
+	// description for the same already-counted call.
+	kind := emitUpdate
+	if payload.Event == "PreToolUse" {
+		kind = emitInvoked
+	}
 	if hasToolContext {
-		desc := ToolDescription(payload.ToolName, payload.ToolInput)
-		// A PreToolUse matching the pending PermissionRequest description is
-		// the approval echo of ONE call, not a second invocation. Identical
-		// back-to-back PreToolUse events are distinct calls and all count.
-		toolInvoked = !(payload.Event == "PreToolUse" && desc == state.permissionDesc)
-		if payload.Event == "PermissionRequest" {
-			state.permissionDesc = desc
-		} else {
-			state.permissionDesc = ""
-		}
-		state.lastToolDescription = desc
+		state.lastToolDescription = ToolDescription(payload.ToolName, payload.ToolInput)
 		state.lastToolVerb = ToolVerb(payload.ToolName)
 	} else if payload.Event != "PostToolUse" {
 		// Clear on non-tool events; PostToolUse keeps the prior description
@@ -238,7 +233,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	}
 
 	state.status = newStatus
-	a.emit(threadID, state, session, toolInvoked, false)
+	a.emit(threadID, state, session, kind)
 }
 
 // waiting/idle Notification subtypes (user must act / agent idle at prompt).
@@ -261,7 +256,18 @@ func (a *Adapter) resolveStatus(payload wire.HookPayload) string {
 	return hookStatusMap[payload.Event]
 }
 
-func (a *Adapter) emit(threadID string, state *threadState, session string, invoked, ended bool) {
+// emitKind is what one emitted AgentEvent represents: a plain state update,
+// the start of a new tool call, or the definitive end of the thread. The
+// three are mutually exclusive — a kind, not a pair of independent bools.
+type emitKind int
+
+const (
+	emitUpdate  emitKind = iota // status/name/description refresh
+	emitInvoked                 // a new tool call started (→ ToolInvoked)
+	emitEnded                   // thread definitively ended (→ Ended)
+)
+
+func (a *Adapter) emit(threadID string, state *threadState, session string, kind emitKind) {
 	if a.ctx == nil {
 		return
 	}
@@ -274,10 +280,10 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, invo
 		ThreadName:      state.threadName,
 		ToolDescription: state.lastToolDescription,
 		ToolVerb:        state.lastToolVerb,
-		ToolInvoked:     invoked,
+		ToolInvoked:     kind == emitInvoked,
 		PID:             state.pid,
 		Subagent:        state.subagent,
-		Ended:           ended,
+		Ended:           kind == emitEnded,
 	})
 }
 
@@ -553,7 +559,7 @@ func (a *Adapter) resolveThreadNameAsync(threadID string, state *threadState) {
 					if cur, ok := a.threads[threadID]; ok && cur == state {
 						state.threadName = threadName
 						if session := ctx.ResolveSession(state.projectDir); session != "" {
-							a.emit(threadID, state, session, false, false)
+							a.emit(threadID, state, session, emitUpdate)
 						}
 					}
 				})

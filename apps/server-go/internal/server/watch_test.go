@@ -82,4 +82,33 @@ func TestDeriveLogEntries(t *testing.T) {
 			t.Fatalf("unchanged repeat produced %d entries, want 0", got)
 		}
 	})
+
+	t.Run("error status surfaces the carried error label", func(t *testing.T) {
+		s := newServer()
+		// pi's agent_end error: the truncated error text rides in as the
+		// description with ToolInvoked=false — it must reach the log as the
+		// error entry, not vanish behind a generic "errored".
+		ev := toolEv("API rate limit exceeded", false)
+		ev.Status = wire.StatusError
+		entries := s.deriveLogEntriesLocked(ev)
+		if len(entries) != 1 {
+			t.Fatalf("got %d entries, want 1", len(entries))
+		}
+		if entries[0].Message != "API rate limit exceeded" {
+			t.Errorf("message = %q, want the error text", entries[0].Message)
+		}
+		if entries[0].Tone != "error" {
+			t.Errorf("tone = %q, want error", entries[0].Tone)
+		}
+	})
+
+	t.Run("error status without a label logs plain errored", func(t *testing.T) {
+		s := newServer()
+		ev := toolEv("", false)
+		ev.Status = wire.StatusError
+		entries := s.deriveLogEntriesLocked(ev)
+		if len(entries) != 1 || entries[0].Message != "errored" {
+			t.Fatalf("entries = %+v, want single 'errored'", entries)
+		}
+	})
 }

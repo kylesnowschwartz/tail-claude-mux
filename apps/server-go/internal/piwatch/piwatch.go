@@ -176,7 +176,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	if payload.Event == "session_shutdown" {
 		state.status = wire.StatusDone
 		state.lastToolDescription = ""
-		a.emit(threadID, state, session, false, true)
+		a.emit(threadID, state, session, emitEnded)
 		delete(a.threads, threadID)
 		return
 	}
@@ -200,21 +200,24 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	hadToolUpdate := newDescription != prevDescription
 	state.lastToolDescription = newDescription
 
-	// tool_execution_start is the start of a NEW call even when its
-	// description matches the previous one — repeated identical calls must
-	// each reach the activity log (agent_end's descSet error label is not
-	// an invocation).
-	toolInvoked := payload.Event == "tool_execution_start"
+	// An invocation starts a NEW call even when its description matches the
+	// previous one — repeated identical calls must each reach the activity
+	// log. Empty descriptions are excluded: the log discards them anyway, so
+	// emitting would be a pure no-op.
+	kind := emitUpdate
+	if desc.invoked && newDescription != "" {
+		kind = emitInvoked
+	}
 
 	// Dedup: suppress emission when nothing meaningful changed. Always emit
 	// for a new thread, for status changes, a visible description update, or
 	// a fresh tool invocation.
-	if state.status == newStatus && !isNewThread && !hadToolUpdate && !toolInvoked {
+	if state.status == newStatus && !isNewThread && !hadToolUpdate && kind != emitInvoked {
 		return
 	}
 
 	state.status = newStatus
-	a.emit(threadID, state, session, toolInvoked, false)
+	a.emit(threadID, state, session, kind)
 }
 
 // descDirective is the tool-description directive attached to an event:
@@ -230,6 +233,11 @@ const (
 type descDirective struct {
 	kind  descKind
 	value string
+	// invoked marks the event as the start of a NEW tool call (→ the
+	// emitted AgentEvent's ToolInvoked). Owned here so resolveEvent is the
+	// single place that decides what a pi event means — a descSet without
+	// invoked (agent_end's error label) is a label update, not a call.
+	invoked bool
 }
 
 // resolveEvent maps a pi hook payload to a new status plus a
@@ -245,8 +253,9 @@ func resolveEvent(payload wire.HookPayload) (string, descDirective) {
 
 	case "tool_execution_start":
 		return wire.StatusRunning, descDirective{
-			kind:  descSet,
-			value: ToolDescription(payload.ToolName, payload.ToolInput),
+			kind:    descSet,
+			value:   ToolDescription(payload.ToolName, payload.ToolInput),
+			invoked: true,
 		}
 
 	case "tool_execution_end":
@@ -270,7 +279,18 @@ func resolveEvent(payload wire.HookPayload) (string, descDirective) {
 	}
 }
 
-func (a *Adapter) emit(threadID string, state *threadState, session string, invoked, ended bool) {
+// emitKind is what one emitted AgentEvent represents: a plain state update,
+// the start of a new tool call, or the definitive end of the thread. The
+// three are mutually exclusive — a kind, not a pair of independent bools.
+type emitKind int
+
+const (
+	emitUpdate  emitKind = iota // status/name/description refresh
+	emitInvoked                 // a new tool call started (→ ToolInvoked)
+	emitEnded                   // thread definitively ended (→ Ended)
+)
+
+func (a *Adapter) emit(threadID string, state *threadState, session string, kind emitKind) {
 	if a.ctx == nil {
 		return
 	}
@@ -282,9 +302,9 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, invo
 		ThreadID:        threadID,
 		ThreadName:      state.threadName,
 		ToolDescription: state.lastToolDescription,
-		ToolInvoked:     invoked,
+		ToolInvoked:     kind == emitInvoked,
 		PID:             state.pid,
-		Ended:           ended,
+		Ended:           kind == emitEnded,
 	})
 }
 
@@ -411,7 +431,7 @@ func (a *Adapter) resolveThreadNameAsync(threadID string, state *threadState) {
 					if cur, ok := a.threads[threadID]; ok && cur == state {
 						state.threadName = threadName
 						if session := ctx.ResolveSession(state.projectDir); session != "" {
-							a.emit(threadID, state, session, false, false)
+							a.emit(threadID, state, session, emitUpdate)
 						}
 					}
 				})
