@@ -71,10 +71,22 @@ func only(cmds [][]string, names ...string) [][]string {
 	return out
 }
 
+// Struct panes for driving ensureCompanionInWindow directly (it takes
+// the caller's parsed listing).
+func mainPane() tmux.Pane {
+	return tmux.Pane{Session: "proj", ID: "%1", WindowID: "@1", WindowActive: true, Height: 41, WindowHeight: 41}
+}
+func sidebarPane() tmux.Pane {
+	return tmux.Pane{Session: "proj", ID: "%2", WindowID: "@1", Sidebar: true, Height: 33, WindowHeight: 41}
+}
+func companionPane() tmux.Pane {
+	return tmux.Pane{Session: "proj", ID: "%3", WindowID: "@1", Companion: true, Height: 8, WindowHeight: 41}
+}
+
 func TestEnsureCompanionInWindow_FeatureOff_NoTmuxTraffic(t *testing.T) {
 	var cmds [][]string
-	s := newTestServer(sequencedRunner([]string{rows(mainRow(), sidebarRow())}, nil, &cmds), state.CompanionPaneConfig{})
-	s.ensureCompanionInWindow("@1")
+	s := newTestServer(sequencedRunner([]string{""}, nil, &cmds), state.CompanionPaneConfig{})
+	s.ensureCompanionInWindow("@1", []tmux.Pane{mainPane(), sidebarPane()}, "")
 	if len(cmds) != 0 {
 		t.Errorf("feature off must issue zero tmux commands, got %v", cmds)
 	}
@@ -83,10 +95,10 @@ func TestEnsureCompanionInWindow_FeatureOff_NoTmuxTraffic(t *testing.T) {
 func TestEnsureCompanionInWindow_SpawnsBelowSidebar(t *testing.T) {
 	var cmds [][]string
 	s := newTestServer(
-		sequencedRunner([]string{rows(mainRow(), sidebarRow())}, map[string]string{"split-window": "%3"}, &cmds),
+		sequencedRunner([]string{""}, map[string]string{"split-window": "%3"}, &cmds),
 		state.CompanionPaneConfig{Command: "watch date", Rows: 8},
 	)
-	s.ensureCompanionInWindow("@1")
+	s.ensureCompanionInWindow("@1", []tmux.Pane{mainPane(), sidebarPane()}, "")
 	want := [][]string{{"split-window", "-d", "-v", "-l", "8", "-t", "%2", "-P", "-F", "#{pane_id}", "watch date"}}
 	if got := only(cmds, "split-window"); !reflect.DeepEqual(got, want) {
 		t.Errorf("split-window = %v\nwant %v", got, want)
@@ -96,14 +108,14 @@ func TestEnsureCompanionInWindow_SpawnsBelowSidebar(t *testing.T) {
 func TestEnsureCompanionInWindow_WindowTooShort_NoSpawn(t *testing.T) {
 	// Window height 5: ceiling (5/2=2) is below the 3-row floor — the
 	// split would fail "pane too small" on every retry, so skip entirely.
-	shortMain := tmuxtest.PaneSpec{Session: "proj", ID: "%1", PID: "100", Dir: "/p", WindowActive: "1", WindowID: "@1", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "5", WindowHeight: "5", Title: "zsh"}.Row()
-	shortSidebar := tmuxtest.PaneSpec{Session: "proj", ID: "%2", PID: "101", Dir: "/p", WindowActive: "1", Sidebar: "1", WindowID: "@1", Left: "120", Right: "152", Width: "33", WindowWidth: "153", Height: "5", WindowHeight: "5", Title: "tcm-sidebar"}.Row()
+	short := sidebarPane()
+	short.Height, short.WindowHeight = 5, 5
 	var cmds [][]string
 	s := newTestServer(
-		sequencedRunner([]string{rows(shortMain, shortSidebar)}, nil, &cmds),
+		sequencedRunner([]string{""}, nil, &cmds),
 		state.CompanionPaneConfig{Command: "watch date", Rows: 8},
 	)
-	s.ensureCompanionInWindow("@1")
+	s.ensureCompanionInWindow("@1", []tmux.Pane{short}, "")
 	if got := only(cmds, "split-window", "join-pane"); len(got) != 0 {
 		t.Errorf("too-short window must not spawn, got %v", got)
 	}
@@ -112,10 +124,10 @@ func TestEnsureCompanionInWindow_WindowTooShort_NoSpawn(t *testing.T) {
 func TestEnsureCompanionInWindow_Idempotent(t *testing.T) {
 	var cmds [][]string
 	s := newTestServer(
-		sequencedRunner([]string{rows(mainRow(), sidebarRow(), companionRow())}, nil, &cmds),
+		sequencedRunner([]string{""}, nil, &cmds),
 		state.CompanionPaneConfig{Command: "watch date", Rows: 8},
 	)
-	s.ensureCompanionInWindow("@1")
+	s.ensureCompanionInWindow("@1", []tmux.Pane{mainPane(), sidebarPane(), companionPane()}, "")
 	if got := only(cmds, "split-window", "join-pane"); len(got) != 0 {
 		t.Errorf("existing companion must not respawn, got %v", got)
 	}
@@ -124,10 +136,10 @@ func TestEnsureCompanionInWindow_Idempotent(t *testing.T) {
 func TestEnsureCompanionInWindow_NoSidebar_NoSpawn(t *testing.T) {
 	var cmds [][]string
 	s := newTestServer(
-		sequencedRunner([]string{mainRow()}, nil, &cmds),
+		sequencedRunner([]string{""}, nil, &cmds),
 		state.CompanionPaneConfig{Command: "watch date", Rows: 8},
 	)
-	s.ensureCompanionInWindow("@1")
+	s.ensureCompanionInWindow("@1", []tmux.Pane{mainPane()}, "")
 	if got := only(cmds, "split-window", "join-pane"); len(got) != 0 {
 		t.Errorf("companion must target an existing sidebar, got %v", got)
 	}
@@ -180,20 +192,20 @@ func TestHandleToggle_StashesAndRestoresCompanion(t *testing.T) {
 	}
 
 	// Show: sidebar restored from stash, then companion restored from
-	// stash below it. Listings evolve as the layout changes underneath.
+	// stash below it (targeting the freshly restored sidebar %8).
+	// Listings evolve as the layout changes underneath.
 	cmds = nil
 	s = newTestServer(sequencedRunner([]string{
 		rows(mainRow(), stashSidebarRow(), stashCompanionRow()), // spawnInActiveWindows
 		rows(mainRow(), stashSidebarRow(), stashCompanionRow()), // SpawnSidebar
-		rows(mainRow(), sidebarRow(), stashCompanionRow()),      // ensureCompanionInWindow
-		rows(mainRow(), sidebarRow(), stashCompanionRow()),      // SpawnCompanion
-		rows(mainRow(), sidebarRow(), companionRow()),           // enforce passes
+		rows(mainRow(), sidebarRow(), stashCompanionRow()),      // SpawnCompanion (stash scan)
+		rows(mainRow(), sidebarRow(), companionRow()),           // enforceGeometry
 	}, nil, &cmds), companion)
 	s.sidebarVisible = false
 	s.handleToggle(httptest.NewRecorder(), nil)
 	wantShow := [][]string{
 		{"join-pane", "-h", "-f", "-l", "33", "-s", "%8", "-t", "%1"},
-		{"join-pane", "-d", "-v", "-l", "8", "-s", "%9", "-t", "%2"},
+		{"join-pane", "-d", "-v", "-l", "8", "-s", "%9", "-t", "%8"},
 	}
 	if got := only(cmds, "join-pane"); !reflect.DeepEqual(got, wantShow) {
 		t.Errorf("show join-pane = %v\nwant %v", got, wantShow)
@@ -208,9 +220,8 @@ func TestEnsureSidebarInWindow_KillsStrandedCompanion(t *testing.T) {
 	s := newTestServer(sequencedRunner([]string{
 		rows(mainRow(), companionRow()),               // ensureSidebarInWindow: sidebar died
 		mainRow(),                                     // SpawnSidebar: companion killed
-		rows(mainRow(), sidebarRow()),                 // ensureCompanionInWindow
-		rows(mainRow(), sidebarRow()),                 // SpawnCompanion
-		rows(mainRow(), sidebarRow(), companionRow()), // enforce passes
+		rows(mainRow(), sidebarRow()),                 // SpawnCompanion (stash scan)
+		rows(mainRow(), sidebarRow(), companionRow()), // enforceGeometry
 	}, map[string]string{"split-window": "%2"}, &cmds), state.CompanionPaneConfig{Command: "watch date", Rows: 8})
 	s.SidebarPosition = "right"
 	s.ensureSidebarInWindow("@1")

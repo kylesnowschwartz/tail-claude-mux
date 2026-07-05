@@ -190,8 +190,8 @@ func ClampCompanionHeight(rows, windowHeight int) int
 func LoadCompanionPane(configDir string) CompanionPaneConfig
 
 // internal/server
-func (s *Server) ensureCompanionInWindow(windowID string)
-func (s *Server) enforceCompanionHeight()
+func (s *Server) ensureCompanionInWindow(windowID string, panes []tmux.Pane, freshSidebarID string)
+func (s *Server) enforceGeometry(skipSession string) // one listing feeds width + height enforcement
 func (s *Server) killStrandedCompanions(windowID string, panes []tmux.Pane)
 ```
 
@@ -202,6 +202,11 @@ Behaviour contract:
   call in every companion entry point.
 - **Sidebar-anchored.** The companion only ever spawns against an
   existing sidebar pane; no sidebar, no companion.
+- **One listing per pass.** Ensure and enforce reuse the caller's pane
+  listing; the only deliberate re-list is `SpawnCompanion`'s stash scan,
+  because a listing shared across windows would offer the same stashed
+  pane twice and the second `join-pane` would steal the first window's
+  companion.
 
 ---
 
