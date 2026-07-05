@@ -106,19 +106,13 @@ func (t *Tmux) SpawnSidebar(windowID string, width int, position, scriptsDir str
 
 	// Restore-from-stash first: hide/show cycles park live TUI panes in
 	// the stash session rather than killing them.
-	for _, p := range panes {
-		if p.Session != StashSession || !p.Sidebar {
-			continue
-		}
-		joinFlag := "-h"
-		if position == "left" {
-			joinFlag = "-hb"
-		}
-		if _, err := t.Run("join-pane", joinFlag, "-f", "-l", strconv.Itoa(width), "-s", p.ID, "-t", target.ID); err != nil {
-			break // fall through to a fresh spawn
-		}
-		t.markPane(p.ID, sidebarMarkerOption, SidebarPaneTitle)
-		return p.ID
+	joinFlags := []string{"-h", "-f"}
+	if position == "left" {
+		joinFlags = []string{"-hb", "-f"}
+	}
+	if id := t.restoreFromStash(panes, func(p Pane) bool { return p.Sidebar },
+		joinFlags, width, target.ID, sidebarMarkerOption, SidebarPaneTitle); id != "" {
+		return id
 	}
 
 	splitFlags := []string{"-h", "-f"}
@@ -128,6 +122,27 @@ func (t *Tmux) SpawnSidebar(windowID string, width int, position, scriptsDir str
 	return t.SpawnManagedPane(target.ID, splitFlags, width,
 		"REFOCUS_WINDOW="+windowID+" exec "+scriptsDir+"/start.sh",
 		sidebarMarkerOption, SidebarPaneTitle)
+}
+
+// restoreFromStash joins the first stashed pane matching isKind back into
+// the window at target, re-marks it, and returns its id; "" when no
+// candidate exists or the join fails (callers fall through to a fresh
+// spawn). joinFlags travel verbatim so each pane kind pins its exact
+// join-pane arg sequence.
+func (t *Tmux) restoreFromStash(panes []Pane, isKind func(Pane) bool, joinFlags []string, size int, target, markerOption, title string) string {
+	for _, p := range panes {
+		if p.Session != StashSession || !isKind(p) {
+			continue
+		}
+		args := append([]string{"join-pane"}, joinFlags...)
+		args = append(args, "-l", strconv.Itoa(size), "-s", p.ID, "-t", target)
+		if _, err := t.Run(args...); err != nil {
+			return "" // fall through to a fresh spawn
+		}
+		t.markPane(p.ID, markerOption, title)
+		return p.ID
+	}
+	return ""
 }
 
 // SpawnManagedPane splits targetPane, sizes the new pane, runs command

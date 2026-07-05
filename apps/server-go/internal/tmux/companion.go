@@ -47,15 +47,9 @@ func CompanionPanes(panes []Pane) []Pane {
 // does: a caller-shared listing would offer the same stashed pane to
 // every window.
 func (t *Tmux) SpawnCompanion(sidebarPaneID string, rows int, command string) string {
-	for _, p := range t.ListAllPanes() {
-		if p.Session != StashSession || !p.Companion {
-			continue
-		}
-		if _, err := t.Run("join-pane", "-d", "-v", "-l", strconv.Itoa(rows), "-s", p.ID, "-t", sidebarPaneID); err != nil {
-			break // fall through to a fresh spawn
-		}
-		t.markPane(p.ID, companionMarkerOption, CompanionPaneTitle)
-		return p.ID
+	if id := t.restoreFromStash(t.ListAllPanes(), func(p Pane) bool { return p.Companion },
+		[]string{"-d", "-v"}, rows, sidebarPaneID, companionMarkerOption, CompanionPaneTitle); id != "" {
+		return id
 	}
 	return t.SpawnManagedPane(sidebarPaneID, []string{"-d", "-v"}, rows, command,
 		companionMarkerOption, CompanionPaneTitle)
