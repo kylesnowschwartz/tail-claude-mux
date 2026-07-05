@@ -34,7 +34,28 @@ function resolveServerEntryPath(): string {
   return fromWorkspace;
 }
 
+/** Resolve the server spawn command. The Go server (apps/server-go, built
+ *  to bin/tcm-server by restart.sh) is the default when its binary exists;
+ *  TCM_SERVER=bun is the kill-switch back to the bun implementation. */
+function resolveServerCmd(): string[] {
+  if (process.env.TCM_SERVER !== "bun") {
+    const goCandidates = [
+      process.env.TCM_DIR
+        ? join(process.env.TCM_DIR, "apps", "server-go", "bin", "tcm-server")
+        : "",
+      new URL("../../../../apps/server-go/bin/tcm-server", import.meta.url).pathname,
+    ];
+    for (const bin of goCandidates) {
+      if (bin && existsSync(bin)) return [bin];
+    }
+  }
+  return [process.execPath, "run", resolveServerEntryPath()];
+}
+
 export async function ensureServer(): Promise<void> {
+  // A live server on the port wins regardless of the pid file — the Go
+  // server may have been started by hand (A/B, QA) without one.
+  if (await isPortOpen(SERVER_HOST, SERVER_PORT)) return;
   if (existsSync(PID_FILE)) {
     const pid = parseInt(readFileSync(PID_FILE, "utf-8").trim(), 10);
     if (!isNaN(pid) && isProcessAlive(pid) && await isPortOpen(SERVER_HOST, SERVER_PORT)) {
@@ -42,8 +63,7 @@ export async function ensureServer(): Promise<void> {
     }
   }
 
-  const serverPath = resolveServerEntryPath();
-  const proc = Bun.spawn([process.execPath, "run", serverPath], {
+  const proc = Bun.spawn(resolveServerCmd(), {
     stdio: ["ignore", "ignore", "ignore"],
     env: { ...process.env },
   });

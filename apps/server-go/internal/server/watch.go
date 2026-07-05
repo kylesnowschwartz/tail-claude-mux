@@ -99,12 +99,92 @@ func (s *Server) StartWatchers() {
 	go s.livenessLoop()
 }
 
-// emitLocked is the watcher context's Emit: fold the event into the
-// tracker and schedule a debounced broadcast. Runs with s.mu held.
+// emitLocked is the watcher context's Emit: derive activity-log entries,
+// fold the event into the tracker, and schedule a debounced broadcast.
+// Runs with s.mu held.
 func (s *Server) emitLocked(ev wire.AgentEvent) {
 	log.Printf("agent-emit %s session=%s status=%s", ev.Agent, ev.Session, ev.Status)
+	// Always update lastSeenByThread (so post-seed diffs are correct), but
+	// only push log entries once initial seeding is complete — otherwise
+	// every cold-start reconstruction would flood the buffer.
+	entries := s.deriveLogEntriesLocked(ev)
+	if s.watchersSeeded {
+		for _, e := range entries {
+			s.Metadata.AppendLog(ev.Session, e)
+		}
+	}
 	s.Tracker.ApplyEvent(ev, !s.watchersSeeded)
 	s.debouncedBroadcastLocked()
+}
+
+// lastSeen tracks the last thread/tool/status surfaced per thread so the
+// log only records changes (deriveLogEntries' lastSeenByThread).
+type lastSeen struct {
+	tool, thread, status string
+}
+
+// agentCode is the two-letter source prefix in ln-zone entries.
+func agentCode(agent string) string {
+	switch agent {
+	case "claude-code":
+		return "cc"
+	case "pi":
+		return "pi"
+	case "codex":
+		return "cd"
+	case "amp":
+		return "ap"
+	default:
+		if len(agent) > 2 {
+			return agent[:2]
+		}
+		return agent
+	}
+}
+
+func shortThreadIDSuffix(id string) string {
+	if len(id) <= 4 {
+		return id
+	}
+	return id[len(id)-4:]
+}
+
+// deriveLogEntriesLocked synthesizes human-readable ln-zone entries from
+// one agent event. Emit order: thread name (least recent) → tool (mid) →
+// status transition (most recent), so the freshest visible entry reflects
+// the latest signal. Running/idle/done are deliberately not surfaced:
+// running is implied by tool descriptions; idle/done are too noisy.
+func (s *Server) deriveLogEntriesLocked(ev wire.AgentEvent) []wire.MetadataLogEntry {
+	if ev.ThreadID == "" {
+		return nil
+	}
+	last := s.lastSeenByThread[ev.ThreadID]
+	source := strings.TrimSpace(agentCode(ev.Agent) + " " + shortThreadIDSuffix(ev.ThreadID))
+	var out []wire.MetadataLogEntry
+
+	if ev.ThreadName != "" && ev.ThreadName != last.thread {
+		out = append(out, wire.MetadataLogEntry{Source: source, Message: ev.ThreadName, Tone: "neutral"})
+	}
+	if ev.ToolDescription != "" && ev.ToolDescription != last.tool {
+		out = append(out, wire.MetadataLogEntry{Source: source, Message: ev.ToolDescription, Tone: "info"})
+	}
+	if ev.Status != last.status {
+		switch ev.Status {
+		case wire.StatusError:
+			out = append(out, wire.MetadataLogEntry{Source: source, Message: "errored", Tone: "error"})
+		case wire.StatusWaiting:
+			out = append(out, wire.MetadataLogEntry{Source: source, Message: "awaiting input", Tone: "info"})
+		case wire.StatusInterrupted:
+			out = append(out, wire.MetadataLogEntry{Source: source, Message: "interrupted", Tone: "warn"})
+		}
+	}
+
+	s.lastSeenByThread[ev.ThreadID] = lastSeen{
+		tool:   ev.ToolDescription,
+		thread: ev.ThreadName,
+		status: ev.Status,
+	}
+	return out
 }
 
 // debouncedBroadcastLocked batches watcher-driven broadcasts at

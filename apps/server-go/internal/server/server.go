@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/metadata"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
@@ -36,10 +37,18 @@ import (
 // state mutation runs under mu — commands, hooks, and refresh ticks
 // serialize the same way the bun server's single JS thread does.
 type Server struct {
-	Builder *state.Builder
-	Tracker *tracker.Tracker
-	Watcher *ccwatch.Adapter
-	Scanner *panescan.Scanner
+	Builder  *state.Builder
+	Tracker  *tracker.Tracker
+	Watcher  *ccwatch.Adapter
+	Scanner  *panescan.Scanner
+	Metadata *metadata.Store
+
+	// Restart is invoked ~50ms after answering POST /restart (the dev
+	// loop's `restart.sh` ingress). main wires it to a self-exec.
+	Restart func()
+	// Quit is invoked ~50ms after POST /quit broadcasts quit-notify to
+	// every sidebar (stop.sh's graceful path). main wires it to exit.
+	Quit func()
 
 	mu        sync.Mutex
 	clients   map[*client]bool
@@ -49,6 +58,7 @@ type Server struct {
 	watchersSeeded    bool
 	broadcastTimer    *time.Timer
 	lastSessions      []string // names from the last Build, for empty-presence sweeps
+	lastSeenByThread  map[string]lastSeen
 	dirSessionCache   map[string]string
 	dirSessionCacheAt time.Time
 	panePidCache      map[int]string
@@ -68,7 +78,13 @@ func New(b *state.Builder, tr *tracker.Tracker, w *ccwatch.Adapter, sc *panescan
 	if tr != nil {
 		b.Agents = tr
 	}
-	return &Server{Builder: b, Tracker: tr, Watcher: w, Scanner: sc, clients: map[*client]bool{}}
+	md := metadata.NewStore()
+	b.Metadata = md
+	return &Server{
+		Builder: b, Tracker: tr, Watcher: w, Scanner: sc, Metadata: md,
+		clients:          map[*client]bool{},
+		lastSeenByThread: map[string]lastSeen{},
+	}
 }
 
 // Handler returns the HTTP handler with every route mounted.
@@ -80,6 +96,29 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
 		s.broadcast()
 		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /restart", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("POST /restart")
+		_, _ = fmt.Fprint(w, "restarting")
+		if s.Restart != nil {
+			// Respond before restarting so the caller gets confirmation
+			// (mirrors the bun server's 50ms grace).
+			time.AfterFunc(50*time.Millisecond, s.Restart)
+		}
+	})
+	mux.HandleFunc("POST /quit", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("POST /quit")
+		s.mu.Lock()
+		if quit, err := json.Marshal(wire.QuitNotify{Type: wire.TypeQuit}); err == nil {
+			for c := range s.clients {
+				_ = c.conn.WriteText(string(quit))
+			}
+		}
+		s.mu.Unlock()
+		_, _ = fmt.Fprint(w, "quitting")
+		if s.Quit != nil {
+			time.AfterFunc(50*time.Millisecond, s.Quit)
+		}
 	})
 	mux.HandleFunc("/", s.handleRoot)
 	return mux
@@ -377,9 +416,12 @@ func (s *Server) prepareStateLocked() wire.ServerState {
 	}
 	st := s.Builder.Build()
 	s.lastSessions = s.lastSessions[:0]
+	valid := make(map[string]bool, len(st.Sessions))
 	for _, sess := range st.Sessions {
 		s.lastSessions = append(s.lastSessions, sess.Name)
+		valid[sess.Name] = true
 	}
+	s.Metadata.PruneSessions(valid)
 	return st
 }
 

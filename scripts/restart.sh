@@ -27,13 +27,25 @@ wait_for_server() {
 echo "==> Building TUI..."
 cd "$ROOT/apps/tui" && "$BUN" run build
 
+# 1b. Build the Go server — the default backend when its binary exists;
+#     TCM_SERVER=bun skips the build and the launcher falls back to bun.
+GO_BIN="$ROOT/apps/server-go/bin/tcm-server"
+if [[ "${TCM_SERVER:-}" != "bun" ]] && command -v go >/dev/null 2>&1; then
+  echo "==> Building Go server..."
+  (cd "$ROOT/apps/server-go" && GOWORK=off go build -o bin/tcm-server ./cmd/tcm-server)
+fi
+
 # 2. Restart or cold-start the server
 if server_alive; then
   echo "==> Restarting server..."
   curl -s -o /dev/null -X POST "${BASE}/restart"
 else
   echo "==> Server not running, starting fresh..."
-  "$BUN" run "$ROOT/apps/server/src/main.ts" >/dev/null 2>&1 &
+  if [[ "${TCM_SERVER:-}" != "bun" && -x "$GO_BIN" ]]; then
+    "$GO_BIN" >/dev/null 2>&1 &
+  else
+    "$BUN" run "$ROOT/apps/server/src/main.ts" >/dev/null 2>&1 &
+  fi
 fi
 
 # 3. Wait for the new server

@@ -29,13 +29,21 @@ type AgentSource interface {
 	IsUnseen(session string) bool
 }
 
+// MetadataSource supplies per-session presentation metadata (the ln zone's
+// activity log + programmatic status/progress). nil Get results stay nil —
+// the wire carries metadata: null for quiet sessions.
+type MetadataSource interface {
+	Get(session string) *wire.SessionMetadata
+}
+
 // Builder holds the pieces computeState needs. Fields are set once at
 // startup; Build is called from the server's single command/refresh loop.
 type Builder struct {
-	Tmux   *tmux.Tmux
-	Git    *gitinfo.Cache
-	Order  *sessionorder.Order
-	Agents AgentSource
+	Tmux     *tmux.Tmux
+	Git      *gitinfo.Cache
+	Order    *sessionorder.Order
+	Agents   AgentSource
+	Metadata MetadataSource
 
 	// ConfigDir is ~/.config/tcm — the home of config.json and
 	// active-theme.json.
@@ -113,6 +121,9 @@ func (b *Builder) Build() wire.ServerState {
 			sd.AgentState = b.Agents.GetState(name)
 			sd.Agents = b.Agents.GetAgents(name)
 			sd.EventTimestamps = b.Agents.GetEventTimestamps(name)
+		}
+		if b.Metadata != nil {
+			sd.Metadata = b.Metadata.Get(name)
 		}
 		sessions = append(sessions, sd)
 	}
