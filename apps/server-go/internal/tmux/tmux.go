@@ -181,6 +181,8 @@ type Pane struct {
 	WindowID     string // @-prefixed tmux window id
 	Left         int    // pane_left column, -1 when unparseable
 	Right        int    // pane_right column, -1 when unparseable
+	Width        int    // pane_width columns, -1 when unparseable
+	WindowWidth  int    // window_width columns, -1 when unparseable
 	Title        string
 }
 
@@ -191,14 +193,15 @@ func (t *Tmux) ListAllPanes() []Pane {
 		"#{session_name}"+sep+"#{pane_id}"+sep+"#{pane_pid}"+sep+
 			"#{pane_current_path}"+sep+"#{window_active}"+sep+"#{@tcm-sidebar}"+sep+
 			"#{window_index}"+sep+"#{pane_index}"+sep+"#{window_id}"+sep+
-			"#{pane_left}"+sep+"#{pane_right}"+sep+"#{pane_title}")
+			"#{pane_left}"+sep+"#{pane_right}"+sep+"#{pane_width}"+sep+
+			"#{window_width}"+sep+"#{pane_title}")
 	if err != nil || out == "" {
 		return nil
 	}
 	var panes []Pane
 	for line := range strings.SplitSeq(out, "\n") {
-		f := strings.SplitN(line, sep, 12)
-		if len(f) != 12 || f[0] == "" {
+		f := strings.SplitN(line, sep, 14)
+		if len(f) != 14 || f[0] == "" {
 			continue
 		}
 		pid, err := strconv.Atoi(f[2])
@@ -211,13 +214,15 @@ func (t *Tmux) ListAllPanes() []Pane {
 			PID:          pid,
 			Dir:          f[3],
 			WindowActive: f[4] == "1",
-			Sidebar:      f[5] == "1" || f[11] == "tcm-sidebar",
+			Sidebar:      f[5] == "1" || f[13] == "tcm-sidebar",
 			WindowIndex:  atoiOr(f[6], -1),
 			PaneIndex:    atoiOr(f[7], -1),
 			WindowID:     f[8],
 			Left:         atoiOr(f[9], -1),
 			Right:        atoiOr(f[10], -1),
-			Title:        f[11],
+			Width:        atoiOr(f[11], -1),
+			WindowWidth:  atoiOr(f[12], -1),
+			Title:        f[13],
 		})
 	}
 	return panes

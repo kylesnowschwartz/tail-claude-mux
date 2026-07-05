@@ -20,15 +20,21 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/config"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/explain"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/metadata"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/theming"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ws"
@@ -60,6 +66,13 @@ type Server struct {
 	ScriptsDir      string
 	SidebarPosition string
 
+	// Theming (main wires; nil-safe). HeaderEnabled is the @tcm-header
+	// gate read once at boot — runtime toggling requires restart, same
+	// as the bun server.
+	Palette       *theming.PaletteWriter
+	Header        *theming.HeaderSync
+	HeaderEnabled bool
+
 	mu        sync.Mutex
 	clients   map[*client]bool
 	lastState []byte // last broadcast ServerState, JSON-encoded
@@ -74,9 +87,14 @@ type Server struct {
 	panesCache        []tmux.Pane
 	panesCacheAt      time.Time
 
-	// Debounced /ensure-sidebar state (see sidebar.go).
-	ensureSidebarTimer    *time.Timer
-	ensureSidebarWindowID string
+	// Sidebar lifecycle + width enforcement state (see sidebar.go).
+	ensureSidebarTimer      *time.Timer
+	ensureSidebarWindowID   string
+	sidebarVisible          bool
+	pendingEnforcement      bool
+	pendingEnforcementTimer *time.Timer
+	saveTimer               *time.Timer
+	themeFileMtime          time.Time
 }
 
 // client is one connected TUI instance plus the identity it reported.
@@ -105,6 +123,7 @@ func New(b *state.Builder, tr *tracker.Tracker, w *ccwatch.Adapter, pi *piwatch.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /state", s.handleState)
+	mux.HandleFunc("GET /explain", s.handleExplain)
 	mux.HandleFunc("POST /hook", s.handleHook)
 	mux.HandleFunc("POST /focus", s.handleFocus)
 	mux.HandleFunc("POST /set-status", s.handleSetStatus)
@@ -114,6 +133,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /clear-log", s.handleClearLog)
 	mux.HandleFunc("POST /ensure-sidebar", s.handleEnsureSidebar)
 	mux.HandleFunc("POST /pane-exited", s.handlePaneExited)
+	mux.HandleFunc("POST /toggle", s.handleToggle)
+	mux.HandleFunc("POST /client-resized", s.handleClientResized)
+	mux.HandleFunc("POST /switch-index", s.handleSwitchIndex)
 	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
 		s.broadcast()
 		w.WriteHeader(http.StatusNoContent)
@@ -143,8 +165,31 @@ func (s *Server) Run(interval time.Duration) {
 		return
 	}
 	for range time.Tick(interval) {
+		s.checkExternalTheme()
 		s.broadcastIfChanged()
 	}
+}
+
+// checkExternalTheme re-applies the tmux palette when the-themer rewrites
+// ~/.config/tcm/active-theme.json. The bun server used an fsnotify
+// watcher; polling on the refresh tick trades ≤2s of lag for zero watcher
+// plumbing — state.Build already re-reads the file per broadcast, so only
+// the tmux-side palette application needs this trigger.
+func (s *Server) checkExternalTheme() {
+	info, err := os.Stat(filepath.Join(s.Builder.ConfigDir, "active-theme.json"))
+	if err != nil {
+		return
+	}
+	mtime := info.ModTime()
+	s.mu.Lock()
+	changed := !mtime.Equal(s.themeFileMtime) && !s.themeFileMtime.IsZero()
+	s.themeFileMtime = mtime
+	if changed {
+		log.Printf("theme: active-theme.json changed — reapplying palette")
+		s.applyThemeLocked("external-theme-change")
+		s.broadcastLocked()
+	}
+	s.mu.Unlock()
 }
 
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
@@ -165,6 +210,50 @@ func (s *Server) handleState(w http.ResponseWriter, _ *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(data)
+}
+
+// handleExplain is GET /explain?session=<name>[&thread=<id>]: a live
+// debugging report of every tracked agent's prune-tier standing, with a
+// fresh liveness probe per entry (index.ts /explain route).
+func (s *Server) handleExplain(w http.ResponseWriter, r *http.Request) {
+	session := r.URL.Query().Get("session")
+	thread := r.URL.Query().Get("thread")
+	w.Header().Set("Content-Type", "application/json")
+	if session == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"missing required query parameter: session"}`))
+		return
+	}
+
+	now := time.Now().UnixMilli()
+	s.mu.Lock()
+	var reports []explain.Report
+	if s.Tracker != nil {
+		for _, ev := range s.Tracker.GetAgents(session) {
+			if thread != "" && ev.ThreadID != thread {
+				continue
+			}
+			reports = append(reports, explain.Build(ev, now, s.probeLiveness(ev)))
+		}
+	}
+	s.mu.Unlock()
+
+	var threadJSON any
+	if thread != "" {
+		threadJSON = thread
+	}
+	out, err := json.MarshalIndent(map[string]any{
+		"session": session,
+		"thread":  threadJSON,
+		"count":   len(reports),
+		"reports": reports,
+	}, "", "  ")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Printf("explain served session=%s thread=%q count=%d", session, thread, len(reports))
+	_, _ = w.Write(out)
 }
 
 // handleHook is the /hook ingress: parse, then fan out to every watcher
@@ -194,6 +283,9 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 // sidebar marks the target session active and clears its unseen flags.
 func (s *Server) handleFocus(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+	// A session switch reflows pane widths; the next report-width is an
+	// echo, not a drag (index.ts: /focus sets pendingEnforcement).
+	s.setPendingEnforcement()
 	if session := parseFocusContext(string(body)); session != "" {
 		s.mu.Lock()
 		s.Builder.SetFocused(session)
@@ -291,15 +383,7 @@ func (s *Server) handleCommand(c *client, cmd wire.ClientCommand) {
 		if cmd.Index == nil {
 			return
 		}
-		st := s.Builder.Build()
-		if *cmd.Index >= 0 && *cmd.Index < len(st.Sessions) {
-			name := st.Sessions[*cmd.Index].Name
-			if err := s.Builder.Tmux.SwitchClient(name, c.tty); err != nil {
-				log.Printf("switch-index %d → %q: %v", *cmd.Index, name, err)
-			}
-			s.Builder.SetFocused(name)
-		}
-		s.broadcastLocked()
+		s.switchToIndexLocked(*cmd.Index, c.tty)
 
 	case wire.CmdFocusSession:
 		s.Builder.SetFocused(cmd.Name)
@@ -376,10 +460,60 @@ func (s *Server) handleCommand(c *client, cmd wire.ClientCommand) {
 			s.killAgentPane(cmd)
 		}
 
-	case wire.CmdSetTheme, wire.CmdReportWidth, wire.CmdEqualizeWidth:
-		// Config writers — deliberately inert while the bun server owns
-		// config.json (A/B safety).
+	case wire.CmdSetTheme:
+		if err := config.Save(s.Builder.ConfigDir, map[string]any{"theme": cmd.Theme}); err != nil {
+			log.Printf("save theme: %v", err)
+		}
+		s.applyThemeLocked("set-theme")
+		s.broadcastLocked()
+
+	case wire.CmdReportWidth:
+		s.reportWidthLocked(c, cmd)
+
+	case wire.CmdEqualizeWidth:
+		s.equalizeWidthLocked()
 	}
+}
+
+// switchToIndexLocked switches the client's tmux session to the Nth
+// visible sidebar row (switch-index command and /switch-index route).
+// Runs with s.mu held.
+func (s *Server) switchToIndexLocked(index int, clientTty string) {
+	st := s.Builder.Build()
+	if index >= 0 && index < len(st.Sessions) {
+		name := st.Sessions[index].Name
+		if err := s.Builder.Tmux.SwitchClient(name, clientTty); err != nil {
+			log.Printf("switch-index %d → %q: %v", index, name, err)
+		}
+		s.Builder.SetFocused(name)
+	}
+	s.broadcastLocked()
+}
+
+// handleSwitchIndex is the POST /switch-index route (tmux plugin
+// keybinds): ?index=N plus a hook context body for the client tty.
+func (s *Server) handleSwitchIndex(w http.ResponseWriter, r *http.Request) {
+	index, err := strconv.Atoi(r.URL.Query().Get("index"))
+	if err != nil {
+		http.Error(w, "missing index", http.StatusBadRequest)
+		return
+	}
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+	tty := parseClientTty(string(body))
+	s.mu.Lock()
+	s.switchToIndexLocked(index, tty)
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusOK)
+}
+
+// parseClientTty extracts the clientTty from a "clientTty|session|windowId"
+// hook context body ("" when absent or legacy format).
+func parseClientTty(body string) string {
+	trimmed := strings.Trim(strings.TrimSpace(body), `"'`)
+	if parts := strings.Split(trimmed, "|"); len(parts) == 3 {
+		return parts[0]
+	}
+	return ""
 }
 
 // broadcast recomputes state and pushes to every client.
@@ -432,6 +566,12 @@ func (s *Server) prepareStateLocked() wire.ServerState {
 		valid[sess.Name] = true
 	}
 	s.Metadata.PruneSessions(valid)
+	// Header sync rides every state build (bun: broadcastStateImmediate).
+	// Internally diffed per window — no tmux execs when nothing changed.
+	if s.Header != nil {
+		theme, _ := theming.ResolveActiveTheme(s.Builder.ConfigDir)
+		s.Header.Sync(st.Sessions, theme, s.HeaderEnabled)
+	}
 	return st
 }
 

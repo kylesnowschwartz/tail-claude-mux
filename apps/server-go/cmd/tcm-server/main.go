@@ -35,6 +35,7 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/server"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/sessionorder"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/theming"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
@@ -75,6 +76,12 @@ func main() {
 	}
 	srv.ScriptsDir = resolveScriptsDir()
 	srv.SidebarPosition = state.LoadSidebarPosition(configDir)
+
+	themeLog := func(msg string, data map[string]any) { log.Printf("theming: %s %v", msg, data) }
+	srv.Palette = theming.NewPaletteWriter(configDir, builder.Tmux, themeLog)
+	srv.Header = theming.NewHeaderSync(builder.Tmux, theming.IsClawdInstalled(home), themeLog)
+	srv.HeaderEnabled = theming.ReadHeaderEnabled(builder.Tmux)
+	srv.Palette.Apply("server-boot")
 
 	// TCM_RELOAD_TUI travels through the /restart self-exec: the previous
 	// incarnation sets it so THIS one cycles the sidebar TUIs onto new

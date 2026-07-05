@@ -52,24 +52,24 @@ func TestResolveCurrentSession(t *testing.T) {
 	}
 }
 
-// paneRow builds one ListAllPanes -F row (12 tab-separated fields, title last).
+// paneRow builds one ListAllPanes -F row (14 tab-separated fields, title last).
 func paneRow(fields ...string) string { return strings.Join(fields, "\t") }
 
 func TestListAllPanes_Parses(t *testing.T) {
 	tm := &Tmux{Run: fake(map[string]string{
-		"list-panes": paneRow("proj", "%1", "100", "/Users/u/proj", "1", "", "0", "0", "@1", "0", "119", "zsh") + "\n" +
-			paneRow("proj", "%2", "101", "/Users/u/proj", "1", "1", "0", "1", "@1", "120", "152", "sidebar via option") + "\n" +
-			paneRow("proj", "%3", "102", "/Users/u/proj", "0", "", "1", "0", "@2", "0", "80", "tcm-sidebar") + "\n" +
-			paneRow("other", "%4", "103", "/tmp", "0", "", "x", "y", "@3", "a", "b", "title\twith\ttabs") + "\n" +
-			paneRow("bad", "%5", "notapid", "/", "0", "", "0", "0", "@4", "0", "0", "t") + "\n" +
+		"list-panes": paneRow("proj", "%1", "100", "/Users/u/proj", "1", "", "0", "0", "@1", "0", "119", "120", "153", "zsh") + "\n" +
+			paneRow("proj", "%2", "101", "/Users/u/proj", "1", "1", "0", "1", "@1", "120", "152", "33", "153", "sidebar via option") + "\n" +
+			paneRow("proj", "%3", "102", "/Users/u/proj", "0", "", "1", "0", "@2", "0", "80", "81", "81", "tcm-sidebar") + "\n" +
+			paneRow("other", "%4", "103", "/tmp", "0", "", "x", "y", "@3", "a", "b", "c", "d", "title\twith\ttabs") + "\n" +
+			paneRow("bad", "%5", "notapid", "/", "0", "", "0", "0", "@4", "0", "0", "0", "0", "t") + "\n" +
 			"malformed",
 	})}
 	got := tm.ListAllPanes()
 	want := []Pane{
-		{Session: "proj", ID: "%1", PID: 100, Dir: "/Users/u/proj", WindowActive: true, WindowIndex: 0, PaneIndex: 0, WindowID: "@1", Left: 0, Right: 119, Title: "zsh"},
-		{Session: "proj", ID: "%2", PID: 101, Dir: "/Users/u/proj", WindowActive: true, Sidebar: true, WindowIndex: 0, PaneIndex: 1, WindowID: "@1", Left: 120, Right: 152, Title: "sidebar via option"},
-		{Session: "proj", ID: "%3", PID: 102, Dir: "/Users/u/proj", Sidebar: true, WindowIndex: 1, PaneIndex: 0, WindowID: "@2", Left: 0, Right: 80, Title: "tcm-sidebar"},
-		{Session: "other", ID: "%4", PID: 103, Dir: "/tmp", WindowIndex: -1, PaneIndex: -1, WindowID: "@3", Left: -1, Right: -1, Title: "title\twith\ttabs"},
+		{Session: "proj", ID: "%1", PID: 100, Dir: "/Users/u/proj", WindowActive: true, WindowIndex: 0, PaneIndex: 0, WindowID: "@1", Left: 0, Right: 119, Width: 120, WindowWidth: 153, Title: "zsh"},
+		{Session: "proj", ID: "%2", PID: 101, Dir: "/Users/u/proj", WindowActive: true, Sidebar: true, WindowIndex: 0, PaneIndex: 1, WindowID: "@1", Left: 120, Right: 152, Width: 33, WindowWidth: 153, Title: "sidebar via option"},
+		{Session: "proj", ID: "%3", PID: 102, Dir: "/Users/u/proj", Sidebar: true, WindowIndex: 1, PaneIndex: 0, WindowID: "@2", Left: 0, Right: 80, Width: 81, WindowWidth: 81, Title: "tcm-sidebar"},
+		{Session: "other", ID: "%4", PID: 103, Dir: "/tmp", WindowIndex: -1, PaneIndex: -1, WindowID: "@3", Left: -1, Right: -1, Width: -1, WindowWidth: -1, Title: "title\twith\ttabs"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)

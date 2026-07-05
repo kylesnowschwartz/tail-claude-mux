@@ -43,6 +43,29 @@ func (t *Tmux) KillPane(paneID string) {
 	_, _ = t.Run("kill-pane", "-t", paneID)
 }
 
+// ResizePane sets a pane's width in columns.
+func (t *Tmux) ResizePane(paneID string, width int) {
+	_, _ = t.Run("resize-pane", "-t", paneID, "-x", strconv.Itoa(width))
+}
+
+// HideSidebar parks a live sidebar pane in the stash session instead of
+// killing it, so toggle-on restores the running TUI (provider.ts
+// hideSidebar). The stash window is resized first: join-pane fails with
+// "pane too small" when stash panes fill up.
+func (t *Tmux) HideSidebar(paneID string, panes []Pane) {
+	t.ensureStash()
+	t.PruneStashOrphans(panes)
+	_, _ = t.Run("resize-window", "-t", StashSession+":", "-x", "200", "-y", "200")
+	_, _ = t.Run("join-pane", "-d", "-s", paneID, "-t", StashSession+":")
+}
+
+// ensureStash creates the hidden stash session when missing.
+func (t *Tmux) ensureStash() {
+	if _, err := t.Run("has-session", "-t", StashSession); err != nil {
+		_, _ = t.Run("new-session", "-d", "-s", StashSession, "-x", "80", "-y", "24")
+	}
+}
+
 // KillStashSession removes the hidden stash session (provider.ts
 // cleanupSidebar).
 func (t *Tmux) KillStashSession() {
