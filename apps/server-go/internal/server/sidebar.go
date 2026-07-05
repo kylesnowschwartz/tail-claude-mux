@@ -4,7 +4,8 @@
 //	(a) existing sidebar panes, no reload — adopt them (restart.sh and
 //	    /restart keep TUIs alive while the server cycles)
 //	(b) existing sidebars + TCM_RELOAD_TUI=1 (set by POST /restart) —
-//	    kill and respawn fresh so the TUI picks up new code
+//	    kill and respawn fresh (companions included) so the TUI and the
+//	    companion guest pick up new code
 //	(c) zero sidebars (cold boot) — auto-spawn in every active window so
 //	    a fresh attach lands with the panel already visible
 //
@@ -76,15 +77,31 @@ func (s *Server) BootstrapSidebars(reloadTUI bool) {
 		s.ensureCompanionsInAdoptedWindows(existing, panes)
 	case len(existing) > 0 && reloadTUI:
 		log.Printf("sidebar: reload requested — killing and respawning %d pane(s)", len(existing))
-		for _, p := range existing {
-			t.KillPane(p.ID)
-		}
-		t.KillStashSession()
+		s.killForReload(panes)
 		time.AfterFunc(respawnKillSettle, s.spawnInActiveWindows)
 	default:
 		log.Printf("sidebar: cold boot — first-paint autospawn")
 		time.AfterFunc(coldSpawnDelay, s.spawnInActiveWindows)
 	}
+}
+
+// killForReload clears every pane the reload respawn replaces: all
+// sidebar panes, the stash, and — when the companion feature is on —
+// all companion panes. Companions die with their sidebars so a restart
+// restarts the guest process too, and no window is left holding a
+// stranded full-height companion until its next visit. When the feature
+// is off, bootstrap's teardown already removed any leftovers.
+func (s *Server) killForReload(panes []tmux.Pane) {
+	t := s.Builder.Tmux
+	for _, p := range tmux.SidebarPanes(panes) {
+		t.KillPane(p.ID)
+	}
+	if s.CompanionPane.Command != "" {
+		for _, p := range tmux.CompanionPanes(panes) {
+			t.KillPane(p.ID)
+		}
+	}
+	t.KillStashSession()
 }
 
 // spawnInActiveWindows spawns a sidebar in every session's active window

@@ -156,14 +156,20 @@ non-stash filter used by toggle and quit.
   companion panes together via the shared `StashPane`; show restores
   both from the stash. The column is one unit — no separate companion
   toggle in v1. `PruneStashOrphans` spares both managed titles.
+- **Restart** (`POST /restart` with reload): the reload kill
+  (`server.killForReload`) sweeps companion panes alongside sidebar
+  panes before the respawn, so a tcm restart restarts the guest process
+  too and no window is left holding a stranded full-height companion
+  until its next visit. The respawn covers each session's active
+  window; other windows heal on their first visit, exactly like
+  sidebars.
 - **Stranded-companion rule**: a fresh sidebar spawn in a window that
   already holds a companion kills that companion first
   (`server.killStrandedCompanions`), and the ensure tail respawns it
-  below the new sidebar. Without this, a dead sidebar (crash,
-  `/restart` reload-kill, stale panes from a dead server) leaves the
-  companion holding a full-height column that the idempotent ensure
-  would never repair. Guest state is lost only on sidebar-death paths —
-  acceptable for v1.
+  below the new sidebar. Without this, a dead sidebar (crash, stale
+  panes from a dead server) leaves the companion holding a full-height
+  column that the idempotent ensure would never repair. Guest state is
+  lost only on sidebar-death paths — acceptable for v1.
 - **Orphan cleanup** (`server.handlePaneExited`): when every remaining
   non-stash pane in a window is tcm-managed (sidebar or companion), the
   user's last real pane is gone and all managed panes are killed.
@@ -193,6 +199,7 @@ func LoadCompanionPane(configDir string) CompanionPaneConfig
 func (s *Server) ensureCompanionInWindow(windowID string, panes []tmux.Pane, freshSidebarID string)
 func (s *Server) enforceGeometry(skipSession string) // one listing feeds width + height enforcement
 func (s *Server) killStrandedCompanions(windowID string, panes []tmux.Pane)
+func (s *Server) killForReload(panes []tmux.Pane) // reload kill: sidebars + companions + stash
 ```
 
 Behaviour contract:
@@ -253,6 +260,8 @@ Behaviour contract:
 - Toggle hide/show round-trips the companion through the stash.
 - Stranded-companion: `[main+companion]` → fresh sidebar spawn kills
   the companion, then both respawn.
+- Reload kill: feature on → companions killed alongside sidebars;
+  feature off → sidebars only (bootstrap's teardown owns leftovers).
 
 ---
 

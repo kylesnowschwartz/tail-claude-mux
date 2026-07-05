@@ -238,3 +238,33 @@ func TestEnsureSidebarInWindow_KillsStrandedCompanion(t *testing.T) {
 		t.Errorf("split-window = %v\nwant %v", got, wantSpawns)
 	}
 }
+
+func TestKillForReload_KillsCompanionsWithSidebars(t *testing.T) {
+	var cmds [][]string
+	s := newTestServer(sequencedRunner([]string{""}, nil, &cmds),
+		state.CompanionPaneConfig{Command: "watch date", Rows: 8})
+	s.killForReload([]tmux.Pane{mainPane(), sidebarPane(), companionPane()})
+	want := [][]string{
+		{"kill-pane", "-t", "%2"},
+		{"kill-pane", "-t", "%3"},
+		{"kill-session", "-t", tmux.StashSession},
+	}
+	if !reflect.DeepEqual(cmds, want) {
+		t.Errorf("cmds = %v\nwant %v", cmds, want)
+	}
+}
+
+func TestKillForReload_FeatureOff_OnlySidebars(t *testing.T) {
+	// Feature-off leftovers are bootstrap's teardown's job; the reload
+	// kill must not duplicate those kill-pane commands.
+	var cmds [][]string
+	s := newTestServer(sequencedRunner([]string{""}, nil, &cmds), state.CompanionPaneConfig{})
+	s.killForReload([]tmux.Pane{mainPane(), sidebarPane(), companionPane()})
+	want := [][]string{
+		{"kill-pane", "-t", "%2"},
+		{"kill-session", "-t", tmux.StashSession},
+	}
+	if !reflect.DeepEqual(cmds, want) {
+		t.Errorf("cmds = %v\nwant %v", cmds, want)
+	}
+}
