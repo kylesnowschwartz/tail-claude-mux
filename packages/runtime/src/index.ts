@@ -29,6 +29,7 @@ export type {
   ServerMessage,
   ClientCommand,
   MetadataTone,
+  MetadataVerb,
   MetadataStatus,
   MetadataProgress,
   MetadataLogEntry,

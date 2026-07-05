@@ -1,3 +1,5 @@
+import type { MetadataVerb } from "../shared";
+
 export type AgentStatus = "idle" | "running" | "done" | "error" | "waiting" | "interrupted";
 
 /** Whether the agent process is alive (pane exists) or has exited.
@@ -37,6 +39,10 @@ export interface AgentEvent {
   pid?: number;
   /** Human-readable description of current activity, e.g. "Reading config.ts" or "Bash: git push" */
   toolDescription?: string;
+  /** Structured verb for `toolDescription`, derived from the tool name by the
+   *  watcher (which knows it) so renderers don't regex-guess it back out of
+   *  the message. Same lifecycle as `toolDescription`. */
+  toolVerb?: MetadataVerb;
   /** tmux `pane_title` for this agent's pane, captured by the scanner. Claude
    *  Code encodes turn state in its OSC title (braille = working, ✳ = idle);
    *  the watcher's probe uses it to fill the gap when the session file yields
