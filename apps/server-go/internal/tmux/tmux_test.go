@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux/tmuxtest"
 )
 
 // fake returns a Runner serving canned output per subcommand.
@@ -52,19 +54,18 @@ func TestResolveCurrentSession(t *testing.T) {
 	}
 }
 
-// paneRow builds one ListAllPanes -F row (17 tab-separated fields, title last).
-func paneRow(fields ...string) string { return strings.Join(fields, "\t") }
-
 func TestListAllPanes_Parses(t *testing.T) {
 	tm := &Tmux{Run: fake(map[string]string{
-		"list-panes": paneRow("proj", "%1", "100", "/Users/u/proj", "1", "", "", "0", "0", "@1", "0", "119", "120", "153", "40", "41", "zsh") + "\n" +
-			paneRow("proj", "%2", "101", "/Users/u/proj", "1", "1", "", "0", "1", "@1", "120", "152", "33", "153", "33", "41", "sidebar via option") + "\n" +
-			paneRow("proj", "%3", "102", "/Users/u/proj", "0", "", "", "1", "0", "@2", "0", "80", "81", "81", "24", "24", "tcm-sidebar") + "\n" +
-			paneRow("proj", "%6", "104", "/Users/u/proj", "1", "", "1", "0", "2", "@1", "120", "152", "33", "153", "8", "41", "companion via option") + "\n" +
-			paneRow("proj", "%7", "105", "/Users/u/proj", "0", "", "", "1", "1", "@2", "0", "80", "81", "81", "8", "24", "tcm-companion") + "\n" +
-			paneRow("other", "%4", "103", "/tmp", "0", "", "", "x", "y", "@3", "a", "b", "c", "d", "e", "f", "title\twith\ttabs") + "\n" +
-			paneRow("bad", "%5", "notapid", "/", "0", "", "", "0", "0", "@4", "0", "0", "0", "0", "0", "0", "t") + "\n" +
+		"list-panes": tmuxtest.Listing(
+			tmuxtest.PaneSpec{Session: "proj", ID: "%1", PID: "100", Dir: "/Users/u/proj", WindowActive: "1", WindowIndex: "0", PaneIndex: "0", WindowID: "@1", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "40", WindowHeight: "41", Title: "zsh"}.Row(),
+			tmuxtest.PaneSpec{Session: "proj", ID: "%2", PID: "101", Dir: "/Users/u/proj", WindowActive: "1", Sidebar: "1", WindowIndex: "0", PaneIndex: "1", WindowID: "@1", Left: "120", Right: "152", Width: "33", WindowWidth: "153", Height: "33", WindowHeight: "41", Title: "sidebar via option"}.Row(),
+			tmuxtest.PaneSpec{Session: "proj", ID: "%3", PID: "102", Dir: "/Users/u/proj", WindowActive: "0", WindowIndex: "1", PaneIndex: "0", WindowID: "@2", Left: "0", Right: "80", Width: "81", WindowWidth: "81", Height: "24", WindowHeight: "24", Title: "tcm-sidebar"}.Row(),
+			tmuxtest.PaneSpec{Session: "proj", ID: "%6", PID: "104", Dir: "/Users/u/proj", WindowActive: "1", Companion: "1", WindowIndex: "0", PaneIndex: "2", WindowID: "@1", Left: "120", Right: "152", Width: "33", WindowWidth: "153", Height: "8", WindowHeight: "41", Title: "companion via option"}.Row(),
+			tmuxtest.PaneSpec{Session: "proj", ID: "%7", PID: "105", Dir: "/Users/u/proj", WindowActive: "0", WindowIndex: "1", PaneIndex: "1", WindowID: "@2", Left: "0", Right: "80", Width: "81", WindowWidth: "81", Height: "8", WindowHeight: "24", Title: "tcm-companion"}.Row(),
+			tmuxtest.PaneSpec{Session: "other", ID: "%4", PID: "103", Dir: "/tmp", WindowActive: "0", WindowIndex: "x", PaneIndex: "y", WindowID: "@3", Left: "a", Right: "b", Width: "c", WindowWidth: "d", Height: "e", WindowHeight: "f", Title: "title\twith\ttabs"}.Row(),
+			tmuxtest.PaneSpec{Session: "bad", ID: "%5", PID: "notapid", Dir: "/", WindowActive: "0", WindowIndex: "0", PaneIndex: "0", WindowID: "@4", Left: "0", Right: "0", Width: "0", WindowWidth: "0", Height: "0", WindowHeight: "0", Title: "t"}.Row(),
 			"malformed",
+		),
 	})}
 	got := tm.ListAllPanes()
 	want := []Pane{
@@ -160,8 +161,8 @@ func mutations(cmds [][]string) [][]string {
 // mutation traffic: the SpawnManagedPane extraction must leave the
 // sidebar path byte-identical (CS-007 behavior freeze).
 func TestSpawnSidebar_CommandSequenceFrozen(t *testing.T) {
-	mainPane := paneRow("proj", "%1", "100", "/p", "1", "", "", "0", "0", "@1", "0", "119", "120", "153", "40", "41", "zsh")
-	stashSidebar := paneRow(StashSession, "%8", "108", "/p", "1", "1", "", "0", "0", "@9", "0", "119", "120", "153", "40", "41", "tcm-sidebar")
+	mainPane := tmuxtest.PaneSpec{Session: "proj", ID: "%1", PID: "100", Dir: "/p", WindowActive: "1", WindowID: "@1", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "40", WindowHeight: "41", Title: "zsh"}.Row()
+	stashSidebar := tmuxtest.PaneSpec{Session: StashSession, ID: "%8", PID: "108", Dir: "/p", WindowActive: "1", Sidebar: "1", WindowID: "@9", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "40", WindowHeight: "41", Title: "tcm-sidebar"}.Row()
 	cases := []struct {
 		name     string
 		position string
@@ -231,8 +232,8 @@ func TestSpawnManagedPane_CommandSequence(t *testing.T) {
 }
 
 func TestSpawnCompanion_FreshAndRestore(t *testing.T) {
-	sidebar := paneRow("proj", "%2", "101", "/p", "1", "1", "", "0", "1", "@1", "120", "152", "33", "153", "33", "41", "tcm-sidebar")
-	stashCompanion := paneRow(StashSession, "%8", "108", "/p", "1", "", "1", "0", "0", "@9", "0", "119", "120", "153", "8", "41", "tcm-companion")
+	sidebar := tmuxtest.PaneSpec{Session: "proj", ID: "%2", PID: "101", Dir: "/p", WindowActive: "1", Sidebar: "1", WindowID: "@1", Left: "120", Right: "152", Width: "33", WindowWidth: "153", Height: "33", WindowHeight: "41", Title: "tcm-sidebar"}.Row()
+	stashCompanion := tmuxtest.PaneSpec{Session: StashSession, ID: "%8", PID: "108", Dir: "/p", WindowActive: "1", Companion: "1", WindowID: "@9", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "8", WindowHeight: "41", Title: "tcm-companion"}.Row()
 	cases := []struct {
 		name    string
 		listing string

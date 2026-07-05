@@ -4,35 +4,31 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux/tmuxtest"
 )
-
-// paneRow builds one ListAllPanes -F row (17 tab-separated fields, title
-// last) — mirrors the helper in internal/tmux/tmux_test.go.
-func paneRow(fields ...string) string { return strings.Join(fields, "\t") }
 
 // Canned rows for one window @1 in session proj, 153x41.
 func mainRow() string {
-	return paneRow("proj", "%1", "100", "/p", "1", "", "", "0", "0", "@1", "0", "119", "120", "153", "41", "41", "zsh")
+	return tmuxtest.PaneSpec{Session: "proj", ID: "%1", PID: "100", Dir: "/p", WindowActive: "1", WindowID: "@1", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "41", WindowHeight: "41", Title: "zsh"}.Row()
 }
 func sidebarRow() string {
-	return paneRow("proj", "%2", "101", "/p", "1", "1", "", "0", "1", "@1", "120", "152", "33", "153", "33", "41", "tcm-sidebar")
+	return tmuxtest.PaneSpec{Session: "proj", ID: "%2", PID: "101", Dir: "/p", WindowActive: "1", Sidebar: "1", WindowID: "@1", Left: "120", Right: "152", Width: "33", WindowWidth: "153", Height: "33", WindowHeight: "41", Title: "tcm-sidebar"}.Row()
 }
 func companionRow() string {
-	return paneRow("proj", "%3", "102", "/p", "1", "", "1", "0", "2", "@1", "120", "152", "33", "153", "8", "41", "tcm-companion")
+	return tmuxtest.PaneSpec{Session: "proj", ID: "%3", PID: "102", Dir: "/p", WindowActive: "1", Companion: "1", WindowID: "@1", Left: "120", Right: "152", Width: "33", WindowWidth: "153", Height: "8", WindowHeight: "41", Title: "tcm-companion"}.Row()
 }
 func stashSidebarRow() string {
-	return paneRow(tmux.StashSession, "%8", "108", "/p", "1", "1", "", "0", "0", "@9", "0", "119", "120", "153", "40", "41", "tcm-sidebar")
+	return tmuxtest.PaneSpec{Session: tmux.StashSession, ID: "%8", PID: "108", Dir: "/p", WindowActive: "1", Sidebar: "1", WindowID: "@9", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "40", WindowHeight: "41", Title: "tcm-sidebar"}.Row()
 }
 func stashCompanionRow() string {
-	return paneRow(tmux.StashSession, "%9", "109", "/p", "1", "", "1", "0", "1", "@9", "0", "119", "120", "153", "8", "41", "tcm-companion")
+	return tmuxtest.PaneSpec{Session: tmux.StashSession, ID: "%9", PID: "109", Dir: "/p", WindowActive: "1", Companion: "1", WindowID: "@9", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "8", WindowHeight: "41", Title: "tcm-companion"}.Row()
 }
 
-func rows(rs ...string) string { return strings.Join(rs, "\n") }
+func rows(rs ...string) string { return tmuxtest.Listing(rs...) }
 
 // sequencedRunner serves list-panes output from a queue (last entry
 // sticky) so multi-step flows can see the layout evolve, records every
@@ -100,8 +96,8 @@ func TestEnsureCompanionInWindow_SpawnsBelowSidebar(t *testing.T) {
 func TestEnsureCompanionInWindow_WindowTooShort_NoSpawn(t *testing.T) {
 	// Window height 5: ceiling (5/2=2) is below the 3-row floor — the
 	// split would fail "pane too small" on every retry, so skip entirely.
-	shortMain := paneRow("proj", "%1", "100", "/p", "1", "", "", "0", "0", "@1", "0", "119", "120", "153", "5", "5", "zsh")
-	shortSidebar := paneRow("proj", "%2", "101", "/p", "1", "1", "", "0", "1", "@1", "120", "152", "33", "153", "5", "5", "tcm-sidebar")
+	shortMain := tmuxtest.PaneSpec{Session: "proj", ID: "%1", PID: "100", Dir: "/p", WindowActive: "1", WindowID: "@1", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "5", WindowHeight: "5", Title: "zsh"}.Row()
+	shortSidebar := tmuxtest.PaneSpec{Session: "proj", ID: "%2", PID: "101", Dir: "/p", WindowActive: "1", Sidebar: "1", WindowID: "@1", Left: "120", Right: "152", Width: "33", WindowWidth: "153", Height: "5", WindowHeight: "5", Title: "tcm-sidebar"}.Row()
 	var cmds [][]string
 	s := newTestServer(
 		sequencedRunner([]string{rows(shortMain, shortSidebar)}, nil, &cmds),
@@ -138,7 +134,7 @@ func TestEnsureCompanionInWindow_NoSidebar_NoSpawn(t *testing.T) {
 }
 
 func TestHandlePaneExited_OrphanPredicate(t *testing.T) {
-	otherMain := paneRow("proj", "%5", "105", "/p", "1", "", "", "1", "0", "@2", "0", "119", "120", "153", "41", "41", "zsh")
+	otherMain := tmuxtest.PaneSpec{Session: "proj", ID: "%5", PID: "105", Dir: "/p", WindowActive: "1", WindowIndex: "1", WindowID: "@2", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "41", WindowHeight: "41", Title: "zsh"}.Row()
 	cases := []struct {
 		name      string
 		listing   string
