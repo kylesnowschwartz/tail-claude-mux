@@ -94,6 +94,7 @@ func (s *Server) BootstrapSidebars(reloadTUI bool) {
 func (s *Server) spawnInActiveWindows() {
 	t := s.Builder.Tmux
 	panes := t.ListAllPanes()
+	width := s.sidebarWidthSnapshot()
 
 	hasSidebar := map[string]bool{}
 	for _, p := range tmux.SidebarPanes(panes) {
@@ -108,7 +109,7 @@ func (s *Server) spawnInActiveWindows() {
 		seen[p.WindowID] = true
 		if !hasSidebar[p.WindowID] {
 			s.killStrandedCompanions(p.WindowID, panes)
-			id := t.SpawnSidebar(p.WindowID, s.Builder.SidebarWidth, s.SidebarPosition, s.ScriptsDir)
+			id := t.SpawnSidebar(p.WindowID, width, s.SidebarPosition, s.ScriptsDir)
 			log.Printf("sidebar: spawn window=%s session=%s pane=%s", p.WindowID, p.Session, id)
 		}
 		s.ensureCompanionInWindow(p.WindowID)
@@ -196,10 +197,19 @@ func (s *Server) ensureSidebarInWindow(windowID string) {
 	}
 	if !hasSidebar {
 		s.killStrandedCompanions(windowID, panes)
-		id := t.SpawnSidebar(windowID, s.Builder.SidebarWidth, s.SidebarPosition, s.ScriptsDir)
+		id := t.SpawnSidebar(windowID, s.sidebarWidthSnapshot(), s.SidebarPosition, s.ScriptsDir)
 		log.Printf("sidebar: ensure spawn window=%s pane=%s", windowID, id)
 	}
 	s.ensureCompanionInWindow(windowID)
+}
+
+// sidebarWidthSnapshot reads the configured width under the lock: the
+// drag-save timer and floorWidthToContent write it under mu, so unlocked
+// reads in the spawn paths race them.
+func (s *Server) sidebarWidthSnapshot() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Builder.SidebarWidth
 }
 
 // killStrandedCompanions removes companion panes orphaned by a dead
