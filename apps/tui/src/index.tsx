@@ -1,7 +1,7 @@
 import { render } from "@opentui/solid";
-import { createSignal, createEffect, onCleanup, onMount, batch, For, Show, createMemo, type Accessor } from "solid-js";
+import { createSignal, createEffect, onCleanup, onMount, batch, For, Index, Show, createMemo, type Accessor } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { useKeyboard, useRenderer } from "@opentui/solid";
+import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid";
 import { TextAttributes, type InputRenderable, type KeyEvent } from "@opentui/core";
 
 import { ensureServer } from "@tcm/runtime";
@@ -17,7 +17,6 @@ import {
   BUILTIN_THEMES,
   resolveTheme,
   sanitizeForDisplay,
-  truncateToWidth,
   glowPhase,
   lerpHex,
 } from "@tcm/runtime";
@@ -28,30 +27,28 @@ import {
   SEV_READY,
   SEV_STOPPED,
   SEV_ERROR,
-  // SEV_WAITING (nf-md-bell-alert) doubles as the catch-all system-tag glyph
-  // when a row's source matches /^\[.+\]$/ — see ActivityZone Rule 0.
   BRAND_CLAWD,
   BRANCH_GLYPH,
   DIR_MISMATCH_GLYPH,
   WRAP_UP,
   WRAP_DOWN,
-  ACTIVITY_LEAD,
-  ACTIVITY_HEAD,
-  ACTIVITY_VERB_READ,
-  ACTIVITY_VERB_LIST,
-  ACTIVITY_VERB_SEARCH,
-  ACTIVITY_VERB_EDIT,
-  ACTIVITY_VERB_RUN,
-  ACTIVITY_VERB_WEB,
-  ACTIVITY_VERB_TASK,
-  ACTIVITY_VERB_SKILL,
-  ACTIVITY_VERB_THINKING,
-  ACTIVITY_VERB_ERROR,
-  ACTIVITY_VERB_MISC,
   AGENT_GLYPHS,
 } from "./vocab";
 import { tier } from "./tiers";
-import { classifyVerb, type Verb } from "./classify";
+import {
+  type ActivityLog,
+  type BucketIcon,
+  SPARKLINE_BUCKET_MS,
+  BLANK_SLOT,
+  seismographGeometry,
+  windowMs,
+  bucketSparklineLogs,
+  sparklineRows,
+  expandSparklineRows,
+  bucketIconLogs,
+  iconSlot,
+  formatRelTime,
+} from "./activity";
 import { getScenario, listScenarios } from "./mocks/scenarios";
 import { createRefocusGate } from "./refocus-gate";
 
@@ -73,14 +70,6 @@ const SPINNERS = SEV_WORKING_SPINNER;
 const BOLD = TextAttributes.BOLD;
 const DIM = TextAttributes.DIM;
 const THEME_NAMES = Object.keys(BUILTIN_THEMES);
-
-const TONE_ICONS: Record<MetadataTone, string> = {
-  neutral: "·",
-  info: "ℹ",
-  success: "✓",
-  warn: "⚠",
-  error: "✗",
-};
 
 function toneColor(tone: MetadataTone | undefined, palette: ReturnType<() => Theme["palette"]>): string {
   switch (tone) {
@@ -238,544 +227,135 @@ function WrapRule(props: { direction: "up" | "down"; palette: ThemePalette }) {
   );
 }
 
-/**
- * Detect a trailing outcome marker in an activity entry's description.
- *
- * Detects the trailing `(passed)` or `(failed)` suffix so we can render it
- * in the success/error tone while leaving the rest of the description in
- * the entry's normal tier colour.
- */
-function splitOutcome(message: string): { main: string; outcome: { text: string; tone: "success" | "error" } | null } {
-  const m = message.match(/^(.*?)(\s*)(\((passed|failed)\))\s*$/);
-  if (!m) return { main: message, outcome: null };
-  return {
-    main: m[1] + m[2],
-    outcome: { text: m[3]!, tone: m[4] === "passed" ? "success" : "error" },
-  };
-}
-
-/**
- * Flatten newlines and collapse internal whitespace runs to single spaces.
- *
- * Activity rows are single-line; embedded `\n` (common in shell-command
- * messages like `Running python3 << 'EOF'\nimport ...`) would otherwise wrap
- * inside the row and break the column-1 verb-glyph alignment.
- */
-function flattenMessage(s: string): string {
-  return s.replace(/\s+/g, ' ').trim();
-}
-
-/**
- * Strip the leading verb word from a message when its meaning is already
- * carried by the col-1 verb glyph.
- *
- * `⧠ Running tmux capture-pane` → `⧠ tmux capture-pane`. Keeps the verb
- * stripe legible (no redundancy with the description) and frees ~7–10 cols of
- * description budget. Patterns mirror classify.ts.
- *
- * Verbs whose description IS the content (thinking) are left untouched.
- * URL-form web entries (`https://…`) are also untouched — the URL is the
- * payload, not a leading verb word.
- */
-function stripVerbWord(verb: Verb | undefined, message: string): string {
-  if (!verb) return message;
-  const patterns: Partial<Record<Verb, RegExp>> = {
-    read:   /^(?:reading|read)\s+/i,
-    list:   /^(?:listing|ls)\s+/i,
-    search: /^(?:searching|grep|glob|find)\s+/i,
-    edit:   /^(?:editing|edit|wrote|writing|patching|patched)\s+/i,
-    run:    /^(?:ran|running|run|bash|executing)\s+/i,
-    web:    /^(?:web(?:fetch|search)?|fetching)\s+/i,
-    task:   /^(?:task|agent|delegat(?:ing|ed)|spawn(?:ing|ed))\s+/i,
-    skill:  /^(?:invoking\s+skill|skill)\s+/i,
-    error:  /^(?:error[:\s]+|failed\s+to\s+)/i,
-    // thinking: intentionally absent — the description IS the thought.
-  };
-  const re = patterns[verb];
-  return re ? message.replace(re, '') : message;
-}
-
-/** Pre-truncate a string to `max` terminal cells with a trailing ellipsis.
- *  Wrapper around the runtime's width-aware `truncateToWidth` so callers in
- *  this file don't need a second import. Width-aware (CJK/emoji count as 2
- *  cells, combining marks as 0) — `.length`-based slicing would misalign the
- *  activity-zone column budget the moment a wide character shows up. */
-function truncateText(s: string, max: number): string {
-  return truncateToWidth(s, max);
-}
-
-/**
- * Format an eyebrow source label for display.
- *
- * Sources arrive as `"pi db92"` / `"cc 5c98"` (agent prefix + space + short
- * thread id). Insert a U+00B7 middle dot to separate the two parts:
- *   `pi db92` → `pi · db92`
- *
- * Same dot character used for the `·Nm` age suffix on the sparkline row, so
- * the activity zone shares a consistent typographic glue character.
- *
- * Sources without an internal space (single-token labels, system tags) are
- * returned untouched.
- */
-function formatEyebrow(source: string): string {
-  const i = source.indexOf(" ");
-  if (i < 0) return source;
-  return source.slice(0, i) + " \u00B7 " + source.slice(i + 1).trimStart();
-}
-
 // ────────────────────────────────────────────────────────────────────────────
-// Activity zone — see docs/simmer/activity-zone/result.md for the full spec.
+// Activity zone — pure histogram/icon logic lives in ./activity.ts. The
+// original text-stream layout spec (docs/simmer/activity-zone/result.md) is
+// superseded by the seismograph below; its sparkline contract carries over.
 // ────────────────────────────────────────────────────────────────────────────
 
-type ActivityLog = NonNullable<NonNullable<SessionData["metadata"]>["logs"]>[number];
-
-/** Sparkline alphabet: U+2581…U+2588 (▁▂▃▄▅▆▇█). EAW Neutral, single-cell. */
-const SPARKLINE_GLYPHS = ["\u2581", "\u2582", "\u2583", "\u2584", "\u2585", "\u2586", "\u2587", "\u2588"] as const;
-
-/** Sparkline geometry: 8 cells × 8 s/bucket = 64 s window. */
-const SPARKLINE_CELLS = 8;
-const SPARKLINE_BUCKET_MS = 8_000;
-const SPARKLINE_WINDOW_MS = SPARKLINE_CELLS * SPARKLINE_BUCKET_MS; // 64 000
-
 /**
- * Bucket log entries into the 64 s sparkline window. Returns 8 counts where
- * index 0 is the oldest cell and index 7 is the freshest.
+ * Activity zone — a two-row, full-width "seismograph" beneath the rolodex.
  *
- * Pure function: deterministic given (logs, now). Tested implicitly by the
- * mock scenarios; see docs/simmer/activity-zone/result.md §Sparkline contract.
- */
-function bucketSparklineLogs(logs: readonly { ts: number }[], now: number): number[] {
-  const buckets = new Array(SPARKLINE_CELLS).fill(0);
-  for (const log of logs) {
-    const ageMs = now - log.ts;
-    if (ageMs < 0 || ageMs >= SPARKLINE_WINDOW_MS) continue;
-    // Bucket 7 (freshest) is age [0, 8s); bucket 6 is [8s, 16s); …; bucket 0 is [56s, 64s).
-    const idx = SPARKLINE_CELLS - 1 - Math.floor(ageMs / SPARKLINE_BUCKET_MS);
-    if (idx >= 0 && idx < SPARKLINE_CELLS) buckets[idx]++;
-  }
-  return buckets;
-}
-
-/**
- * Render bucket counts to the 8-glyph sparkline string.
+ *            ▂▂▂                ← histogram overflow row (bursts stack up)
+ *   ▁▁▁▄▄▄▁▁▁███▅▅▅▁▁▁▁▁▁▁▁▁   ← histogram: activity density, one bucket = 8 s,
+ *       R       E   W           ← each bucket BUCKET_COLS wide; verb glyphs
+ *                                  centred in the slot of their bucket
  *
- * Y-axis: auto-rescale to `max(localMax, 1)`; the `,1)` floor prevents
- * division-by-zero in the all-zero case and keeps a single event from
- * saturating the line. Zero counts render as `▁` (visible flat baseline,
- * never blank — calm reads as a continuous line, not as absence of channel).
- */
-function sparklineString(buckets: readonly number[]): string {
-  const localMax = Math.max(...buckets, 0);
-  const max = Math.max(localMax, 1);
-  let out = "";
-  for (const c of buckets) {
-    if (c <= 0) {
-      out += SPARKLINE_GLYPHS[0]; // ▁ floor
-      continue;
-    }
-    const step = Math.min(7, Math.max(0, Math.ceil((7 * c) / max)));
-    out += SPARKLINE_GLYPHS[step];
-  }
-  return out;
-}
-
-/**
- * Format a positive duration as a ≤3-char `·Nm`-style suffix payload.
+ * The old text stream (eyebrows, chips, descriptions) is retired. Both rows
+ * share one time axis (activity.ts bucketIndex) — histogram slot N and glyph
+ * slot N cover the same 8 s bucket — so the glyphs scroll left with the
+ * histogram as the window slides. Newest bucket is the rightmost slot. The
+ * freshest occupied glyph renders bright, older ones dim; system-tag bells
+ * keep their tone colour and errors render red (severity bypasses the
+ * unfocus tier slide).
  *
- * Returns `45s`, `2m`, `15m`, `1h`, `2d` etc. Caller prepends `·`.
- * Rounds to the next-coarser unit at 60s/60m/24h boundaries.
- */
-function formatRelTime(deltaMs: number): string {
-  const sec = Math.max(0, Math.floor(deltaMs / 1000));
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h`;
-  const day = Math.floor(hr / 24);
-  return `${day}d`;
-}
-
-/** Test if a source string is a system tag like `[bell]` or `[event:foo]`. */
-function isSystemTag(source: string | undefined): source is string {
-  return !!source && source.startsWith("[") && source.endsWith("]");
-}
-
-/**
- * Look up the column-1 glyph for a system-tagged source. The bell-alert glyph
- * is the catch-all ("[bell]" → bell-alert; any unknown system tag also gets
- * bell-alert as a generic "system event" indicator). Specific tags can override
- * here as the runtime emits them.
- */
-function systemTagGlyph(source: string): string {
-  // Reuses existing severity-glyph entries — no new glyph budget.
-  // SEV_WAITING is nf-md-bell-alert.
-  if (source === "[bell]") return SEV_WAITING;
-  return SEV_WAITING;
-}
-
-/** 10-entry verb glyph dictionary. See vocab.ts and classify.ts. */
-const VERB_GLYPHS: Record<Verb, string> = {
-  read:     ACTIVITY_VERB_READ,
-  list:     ACTIVITY_VERB_LIST,
-  search:   ACTIVITY_VERB_SEARCH,
-  edit:     ACTIVITY_VERB_EDIT,
-  run:      ACTIVITY_VERB_RUN,
-  web:      ACTIVITY_VERB_WEB,
-  task:     ACTIVITY_VERB_TASK,
-  skill:    ACTIVITY_VERB_SKILL,
-  thinking: ACTIVITY_VERB_THINKING,
-  error:    ACTIVITY_VERB_ERROR,
-};
-
-/**
- * Per-row layout decision — computed in one pass over the visible entries.
- * `kind` selects the column-0…2 occupancy; `colOneGlyph` and `colOneTone`
- * select the column-1 glyph (verb/severity/system-tag/blank).
- */
-type RowMode =
-  | { kind: "system-tag"; tagGlyph: string; tagTone: MetadataTone; emitEyebrow: false }
-  | { kind: "chip"; agentCode: string; emitEyebrow: false }
-  | { kind: "eyebrow-anchor"; eyebrow: string; emitEyebrow: true }
-  | { kind: "eyebrow-cont"; emitEyebrow: false }
-  | { kind: "no-source"; emitEyebrow: false };
-
-/**
- * Compute the row-mode for every visible entry in one pass.
- *
- * Rules (highest precedence first; see docs/simmer/activity-zone/result.md
- * §Source position):
- *   0. system tag (source === "[…]")  → system-tag row, doesn't break agent runs
- *   1–2. agent source, run-length keyed:
- *     run ≥ 2  → eyebrow mode (anchor on first row, cont on the rest)
- *     run = 1  → chip mode
- *   3. tie-breaker: adjacent chip rows with matching agentcode prefix → both
- *      fall through to eyebrow mode (each with its own full-source eyebrow)
- */
-function computeRowModes(entries: readonly ActivityLog[]): RowMode[] {
-  const n = entries.length;
-  const modes: RowMode[] = new Array(n);
-  const sysTag = entries.map((e) => isSystemTag(e.source));
-
-  // First pass — assign system-tag, eyebrow, and chip modes by walking through
-  // contiguous agent-source runs. System-tag rows are transparent to runs.
-  let i = 0;
-  while (i < n) {
-    if (sysTag[i]) {
-      const e = entries[i]!;
-      modes[i] = {
-        kind: "system-tag",
-        tagGlyph: systemTagGlyph(e.source!),
-        tagTone: e.tone ?? "info",
-        emitEyebrow: false,
-      };
-      i++;
-      continue;
-    }
-    const source = entries[i]!.source;
-    if (!source) {
-      modes[i] = { kind: "no-source", emitEyebrow: false };
-      i++;
-      continue;
-    }
-    // Walk forward over the run: same source, with system-tag rows transparent.
-    // System-tag rows interleaved inside a run get their own system-tag mode
-    // (assigned eagerly here so they don't slip through unassigned when the
-    // outer-loop pointer jumps past them via `i = j`).
-    let j = i;
-    const runRows: number[] = [];
-    while (j < n) {
-      if (sysTag[j]) {
-        const e = entries[j]!;
-        modes[j] = {
-          kind: "system-tag",
-          tagGlyph: systemTagGlyph(e.source!),
-          tagTone: e.tone ?? "info",
-          emitEyebrow: false,
-        };
-        j++;
-        continue;
-      }
-      if (entries[j]!.source !== source) break;
-      runRows.push(j);
-      j++;
-    }
-    if (runRows.length >= 2) {
-      // Eyebrow mode: anchor on first non-system-tag row, cont on the rest.
-      modes[runRows[0]!] = { kind: "eyebrow-anchor", eyebrow: source, emitEyebrow: true };
-      for (let k = 1; k < runRows.length; k++) {
-        modes[runRows[k]!] = { kind: "eyebrow-cont", emitEyebrow: false };
-      }
-    } else {
-      // Single-row run → chip mode candidate.
-      const idx = runRows[0]!;
-      const agentCode = source.slice(0, 2);
-      modes[idx] = { kind: "chip", agentCode, emitEyebrow: false };
-    }
-    i = j;
-  }
-
-  // Second pass — same-agent multi-thread tie-breaker.
-  // For each pair of adjacent chip rows where the agentcode prefix matches,
-  // fall both through to eyebrow mode (each carrying its full source).
-  // (Adjacency here means "consecutive in the visible list", system-tag rows
-  // do not bridge — but they don't break a chip-pair either since they sit
-  // between two distinct chip candidates.)
-  for (let k = 0; k < n - 1; k++) {
-    const a = modes[k];
-    const b = modes[k + 1];
-    if (a?.kind === "chip" && b?.kind === "chip" && a.agentCode === b.agentCode) {
-      modes[k]     = { kind: "eyebrow-anchor", eyebrow: entries[k]!.source!,     emitEyebrow: true };
-      modes[k + 1] = { kind: "eyebrow-anchor", eyebrow: entries[k + 1]!.source!, emitEyebrow: true };
-    }
-  }
-
-  return modes;
-}
-
-/**
- * Activity zone — fixed-height structural band beneath the rolodex.
- *
- * Layout (single-source steady, per the spec):
- *
- *   ▁▂▃▄▅▆▆▅                  ← sparkline (top row, focused-session colour)
- *                              ← air row
- *    pi db92                   ← eyebrow (Tier 4 muted)
- *   ●r build.ts                ← gutter `●` on freshest, verb glyph col 1
- *    r tsconfig.json           ← continuation: gutter is space, verb persists
- *    r package.json
- *    s scenarios.ts
- *
- * Multi-source interleave switches to chip mode (`pi│ r build.ts` / `cc│ r …`)
- * which displaces the gutter+verb's column-block. Failed rows displace the
- * verb glyph with `SEV_ERROR` (red, severity-bypass on unfocus); the gutter
- * is suppressed on freshest+failed to avoid double-encoding.
- *
- * See docs/simmer/activity-zone/result.md for the full spec including
- * sparkline contract, source-position precedence rules, glyph palette, and
- * unfocus rules.
- *
- * Source ordering: production accumulates logs newest-LAST (push). The mock
- * scenarios use newest-first for authoring convenience. We sort by `ts` desc
- * to render newest-at-top either way.
+ * Empty states: no logs → flat baseline + blank glyph row; window slid past
+ * the newest log → flat baseline + a dim right-aligned `·Nm` age marker (the
+ * one text survivor — it disambiguates "quiet now" from "dead for an hour").
  */
 function ActivityZone(props: {
   focusedSession: SessionData | null;
   palette: ThemePalette;
   paneFocused: boolean;
-  cap: number;
-  termWidth: number;
 }) {
-  // 1 Hz tick — drives sparkline window slide and `·Nm` suffix updates.
-  // Sparkline buckets only need re-computation every 8 s in principle, but
-  // running at 1 Hz keeps the suffix (`·45s` → `·46s`) honest, and the work
-  // is trivial.
+  // Reactive terminal size, read here (not via a prop) so a stale-width
+  // caller mistake is unrepresentable — see the note on App's termDims.
+  const dims = useTerminalDimensions();
+
+  // 1 Hz tick for the `·Ns` stale marker; the heavy bucketing pipeline keys
+  // off bucketEpoch below and only recomputes when the 8 s window slides.
   const [nowMs, setNowMs] = createSignal(Date.now());
   const tick = setInterval(() => setNowMs(Date.now()), 1000);
   onCleanup(() => clearInterval(tick));
 
-  const allLogs = createMemo<readonly ActivityLog[]>(() => {
-    const logs = props.focusedSession?.metadata?.logs ?? [];
-    return [...logs].sort((a, b) => b.ts - a.ts);
+  // Quantised clock: changes once per bucket, so sparkline/icons memos skip
+  // the 7-of-8 ticks whose output would be byte-identical, and every cell
+  // slides left in lockstep at bucket boundaries (logs newer than the
+  // quantised boundary clamp into the freshest bucket via bucketIndex).
+  const bucketNow = createMemo(() => Math.floor(nowMs() / SPARKLINE_BUCKET_MS) * SPARKLINE_BUCKET_MS);
+
+  const logs = createMemo<readonly ActivityLog[]>(() => props.focusedSession?.metadata?.logs ?? []);
+  const newestTs = createMemo(() => {
+    let max = -Infinity;
+    for (const log of logs()) max = Math.max(max, log.ts);
+    return max; // -Infinity when there are no logs
   });
 
-  const entries = createMemo(() => allLogs().slice(0, props.cap));
-  const rowModes = createMemo(() => computeRowModes(entries()));
+  // Full-width geometry: the box pads 1 cell each side; the remaining columns
+  // split into BUCKET_COLS-wide slots (activity.ts owns the arithmetic).
+  const PAD = 1;
+  const contentWidth = createMemo(() => Math.max(1, dims().width - PAD * 2));
+  const geometry = createMemo(() => seismographGeometry(contentWidth()));
 
-  // Empty-state classification — one of three sub-cases per §Sparkline contract.
-  type EmptyState = "none" | "no-logs" | "window-empty";
-  const emptyState = createMemo<EmptyState>(() => {
-    const all = allLogs();
-    if (all.length === 0) return "no-logs";
-    const newest = all[0]!.ts;
-    return nowMs() - newest >= SPARKLINE_WINDOW_MS ? "window-empty" : "none";
+  const sparkline = createMemo(() =>
+    expandSparklineRows(
+      sparklineRows(bucketSparklineLogs(logs(), bucketNow(), geometry().buckets)),
+      contentWidth(),
+    ),
+  );
+  const icons = createMemo(() => bucketIconLogs(logs(), bucketNow(), geometry().buckets));
+
+  const freshestIdx = createMemo(() => {
+    const arr = icons();
+    for (let i = arr.length - 1; i >= 0; i--) if (arr[i]) return i;
+    return -1;
   });
 
-  // Sparkline shape derived from the visible logs (cap-bounded — the sparkline
-  // shows the same window the user can see, not all-time history).
-  const sparkline = createMemo(() => {
-    const buckets = bucketSparklineLogs(allLogs(), nowMs());
-    return sparklineString(buckets);
+  // Window-empty detection — newest log is older than the visible window.
+  const staleSuffix = createMemo(() => {
+    const age = nowMs() - newestTs();
+    if (!Number.isFinite(age) || age < windowMs(geometry().buckets)) return null;
+    return "·" + formatRelTime(age);
   });
 
-  // `·Nm` suffix payload — only renders in window-empty case (ii).
-  const ageSuffix = createMemo(() => {
-    if (emptyState() !== "window-empty") return null;
-    const all = allLogs();
-    if (all.length === 0) return null;
-    return formatRelTime(nowMs() - all[0]!.ts);
-  });
-
-  // Tier styles — re-derived per render via accessors so theme/focus changes
-  // propagate without prop drilling.
-  //
-  // The freshness signal is carried by description colour: bright for the
-  // newest row, distinctly dimmer for older rows. (Earlier versions used a
-  // gutter glyph at col 0 too — retired in favour of clean col-1 verb-glyph
-  // alignment across all rows.) Both modes use real colour differences, not
-  // the ANSI DIM attribute, which doesn't survive opentui's render pipeline.
-  const sparklineStyle  = () => tier("secondary", props.palette, props.paneFocused);
-  const suffixStyle     = () => tier("dim",       props.palette, props.paneFocused);
-  const eyebrowStyle    = () => tier("muted",     props.palette, props.paneFocused);
-  const chipStyle       = () => tier("muted",     props.palette, props.paneFocused);
-  const blankPlaceholder = () => tier("muted",    props.palette, props.paneFocused);
-  // Verb glyph colour tracks freshness: bright on the newest row, dim on older.
+  const sparklineStyle = () => tier("secondary", props.palette, props.paneFocused);
+  const suffixStyle    = () => tier("dim",       props.palette, props.paneFocused);
+  // Glyph freshness mirrors the retired description tiers: bright on the
+  // newest occupied bucket, dim on older ones. Severity/tone bypass the slide.
   const freshFg = () => props.paneFocused ? props.palette.text     : props.palette.subtext0;
   const oldFg   = () => props.paneFocused ? props.palette.overlay1 : props.palette.surface2;
-  const freshDescStyle  = () => ({ fg: freshFg() });
-  const oldDescStyle    = () => ({ fg: oldFg()   });
-  const freshVerbStyle  = () => ({ fg: freshFg() });
-  const oldVerbStyle    = () => ({ fg: oldFg()   });
-
-  // Severity colours bypass tier slide on unfocus.
-  const sevErrorStyle   = () => ({ fg: props.palette.red });
-  const tagStyleFor     = (t: MetadataTone | undefined) => ({ fg: toneColor(t, props.palette) });
-
-  // Layout arithmetic. Box is paddingLeft=0, paddingRight=1, so total content
-  // width is termWidth-1; each row spends its leftmost cell on a per-row
-  // "pad-or-gutter-or-chip" character. See §States in the spec.
-  const PAD_RIGHT = 1;
-  const contentWidth = () => Math.max(8, props.termWidth - PAD_RIGHT);
-
-  // Description column width by row mode:
-  //   eyebrow / system-tag: leading char + verb-glyph + sep = 3 cols of overhead
-  //   chip:                 chip(3) + sep + verb-glyph + sep = 6 cols of overhead
-  const descWidthEyebrow = () => Math.max(4, contentWidth() - 3);
-  const descWidthChip    = () => Math.max(4, contentWidth() - 6);
+  const iconStyle = (cell: BucketIcon, idx: number) => {
+    if (cell.kind === "error")  return { fg: props.palette.red };
+    if (cell.kind === "system") return { fg: toneColor(cell.tone, props.palette) };
+    return { fg: idx === freshestIdx() ? freshFg() : oldFg() };
+  };
 
   return (
-    <box flexDirection="column" flexShrink={0} paddingLeft={0} paddingRight={PAD_RIGHT}>
-      {/* Sparkline row — always present in active and window-empty states.
-          In the no-logs state we still render a flat sparkline (per §States
-          State 1 sub-case (i)) for visual continuity. */}
-      <text truncate>
-        <span>{" "}</span>
-        <span style={sparklineStyle()}>{sparkline()}</span>
-        <Show when={ageSuffix()}>
-          <span style={suffixStyle()}>{" \u00B7"}{ageSuffix()}</span>
-        </Show>
-      </text>
-
-      {/* Air row separating sparkline from the activity stream. */}
-      <box height={1} />
-
-      <Show when={entries().length > 0} fallback={
-        <text truncate>
-          <span>{" "}</span>
-          <span style={blankPlaceholder()}>{"(no recent activity)"}</span>
-        </text>
+    <box flexDirection="column" flexShrink={0} paddingLeft={PAD} paddingRight={PAD}>
+      <Index each={sparkline()}>
+        {(row) => (
+          <text truncate>
+            <span style={sparklineStyle()}>{row()}</span>
+          </text>
+        )}
+      </Index>
+      <Show when={!staleSuffix()} fallback={
+        <box height={1} flexDirection="row" justifyContent="flex-end">
+          <text style={suffixStyle()}>{staleSuffix()}</text>
+        </box>
       }>
-        <For each={entries()}>
-          {(entry, i) => {
-            // SOLID GOTCHA: For reuses DOM nodes when items shift in the array.
-            // The render function runs ONCE at row creation; `i` is a signal
-            // accessor that updates when the row's index changes. Anything
-            // that depends on the index must be reactive (memo or inline JSX).
-            //
-            // History: an earlier version captured `const idx = i()` once,
-            // which made every row believe it was at its initial index forever.
-            // The result was that every row rendered as freshest+anchor and
-            // emitted its own eyebrow line, producing the multi-`pi xxxx`
-            // visual that prompted this fix.
-            const mode = createMemo(() => rowModes()[i()]!);
-            const isFreshest = createMemo(() => i() === 0);
-
-            // Per-entry static values — entry identity is stable under For.
-            // Flatten newlines first so embedded `\n` (e.g. heredoc shell
-            // commands) doesn't wrap inside the row and break col alignment.
-            const flatMessage = flattenMessage(entry.message);
-            const split = splitOutcome(flatMessage);
-            const isFailed = entry.tone === "error" && split.outcome?.tone === "error";
-            const verbHint = (entry as { verb?: Verb }).verb;
-            const verb = verbHint ?? classifyVerb(flatMessage);
-            // Strip the leading verb word from the description (`Running tmux…`
-            // → `tmux…`) so it isn't redundant with the col-1 verb glyph.
-            const stripped = stripVerbWord(verb, split.main).trimEnd();
-            const displayMain = stripped || split.main.trimEnd();
-            const renderPassedSuffix = !!split.outcome && split.outcome.tone === "success";
-
-            // Column-1 glyph + style precedence (§Verb-glyph column).
-            // Reactive on `mode` so a row that flips between chip and
-            // eyebrow modes (e.g. when a same-source neighbour appears or
-            // disappears) updates correctly.
-            const colOne = createMemo<{ glyph: string; style: { fg: string; attributes?: number } }>(() => {
-              const m = mode();
-              if (m.kind === "system-tag") {
-                return { glyph: m.tagGlyph, style: tagStyleFor(m.tagTone) };
-              }
-              if (isFailed) {
-                // Stripe-internal error glyph (cross). Mirrors tail-claude-hud's
-                // tool category icon → error replacement on failed tools.
-                return { glyph: ACTIVITY_VERB_ERROR, style: sevErrorStyle() };
-              }
-              const verbStyle = isFreshest() ? freshVerbStyle() : oldVerbStyle();
-              if (verb) {
-                return { glyph: VERB_GLYPHS[verb], style: verbStyle };
-              }
-              // Misc / fallback verb glyph (gear) — never blank, so the col-1
-              // verb stripe stays a clean vertical column the eye can scan.
-              return { glyph: ACTIVITY_VERB_MISC, style: verbStyle };
-            });
-
-            // Freshness signal is description colour only — no gutter glyph.
-            const dStyle = createMemo(() => (isFreshest() ? freshDescStyle() : oldDescStyle()));
-
-            // Description budget — outcome reservation only applies to (passed).
-            const reserved = renderPassedSuffix ? split.outcome!.text.length + 1 : 0;
-            const widthBudget = createMemo(() => (mode().kind === "chip" ? descWidthChip() : descWidthEyebrow()));
-            const truncatedMain = createMemo(() => truncateText(displayMain, Math.max(0, widthBudget() - reserved)));
-
-            return (
-              <>
-                <Show when={mode().kind === "eyebrow-anchor" && mode().emitEyebrow}>
-                  <text truncate>
-                    <span>{" "}</span>
-                    <span style={eyebrowStyle()}>{formatEyebrow((mode() as Extract<RowMode, { kind: "eyebrow-anchor" }>).eyebrow)}</span>
-                  </text>
-                </Show>
-                <text truncate>
-                  {/* Column 0 — single pad cell (or chip-char-1 in chip mode).
-                      Freshness is signalled by description colour, not by
-                      a gutter glyph here. */}
-                  <Show when={mode().kind === "chip"} fallback={<span>{" "}</span>}>
-                    <span style={chipStyle()}>{(mode() as Extract<RowMode, { kind: "chip" }>).agentCode[0]}</span>
-                  </Show>
-                  {/* Column 1 — verb glyph / error / system-tag glyph / blank,
-                      OR chip-char-2 in chip mode */}
-                  <Show when={mode().kind === "chip"} fallback={
-                    <span style={colOne().style}>{colOne().glyph}</span>
-                  }>
-                    <span style={chipStyle()}>{(mode() as Extract<RowMode, { kind: "chip" }>).agentCode[1]}</span>
-                  </Show>
-                  {/* Column 2 — chip separator (chip mode only) */}
-                  <Show when={mode().kind === "chip"}>
-                    <span style={chipStyle()}>{"\u2502"}</span>
-                  </Show>
-                  {/* Chip mode: separator + verb glyph before description */}
-                  <Show when={mode().kind === "chip"}>
-                    <span>{" "}</span>
-                    <span style={colOne().style}>{colOne().glyph}</span>
-                  </Show>
-                  {/* Pre-description separator */}
-                  <span>{" "}</span>
-                  {/* Description */}
-                  <span style={dStyle()}>{truncatedMain()}</span>
-                  {/* (passed) suffix kept inline; (failed) stripped (see bridge). */}
-                  <Show when={renderPassedSuffix}>
-                    <span style={{ fg: toneColor(split.outcome!.tone, props.palette) }}>{" "}{split.outcome!.text}</span>
-                  </Show>
-                </text>
-              </>
-            );
-          }}
-        </For>
+        <text truncate>
+          <span>{" ".repeat(geometry().leftoverCols)}</span>
+          <Index each={icons()}>
+            {(cell, idx) => (
+              <Show when={cell()} fallback={<span>{BLANK_SLOT}</span>}>
+                <span style={iconStyle(cell()!, idx)}>{iconSlot(cell()!.glyph)}</span>
+              </Show>
+            )}
+          </Index>
+        </text>
       </Show>
     </box>
   );
 }
 
+
 function App() {
   const renderer = useRenderer();
+  // Reactive terminal size — `renderer.terminalWidth` is a plain property and
+  // goes stale after SIGWINCH; every layout computation must read this signal
+  // instead so pane resizes re-flow the sidebar (QA: seismograph wrap bug).
+  const termDims = useTerminalDimensions();
 
   // --- Theme state (driven by server) ---
   const [theme, setTheme] = createSignal<Theme>(resolveTheme(undefined));
@@ -863,7 +443,7 @@ function App() {
   // Accounts for text wrapping in narrow sidebars.
   const maxCardHeight = createMemo(() => {
     // Available width for wrapped text (sidebar minus border, padding, indent)
-    const textWidth = Math.max(8, renderer.terminalWidth - 10);
+    const textWidth = Math.max(8, termDims().width - 10);
     const wrapLines = (text: string) => Math.max(1, Math.ceil(text.length / textWidth));
 
     let max = 0;
@@ -1566,13 +1146,11 @@ function App() {
         </box>
       </box>
 
-      {/* Activity zone — fixed-height structural band below the rolodex. */}
+      {/* Activity zone — two-row full-width seismograph below the rolodex. */}
       <ActivityZone
         focusedSession={focusedData()}
         palette={P()}
         paneFocused={paneFocused()}
-        cap={renderer.terminalHeight < 30 ? 5 : 7}
-        termWidth={renderer.terminalWidth}
       />
 
       {/* Footer */}
@@ -2130,16 +1708,10 @@ function SessionCard(props: SessionCardProps) {
   const dirMismatch = () => dirParts().project !== props.session.name;
   const agents = () => props.session.agents ?? [];
   const meta = () => props.session.metadata;
-  // Note: status / progress / logs are now rendered in the standalone
-  // ActivityZone component beneath the rolodex (per the canonical mockup).
-  // The focused card body stays lean: name + branch + dir + agents only.
-  const progressText = () => {
-    const p = meta()?.progress;
-    if (!p) return "";
-    if (p.current != null && p.total != null) return `${p.current}/${p.total}`;
-    if (p.percent != null) return `${Math.round(p.percent * 100)}%`;
-    return "";
-  };
+  // Note: logs are summarised by the standalone ActivityZone seismograph
+  // beneath the rolodex; collapsed cards keep a one-line status/progress
+  // summary (metaSummary). The focused card body stays lean: name + branch +
+  // dir + agents only.
 
   // ▎ current-session left bar retired in render: bold name + row position
   // already signal current state.

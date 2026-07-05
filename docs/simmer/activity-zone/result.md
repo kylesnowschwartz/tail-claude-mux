@@ -1,5 +1,18 @@
 # Activity Zone Redesign — Design Spec
 
+> **Status: superseded (2026-07).** The text-stream layout specified here
+> (eyebrow labels, chip mode, verb-glyph column, description rows) shipped and
+> was later replaced by the two-row full-width "seismograph": a sqrt-scaled
+> histogram (8 s buckets, `BUCKET_COLS` columns each) with verb glyphs
+> time-aligned beneath their buckets and no text. See
+> `apps/tui/src/activity.ts` for the current contract. Still authoritative
+> here: the sparkline bucket contract (8 s, newest-right, `▁` floor never
+> blank, `·Nm` staleness suffix) and the verb-glyph vocabulary. Precedence
+> is adapted to per-bucket collapse: system tag (bell) > error > newest
+> verb — Rule 0's "attention signals always render" survives as the bell
+> outranking everything in its bucket. Verbs are now producer-tagged on the
+> wire (`MetadataLogEntry.verb`); classify.ts remains the fallback.
+
 > **Iteration 3.** Surgical refinement of iteration-2. Closes the last
 > four-questions gap — the *stuck-vs-idle* conflation in the window-empty
 > sub-case — by adding a minimal age-of-newest-entry suffix to the sparkline
@@ -147,7 +160,7 @@ pinned here:
 | **Alphabet** | Fixed `▁▂▃▄▅▆▇█` (U+2581–U+2588). Zero renders as `▁` (visible flat baseline), not blank — calm reads as a continuous line, not as absence of the band. |
 | **Y-axis scaling** | Auto-rescale per render: `max = Math.max(localMax, 1)`. Each cell maps `count / max` to the 8-step alphabet via `Math.ceil(7 * count / max)`. The `,1)` floor prevents division-by-zero in the all-zero case and keeps a single event from saturating the line. |
 | **Refresh** | Recomputed on (a) `logs[]` mutation and (b) a 1 Hz tick driven by the existing focused-session timer. The 1 Hz tick is what makes the right-edge cell "fall off" smoothly as time passes without new events. |
-| **Empty states** | Three cases. **(i) no-logs** — `logs.length === 0`: render flat `▁▁▁▁▁▁▁▁` with no suffix, and the `(no recent activity)` message in the activity area below. Idle = no signal at all = no annotation. **(ii) window-empty** — `logs.length > 0` but no entries within 64 s: render flat `▁▁▁▁▁▁▁▁ ·Nm`, where ` ·Nm` is a Tier-3 dim suffix indicating time since the all-time-newest entry — `·45s`, `·2m`, `·15m`, `·1h`, `·3d` (≤4 cells: ASCII `·` + up to 3-char duration; ≥1h rounds to whole hours, ≥1d rounds to whole days). The shipped (now stale) entries continue below in Tier 3. **(iii) active** — at least one entry within 64 s: normal sparkline, no suffix (the shape carries the rate). |
+| **Empty states** | Three cases. **(i) no-logs** — `logs.length === 0`: render flat `▁▁▁▁▁▁▁▁` with no suffix, and the `(no recent activity)` message in the activity area below. Idle = no signal at all = no annotation. **(ii) window-empty** — `logs.length > 0` but no entries within 64 s: render flat `▁▁▁▁▁▁▁▁ ·Nm`, where `·Nm` is a Tier-3 dim suffix indicating time since the all-time-newest entry — `·45s`, `·2m`, `·15m`, `·1h`, `·3d` (≤4 cells: ASCII `·` + up to 3-char duration; ≥1h rounds to whole hours, ≥1d rounds to whole days). The shipped (now stale) entries continue below in Tier 3. **(iii) active** — at least one entry within 64 s: normal sparkline, no suffix (the shape carries the rate). |
 | **Unfocus** | Sparkline cells **slide one tier dimmer** with the rest of the panel (text → subtext0). They are not severity-bypass; they are status-of-display, not status-of-agent. See §Unfocus rule. |
 
 The `·Nm` suffix exists exclusively to disambiguate **wedged** (recent burst,

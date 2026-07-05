@@ -20,10 +20,10 @@
  *   thinking — "Thinking ...", "Reasoning ..."
  *   error    — "Error: ...", "Failed to ..."
  *
- * Misclassification degrades gracefully: rule 4 in §Verb-glyph column renders
- * a single space when the classifier returns undefined. Gaps in the verb
- * stripe are themselves informative (status transitions, [bell], non-tool
- * events) so we deliberately *don't* invent a fallback glyph here.
+ * Misclassification degrades gracefully: when the classifier returns
+ * undefined, the activity-zone icon row falls back to the misc glyph
+ * (see bucketIconLogs in activity.ts) — we deliberately *don't* invent
+ * speculative verb matches here.
  *
  * Add a regex when an agent watcher emits a new common message shape; do
  * not invent regexes speculatively. Each regex is anchored at start to
@@ -31,17 +31,13 @@
  * reading docs` is not).
  */
 
-export type Verb =
-  | "read"
-  | "list"
-  | "search"
-  | "edit"
-  | "run"
-  | "web"
-  | "task"
-  | "skill"
-  | "thinking"
-  | "error";
+import type { MetadataVerb } from "@tcm/runtime";
+
+// The verb union is the shared wire type — producer-tagged entries
+// (MetadataLogEntry.verb) and this fallback classifier must agree by
+// construction, so the compiler catches a producer emitting a verb the
+// renderer has no glyph for.
+export type Verb = MetadataVerb;
 
 interface Rule {
   re: RegExp;
@@ -99,9 +95,8 @@ const RULES: Rule[] = [
 /**
  * Classify a log entry's message by its verb prefix.
  *
- * Returns one of the five verbs in the closed dictionary, or undefined if
- * no rule matches. Undefined rows render column 1 blank (rule 4 in
- * §Verb-glyph column).
+ * Returns one of the ten verbs in the closed dictionary, or undefined if
+ * no rule matches (the icon row then falls back to the misc glyph).
  */
 export function classifyVerb(message: string): Verb | undefined {
   const trimmed = message.trimStart();

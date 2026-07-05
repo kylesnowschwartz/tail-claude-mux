@@ -10,7 +10,7 @@
  * fixture is fed directly into the render store and stays static.
  */
 
-import type { SessionData } from "@tcm/runtime";
+import type { SessionData, MetadataLogEntry } from "@tcm/runtime";
 import type { AgentEvent } from "@tcm/runtime";
 
 export interface MockScenario {
@@ -118,6 +118,17 @@ function makeSession(opts: {
     eventTimestamps: [],
     metadata: opts.metadata,
   };
+}
+
+/** N copies of one log spread 200 ms apart inside a single 8 s activity
+ *  bucket — for scenarios that exercise per-bucket volume (activity-burst). */
+function burstLogs(n: number, ts: number, message: string, source: string): MetadataLogEntry[] {
+  return Array.from({ length: n }, (_, i) => ({
+    message,
+    source,
+    tone: "neutral" as const,
+    ts: ts - i * 200,
+  }));
 }
 
 // ── Reusable session pieces ──
@@ -383,9 +394,43 @@ export const MOCK_SCENARIOS: Record<string, MockScenario> = {
     paneFocused: true,
   },
 
+  "activity-burst": {
+    name: "activity-burst",
+    description: "tcm focused; varied per-bucket volume (1/2/4/6/14 events) — exercises the sqrt y-axis and the histogram overflow row.",
+    sessions: [
+      aiEngineeringTemplate,
+      piMono,
+      {
+        ...tcmLive,
+        metadata: {
+          status: null,
+          progress: null,
+          logs: [
+            // 1 event ~4 s ago → small bump
+            { message: "Reading build.ts", source: "pi db92", tone: "neutral", ts: NOW - 4_000 },
+            // 2 events ~20 s ago
+            ...burstLogs(2, NOW - 20_000, "Searching ActivityZone", "pi db92"),
+            // 4 events ~36 s ago → full bottom row
+            ...burstLogs(4, NOW - 36_000, "Editing index.tsx", "cc 1859"),
+            // 6 events ~52 s ago, one failed → red cross + overflow-row bar
+            ...burstLogs(5, NOW - 52_000, "Running bun test", "cc 1859"),
+            { message: "Running bun test (failed)", source: "cc 1859", tone: "error", ts: NOW - 52_500 },
+            // 14 events ~68 s ago → full two-row tower
+            ...burstLogs(14, NOW - 68_000, "Ran rg --json vocab", "pi db92"),
+          ],
+        },
+      },
+      claudeCodeSystem,
+      theThemerReady,
+    ],
+    focusedSession: "tcm",
+    currentSession: "tcm",
+    paneFocused: true,
+  },
+
   "activity-bell": {
     name: "activity-bell",
-    description: "tcm focused; system-tag [bell] interleaved with pi reads (Rule 0 system-tag precedence).",
+    description: "tcm focused; system-tag [bell] precedence — the bell shares its bucket with a NEWER read and must still render (attention signals are never swallowed).",
     sessions: [
       aiEngineeringTemplate,
       piMono,
@@ -396,9 +441,10 @@ export const MOCK_SCENARIOS: Record<string, MockScenario> = {
           progress: null,
           logs: [
             { message: "Reading build.ts",         source: "pi db92", tone: "neutral", ts: NOW - 3_000 },
-            { message: "awaiting confirmation",    source: "[bell]",  tone: "warn",    ts: NOW - 8_000 },
-            { message: "Reading tsconfig.json",    source: "pi db92", tone: "neutral", ts: NOW - 14_000 },
-            { message: "Reading package.json",     source: "pi db92", tone: "neutral", ts: NOW - 22_000 },
+            // Same 8 s bucket as the bell below, but newer — the bell must win.
+            { message: "Reading header.tmux",      source: "pi db92", tone: "neutral", ts: NOW - 8_500 },
+            { message: "awaiting confirmation",    source: "[bell]",  tone: "warn",    ts: NOW - 9_000 },
+            { message: "Reading tsconfig.json",    source: "pi db92", tone: "neutral", ts: NOW - 22_000 },
             { message: "Reading scenarios.ts",     source: "pi db92", tone: "neutral", ts: NOW - 32_000 },
           ],
         },
