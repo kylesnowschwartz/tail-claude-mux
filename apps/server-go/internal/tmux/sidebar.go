@@ -27,12 +27,12 @@ func SidebarPanes(panes []Pane) []Pane {
 }
 
 // PruneStashOrphans kills stash-session panes whose title drifted away
-// from tcm-sidebar (a dead TUI lets tmux automatic-rename re-derive the
-// title, often to $USER); they accumulate forever and confuse future
-// restore-from-stash attempts.
+// from the tcm-managed set (a dead TUI lets tmux automatic-rename
+// re-derive the title, often to $USER); they accumulate forever and
+// confuse future restore-from-stash attempts.
 func (t *Tmux) PruneStashOrphans(panes []Pane) {
 	for _, p := range panes {
-		if p.Session == StashSession && !p.Sidebar {
+		if p.Session == StashSession && !p.Managed() {
 			t.KillPane(p.ID)
 		}
 	}

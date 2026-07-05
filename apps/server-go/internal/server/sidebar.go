@@ -56,9 +56,24 @@ func (s *Server) BootstrapSidebars(reloadTUI bool) {
 	t.PruneStashOrphans(panes)
 	existing := tmux.SidebarPanes(panes)
 
+	// Companion feature turned OFF between runs: leftover companion panes
+	// (live in windows or parked in the stash) have no other teardown
+	// path — PruneStashOrphans spares them and the ensure paths no-op.
+	if s.CompanionPane.Command == "" {
+		for _, p := range panes {
+			if p.Companion {
+				log.Printf("companion: feature off — killing leftover pane=%s", p.ID)
+				t.KillPane(p.ID)
+			}
+		}
+	}
+
 	switch {
 	case len(existing) > 0 && !reloadTUI:
 		log.Printf("sidebar: adopted %d existing pane(s)", len(existing))
+		// Adopted sidebars predate this config: the natural enable path
+		// (add companionPane, restart) must still grow companions.
+		s.ensureCompanionsInAdoptedWindows(existing)
 	case len(existing) > 0 && reloadTUI:
 		log.Printf("sidebar: reload requested — killing and respawning %d pane(s)", len(existing))
 		for _, p := range existing {
@@ -73,8 +88,9 @@ func (s *Server) BootstrapSidebars(reloadTUI bool) {
 }
 
 // spawnInActiveWindows spawns a sidebar in every session's active window
-// that lacks one, then tells connected TUIs to re-identify (index.ts
-// spawnInEveryActiveWindow). Idempotent per window.
+// that lacks one, ensures the companion pane in every active window, then
+// tells connected TUIs to re-identify (index.ts spawnInEveryActiveWindow).
+// Idempotent per window.
 func (s *Server) spawnInActiveWindows() {
 	t := s.Builder.Tmux
 	panes := t.ListAllPanes()
@@ -84,14 +100,18 @@ func (s *Server) spawnInActiveWindows() {
 		hasSidebar[p.WindowID] = true
 	}
 
-	spawned := map[string]bool{}
+	seen := map[string]bool{}
 	for _, p := range panes {
-		if !p.WindowActive || p.Session == tmux.StashSession || hasSidebar[p.WindowID] || spawned[p.WindowID] {
+		if !p.WindowActive || p.Session == tmux.StashSession || seen[p.WindowID] {
 			continue
 		}
-		spawned[p.WindowID] = true
-		id := t.SpawnSidebar(p.WindowID, s.Builder.SidebarWidth, s.SidebarPosition, s.ScriptsDir)
-		log.Printf("sidebar: spawn window=%s session=%s pane=%s", p.WindowID, p.Session, id)
+		seen[p.WindowID] = true
+		if !hasSidebar[p.WindowID] {
+			s.killStrandedCompanions(p.WindowID, panes)
+			id := t.SpawnSidebar(p.WindowID, s.Builder.SidebarWidth, s.SidebarPosition, s.ScriptsDir)
+			log.Printf("sidebar: spawn window=%s session=%s pane=%s", p.WindowID, p.Session, id)
+		}
+		s.ensureCompanionInWindow(p.WindowID)
 	}
 
 	if data, err := json.Marshal(wire.ReIdentify{Type: wire.TypeReIdentify}); err == nil {
@@ -145,8 +165,9 @@ func (s *Server) ensureSidebarInWindow(windowID string) {
 	}
 	// Session switches can change window width, and tmux redistributes
 	// pane sizes proportionally — always re-impose the stored width
-	// (index.ts ensureSidebarInWindow tail).
+	// (index.ts ensureSidebarInWindow tail). Same for companion height.
 	defer s.enforceSidebarWidth("")
+	defer s.enforceCompanionHeight()
 	t := s.Builder.Tmux
 	panes := t.ListAllPanes()
 
@@ -166,18 +187,111 @@ func (s *Server) ensureSidebarInWindow(windowID string) {
 		}
 	}
 
+	hasSidebar := false
 	for _, p := range tmux.SidebarPanes(panes) {
+		if p.WindowID == windowID {
+			hasSidebar = true
+			break
+		}
+	}
+	if !hasSidebar {
+		s.killStrandedCompanions(windowID, panes)
+		id := t.SpawnSidebar(windowID, s.Builder.SidebarWidth, s.SidebarPosition, s.ScriptsDir)
+		log.Printf("sidebar: ensure spawn window=%s pane=%s", windowID, id)
+	}
+	s.ensureCompanionInWindow(windowID)
+}
+
+// killStrandedCompanions removes companion panes orphaned by a dead
+// sidebar (crash, reload-kill, stale panes from a dead server). A dying
+// sidebar hands its column to the companion; a fresh sidebar spawn then
+// opens a NEW edge column, and the idempotent companion-ensure would see
+// "already has one" and leave the stray full-height companion forever.
+// Killing it first lets the ensure tail respawn it below the new sidebar.
+func (s *Server) killStrandedCompanions(windowID string, panes []tmux.Pane) {
+	t := s.Builder.Tmux
+	for _, p := range tmux.CompanionPanes(panes) {
+		if p.WindowID == windowID {
+			log.Printf("companion: killing stranded pane=%s window=%s", p.ID, windowID)
+			t.KillPane(p.ID)
+		}
+	}
+}
+
+// ensureCompanionInWindow spawns the configured companion pane below
+// windowID's sidebar when one is missing. No-op when the feature is off,
+// the window has no sidebar (the companion always targets an existing
+// sidebar), or the window already has a companion.
+func (s *Server) ensureCompanionInWindow(windowID string) {
+	if s.CompanionPane.Command == "" || windowID == "" {
+		return
+	}
+	t := s.Builder.Tmux
+	panes := t.ListAllPanes() // fresh: the sidebar may have spawned moments ago
+	var sidebar tmux.Pane
+	for _, p := range tmux.SidebarPanes(panes) {
+		if p.WindowID == windowID {
+			sidebar = p
+			break
+		}
+	}
+	if sidebar.ID == "" {
+		return
+	}
+	for _, p := range tmux.CompanionPanes(panes) {
 		if p.WindowID == windowID {
 			return // already has one
 		}
 	}
-	id := t.SpawnSidebar(windowID, s.Builder.SidebarWidth, s.SidebarPosition, s.ScriptsDir)
-	log.Printf("sidebar: ensure spawn window=%s pane=%s", windowID, id)
+	rows := tmux.ClampCompanionHeight(s.CompanionPane.Rows, sidebar.WindowHeight)
+	if rows == 0 {
+		return // window too short for a companion; retrying would fail forever
+	}
+	id := t.SpawnCompanion(sidebar.ID, rows, s.CompanionPane.Command)
+	log.Printf("companion: spawn window=%s pane=%s", windowID, id)
+}
+
+// ensureCompanionsInAdoptedWindows spawns companions under sidebars the
+// boot adopted — the enable path "add companionPane to config, restart"
+// must grow companions without waiting for a window-switch hook. No-op
+// (zero tmux calls) when the feature is off.
+func (s *Server) ensureCompanionsInAdoptedWindows(sidebars []tmux.Pane) {
+	if s.CompanionPane.Command == "" {
+		return
+	}
+	seen := map[string]bool{}
+	for _, p := range sidebars {
+		if !seen[p.WindowID] {
+			seen[p.WindowID] = true
+			s.ensureCompanionInWindow(p.WindowID)
+		}
+	}
+}
+
+// enforceCompanionHeight resizes every companion pane back to the
+// configured rows (clamped per window): session switches redistribute
+// pane sizes proportionally, the same drift enforceSidebarWidth corrects
+// for width.
+func (s *Server) enforceCompanionHeight() {
+	if s.CompanionPane.Command == "" {
+		return
+	}
+	t := s.Builder.Tmux
+	for _, p := range tmux.CompanionPanes(t.ListAllPanes()) {
+		want := tmux.ClampCompanionHeight(s.CompanionPane.Rows, p.WindowHeight)
+		if want == 0 || p.Height == want {
+			continue
+		}
+		log.Printf("companion: enforce %s %d→%d", p.ID, p.Height, want)
+		t.ResizePaneHeight(p.ID, want)
+	}
 }
 
 // handlePaneExited is the POST /pane-exited ingress (tmux pane-exited /
-// pane-died hooks): a pane closed — kill sidebar panes left alone in
-// their window (index.ts killOrphanedSidebarPanes).
+// pane-died hooks): a pane closed — when every remaining pane in a window
+// is tcm-managed (sidebar or companion), the user's last real pane is
+// gone, so kill the managed leftovers (index.ts killOrphanedSidebarPanes,
+// generalized from "sidebar alone").
 func (s *Server) handlePaneExited(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()
 	visible := s.sidebarVisible
@@ -188,14 +302,14 @@ func (s *Server) handlePaneExited(w http.ResponseWriter, _ *http.Request) {
 	}
 	t := s.Builder.Tmux
 	panes := t.ListAllPanes()
-	perWindow := map[string]int{}
+	userPanesByWindow := map[string]int{}
 	for _, p := range panes {
-		if p.Session != tmux.StashSession {
-			perWindow[p.WindowID]++
+		if p.Session != tmux.StashSession && !p.Managed() {
+			userPanesByWindow[p.WindowID]++
 		}
 	}
-	for _, p := range tmux.SidebarPanes(panes) {
-		if perWindow[p.WindowID] == 1 {
+	for _, p := range tmux.ManagedPanes(panes) {
+		if userPanesByWindow[p.WindowID] == 0 {
 			log.Printf("sidebar: killing orphaned pane=%s window=%s", p.ID, p.WindowID)
 			t.KillPane(p.ID)
 		}
@@ -236,7 +350,7 @@ func (s *Server) handleToggle(w http.ResponseWriter, _ *http.Request) {
 	t := s.Builder.Tmux
 	if wasVisible {
 		panes := t.ListAllPanes()
-		for _, p := range tmux.SidebarPanes(panes) {
+		for _, p := range tmux.ManagedPanes(panes) {
 			t.StashPane(p.ID, panes)
 		}
 		log.Printf("sidebar: toggle off — stashed panes")
@@ -244,6 +358,7 @@ func (s *Server) handleToggle(w http.ResponseWriter, _ *http.Request) {
 		s.setPendingEnforcement()
 		s.spawnInActiveWindows() // restores from stash first; re-identify broadcast
 		s.enforceSidebarWidth("")
+		s.enforceCompanionHeight()
 		log.Printf("sidebar: toggle on")
 	}
 	w.WriteHeader(http.StatusOK)
@@ -259,6 +374,7 @@ func (s *Server) handleClientResized(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Unlock()
 	if visible {
 		s.enforceSidebarWidth("")
+		s.enforceCompanionHeight()
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -386,13 +502,14 @@ func (s *Server) applyThemeLocked(reason string) {
 	}
 }
 
-// quitAll is index.ts quitAll: kill every sidebar pane and the stash
-// session, notify TUIs, then hand off to the wired Quit (pid-file cleanup
-// + exit). Serves both POST /quit and the TUI's quit command.
+// quitAll is index.ts quitAll: kill every sidebar and companion pane and
+// the stash session, notify TUIs, then hand off to the wired Quit
+// (pid-file cleanup + exit). Serves both POST /quit and the TUI's quit
+// command.
 func (s *Server) quitAll() {
 	t := s.Builder.Tmux
 	panes := t.ListAllPanes()
-	for _, p := range tmux.SidebarPanes(panes) {
+	for _, p := range tmux.ManagedPanes(panes) {
 		t.KillPane(p.ID)
 	}
 	t.KillStashSession()

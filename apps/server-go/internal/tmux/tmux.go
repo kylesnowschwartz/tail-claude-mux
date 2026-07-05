@@ -176,6 +176,7 @@ type Pane struct {
 	Dir          string // pane_current_path
 	WindowActive bool
 	Sidebar      bool   // @tcm-sidebar marker or legacy tcm-sidebar title
+	Companion    bool   // @tcm-companion marker or tcm-companion title
 	WindowIndex  int    // -1 when unparseable
 	PaneIndex    int    // -1 when unparseable
 	WindowID     string // @-prefixed tmux window id
@@ -183,7 +184,26 @@ type Pane struct {
 	Right        int    // pane_right column, -1 when unparseable
 	Width        int    // pane_width columns, -1 when unparseable
 	WindowWidth  int    // window_width columns, -1 when unparseable
+	Height       int    // pane_height rows, -1 when unparseable
+	WindowHeight int    // window_height rows, -1 when unparseable
 	Title        string
+}
+
+// Managed reports whether the pane is tcm-managed (sidebar or companion)
+// as opposed to a user's own pane. Every "skip tcm's panes" filter must
+// use this, not a hand-written disjunction — a new managed pane kind then
+// updates all of them at once.
+func (p Pane) Managed() bool { return p.Sidebar || p.Companion }
+
+// ManagedPanes derives the non-stash tcm-managed panes from a listing.
+func ManagedPanes(panes []Pane) []Pane {
+	var out []Pane
+	for _, p := range panes {
+		if p.Managed() && p.Session != StashSession {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // ListAllPanes lists every pane on the server. Title is the last field on
@@ -192,16 +212,18 @@ func (t *Tmux) ListAllPanes() []Pane {
 	out, err := t.Run("list-panes", "-a", "-F",
 		"#{session_name}"+sep+"#{pane_id}"+sep+"#{pane_pid}"+sep+
 			"#{pane_current_path}"+sep+"#{window_active}"+sep+"#{@tcm-sidebar}"+sep+
+			"#{@tcm-companion}"+sep+
 			"#{window_index}"+sep+"#{pane_index}"+sep+"#{window_id}"+sep+
 			"#{pane_left}"+sep+"#{pane_right}"+sep+"#{pane_width}"+sep+
-			"#{window_width}"+sep+"#{pane_title}")
+			"#{window_width}"+sep+"#{pane_height}"+sep+"#{window_height}"+sep+
+			"#{pane_title}")
 	if err != nil || out == "" {
 		return nil
 	}
 	var panes []Pane
 	for line := range strings.SplitSeq(out, "\n") {
-		f := strings.SplitN(line, sep, 14)
-		if len(f) != 14 || f[0] == "" {
+		f := strings.SplitN(line, sep, 17)
+		if len(f) != 17 || f[0] == "" {
 			continue
 		}
 		pid, err := strconv.Atoi(f[2])
@@ -214,15 +236,18 @@ func (t *Tmux) ListAllPanes() []Pane {
 			PID:          pid,
 			Dir:          f[3],
 			WindowActive: f[4] == "1",
-			Sidebar:      f[5] == "1" || f[13] == "tcm-sidebar",
-			WindowIndex:  atoiOr(f[6], -1),
-			PaneIndex:    atoiOr(f[7], -1),
-			WindowID:     f[8],
-			Left:         atoiOr(f[9], -1),
-			Right:        atoiOr(f[10], -1),
-			Width:        atoiOr(f[11], -1),
-			WindowWidth:  atoiOr(f[12], -1),
-			Title:        f[13],
+			Sidebar:      f[5] == "1" || f[16] == SidebarPaneTitle,
+			Companion:    f[6] == "1" || f[16] == CompanionPaneTitle,
+			WindowIndex:  atoiOr(f[7], -1),
+			PaneIndex:    atoiOr(f[8], -1),
+			WindowID:     f[9],
+			Left:         atoiOr(f[10], -1),
+			Right:        atoiOr(f[11], -1),
+			Width:        atoiOr(f[12], -1),
+			WindowWidth:  atoiOr(f[13], -1),
+			Height:       atoiOr(f[14], -1),
+			WindowHeight: atoiOr(f[15], -1),
+			Title:        f[16],
 		})
 	}
 	return panes
@@ -239,12 +264,12 @@ func PaneCounts(panes []Pane) map[string]int {
 }
 
 // ActiveDirs derives the active pane's cwd per session (client.ts
-// getActiveSessionDirs: active window, sidebar panes excluded, first hit
-// per session wins).
+// getActiveSessionDirs: active window, tcm-managed panes excluded, first
+// hit per session wins).
 func ActiveDirs(panes []Pane) map[string]string {
 	dirs := map[string]string{}
 	for _, p := range panes {
-		if !p.WindowActive || p.Sidebar {
+		if !p.WindowActive || p.Managed() {
 			continue
 		}
 		if _, seen := dirs[p.Session]; !seen {

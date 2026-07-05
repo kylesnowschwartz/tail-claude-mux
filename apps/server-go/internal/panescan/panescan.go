@@ -190,7 +190,7 @@ func collectAgentPids(pid int, patterns []string, agentName string, tree process
 }
 
 // Scan identifies running agents in the given panes, keyed by session
-// name. Sidebar panes and the stash session are excluded. The pane listing
+// name. tcm-managed panes and the stash session are excluded. The pane listing
 // comes from the caller (tmux.ListAllPanes) so one tmux exec serves every
 // consumer; the scanner spends its own execs on the two ps snapshots.
 func (s *Scanner) Scan(panes []tmux.Pane) map[string][]tracker.PanePresence {
@@ -202,7 +202,7 @@ func (s *Scanner) Scan(panes []tmux.Pane) map[string][]tracker.PanePresence {
 	tree := s.buildProcessTree()
 
 	for _, p := range panes {
-		if p.Sidebar || p.Session == tmux.StashSession {
+		if p.Managed() || p.Session == tmux.StashSession {
 			continue
 		}
 		for _, ap := range AgentCommPatterns {

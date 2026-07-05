@@ -30,7 +30,7 @@ func (s *Server) resolveAgentPaneIDLocked(session, agent, threadID, threadName s
 	}
 	var panes []tmux.Pane
 	for _, p := range s.Builder.Tmux.ListAllPanes() {
-		if p.Session == session && !p.Sidebar {
+		if p.Session == session && !p.Managed() {
 			panes = append(panes, p)
 		}
 	}

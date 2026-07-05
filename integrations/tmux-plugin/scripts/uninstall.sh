@@ -31,15 +31,16 @@ for whook in \
 done
 echo "  ✓ removed global hooks"
 
-# --- Kill sidebar panes ---
-# Identify by @tcm-sidebar pane-local option (primary) + pane_title fallback.
-sidebar_panes=$(tmux list-panes -a -F '#{pane_id} #{@tcm-sidebar} #{pane_title}' 2>/dev/null \
-  | awk '$2 == "1" || $3 == "tcm-sidebar" { print $1 }') || true
-if [ -n "$sidebar_panes" ]; then
-  for pane in $sidebar_panes; do
+# --- Kill sidebar + companion panes ---
+# Identify by @tcm-sidebar/@tcm-companion pane-local options (primary) +
+# pane_title fallback.
+managed_panes=$(tmux list-panes -a -F '#{pane_id} #{@tcm-sidebar} #{@tcm-companion} #{pane_title}' 2>/dev/null \
+  | awk '$2 == "1" || $3 == "1" || $4 == "tcm-sidebar" || $4 == "tcm-companion" { print $1 }') || true
+if [ -n "$managed_panes" ]; then
+  for pane in $managed_panes; do
     tmux kill-pane -t "$pane" 2>/dev/null || true
   done
-  echo "  ✓ killed sidebar panes"
+  echo "  ✓ killed sidebar/companion panes"
 fi
 
 # --- Kill stash session ---

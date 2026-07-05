@@ -65,6 +65,9 @@ type Server struct {
 	// disables sidebar bootstrap. SidebarPosition is "left" or "right".
 	ScriptsDir      string
 	SidebarPosition string
+	// CompanionPane is the optional user command spawned in a pane below
+	// every sidebar; the zero value (empty Command) disables the feature.
+	CompanionPane state.CompanionPaneConfig
 
 	// Theming (main wires; nil-safe). HeaderEnabled is the @tcm-header
 	// gate read once at boot — runtime toggling requires restart, same

@@ -82,6 +82,7 @@ func main() {
 	}
 	srv.ScriptsDir = resolveScriptsDir()
 	srv.SidebarPosition = state.LoadSidebarPosition(configDir)
+	srv.CompanionPane = state.LoadCompanionPane(configDir)
 
 	themeLog := func(msg string, data map[string]any) { log.Printf("theming: %s %v", msg, data) }
 	srv.Palette = theming.NewPaletteWriter(configDir, builder.Tmux, themeLog)

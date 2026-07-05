@@ -212,6 +212,38 @@ func LoadSidebarPosition(configDir string) string {
 	return "right"
 }
 
+// CompanionPaneConfig is the companionPane block of config.json: an
+// arbitrary command tcm spawns in a pane below every sidebar. The zero
+// value (empty Command) means the feature is off.
+type CompanionPaneConfig struct {
+	Command string
+	Rows    int
+}
+
+// LoadCompanionPane reads the companionPane block from config.json.
+// Absent block or empty command disables the feature.
+func LoadCompanionPane(configDir string) CompanionPaneConfig {
+	const defaultRows = 8
+	raw, err := os.ReadFile(filepath.Join(configDir, "config.json"))
+	if err != nil {
+		return CompanionPaneConfig{}
+	}
+	var cfg struct {
+		CompanionPane struct {
+			Command string `json:"command"`
+			Rows    int    `json:"rows"`
+		} `json:"companionPane"`
+	}
+	if json.Unmarshal(raw, &cfg) != nil || cfg.CompanionPane.Command == "" {
+		return CompanionPaneConfig{}
+	}
+	rows := cfg.CompanionPane.Rows
+	if rows <= 0 {
+		rows = defaultRows
+	}
+	return CompanionPaneConfig{Command: cfg.CompanionPane.Command, Rows: rows}
+}
+
 // formatUptime renders seconds as the bun server does: 17d9h / 3h42m / 12m.
 func formatUptime(diff int64) string {
 	if diff < 0 {

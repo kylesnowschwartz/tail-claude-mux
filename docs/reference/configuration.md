@@ -31,6 +31,8 @@ If the file does not exist, tcm falls back to defaults.
 | `theme` | `string` | `catppuccin-mocha` | active | Built-in theme name persisted by the TUI |
 | `sidebarWidth` | `number` | `26` | active | Sidebar width in columns |
 | `sidebarPosition` | `"left" | "right"` | `"left"` | active | Sidebar placement |
+| `companionPane.command` | `string` | unset | active | Shell command run in a companion pane spawned below every sidebar; unset or empty disables the feature (see `docs/specs/companion-pane.md`) |
+| `companionPane.rows` | `number` | `8` | active | Companion pane height in lines, clamped to a floor of 3 and a ceiling of half the window height |
 | `port` | `number` | none | parsed only | Present in the config type, but the current server and TUI still use the fixed `7391` constant |
 
 ## Built-In Themes

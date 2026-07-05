@@ -141,16 +141,18 @@ function refocusMainPane() {
           ).stdout.toString().trim();
       if (!windowId) return;
       const r = Bun.spawnSync(
-        ["tmux", "list-panes", "-t", windowId, "-F", "#{pane_id} #{@tcm-sidebar} #{pane_title}"],
+        ["tmux", "list-panes", "-t", windowId, "-F", "#{pane_id} #{@tcm-sidebar} #{@tcm-companion} #{pane_title}"],
         { stdout: "pipe", stderr: "pipe" },
       );
       const lines = r.stdout.toString().trim().split("\n");
-      // A "main" pane is anything that's NOT a sidebar — neither marker nor
-      // legacy title. Sidebar identification: @tcm-sidebar=="1" primary,
-      // pane_title fallback.
+      // A "main" pane is anything that's NOT tcm-managed (sidebar or
+      // companion) — neither marker nor legacy title. Marker == "1"
+      // primary, pane_title fallback.
       const main = lines.find((l) => {
         const parts = l.split(" ");
-        return parts[1] !== "1" && parts.slice(2).join(" ") !== "tcm-sidebar";
+        const title = parts.slice(3).join(" ");
+        return parts[1] !== "1" && parts[2] !== "1"
+          && title !== "tcm-sidebar" && title !== "tcm-companion";
       });
       if (main) {
         const paneId = main.split(" ")[0];
