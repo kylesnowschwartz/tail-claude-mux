@@ -4,9 +4,27 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
+
+// Every glyph must be exactly one rune. Guards the \U escape-width trap:
+// Go's \U takes exactly 8 hex digits, so a 6-digit codepoint padded wrong
+// (\U000100CC0) silently becomes codepoint U+100CC + a literal '0' — two
+// runes that render as garbage in the header tabs.
+func TestBuildAgentGlyphs_SingleRuneEach(t *testing.T) {
+	for _, clawd := range []bool{true, false} {
+		for name, glyph := range BuildAgentGlyphs(clawd) {
+			if n := utf8.RuneCountInString(glyph); n != 1 {
+				t.Errorf("clawd=%v glyph %q = %q: %d runes, want 1", clawd, name, glyph, n)
+			}
+		}
+	}
+	if got := BuildAgentGlyphs(true)["claude-code"]; got != string(rune(0x100CC0)) {
+		t.Errorf("clawd glyph = %U, want U+100CC0", []rune(got))
+	}
+}
 
 func TestBuildAgentGlyphs(t *testing.T) {
 	tests := []struct {
@@ -14,7 +32,7 @@ func TestBuildAgentGlyphs(t *testing.T) {
 		clawdInstalled bool
 		wantClaude     string
 	}{
-		{"clawd installed uses mascot", true, "\U000100CC0"},
+		{"clawd installed uses mascot", true, "\U00100CC0"},
 		{"no clawd falls back to star", false, "★"},
 	}
 	for _, tt := range tests {

@@ -53,7 +53,10 @@ func IsClawdInstalled(homeDir string) bool {
 func BuildAgentGlyphs(clawdInstalled bool) map[string]string {
 	claude := "★"
 	if clawdInstalled {
-		claude = "\U000100CC0"
+		// U+100CC0 (Clawd.ttf PUA-B, TS "\u{100CC0}"). Go's \U escape is
+		// exactly 8 hex digits — \U000100CC0 parses as U+100CC plus a
+		// literal '0', which is how a mangled header-tab glyph shipped.
+		claude = "\U00100CC0"
 	}
 	return map[string]string{
 		"claude-code": claude,
