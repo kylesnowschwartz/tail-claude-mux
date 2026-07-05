@@ -179,18 +179,26 @@ func (b *Builder) themeConfig() json.RawMessage {
 	return nil
 }
 
+// loadConfig reads and decodes config.json into out; false when the file
+// is missing or malformed (callers fall back to their defaults). The one
+// shared read path for the per-block loaders below — there is no typed
+// whole-config struct on the Go side, on purpose.
+func loadConfig(configDir string, out any) bool {
+	raw, err := os.ReadFile(filepath.Join(configDir, "config.json"))
+	if err != nil {
+		return false
+	}
+	return json.Unmarshal(raw, out) == nil
+}
+
 // LoadSidebarWidth reads sidebarWidth from config.json, defaulting to the
 // bun server's DEFAULT_SIDEBAR_WIDTH.
 func LoadSidebarWidth(configDir string) int {
 	const defaultWidth = 33
-	raw, err := os.ReadFile(filepath.Join(configDir, "config.json"))
-	if err != nil {
-		return defaultWidth
-	}
 	var cfg struct {
 		SidebarWidth int `json:"sidebarWidth"`
 	}
-	if json.Unmarshal(raw, &cfg) != nil || cfg.SidebarWidth <= 0 {
+	if !loadConfig(configDir, &cfg) || cfg.SidebarWidth <= 0 {
 		return defaultWidth
 	}
 	return cfg.SidebarWidth
@@ -199,14 +207,10 @@ func LoadSidebarWidth(configDir string) int {
 // LoadSidebarPosition reads sidebarPosition from config.json ("left" or
 // "right"), defaulting to the bun server's "left".
 func LoadSidebarPosition(configDir string) string {
-	raw, err := os.ReadFile(filepath.Join(configDir, "config.json"))
-	if err != nil {
-		return "left"
-	}
 	var cfg struct {
 		SidebarPosition string `json:"sidebarPosition"`
 	}
-	if json.Unmarshal(raw, &cfg) != nil || cfg.SidebarPosition != "right" {
+	if !loadConfig(configDir, &cfg) || cfg.SidebarPosition != "right" {
 		return "left"
 	}
 	return "right"
@@ -224,17 +228,13 @@ type CompanionPaneConfig struct {
 // Absent block or empty command disables the feature.
 func LoadCompanionPane(configDir string) CompanionPaneConfig {
 	const defaultRows = 8
-	raw, err := os.ReadFile(filepath.Join(configDir, "config.json"))
-	if err != nil {
-		return CompanionPaneConfig{}
-	}
 	var cfg struct {
 		CompanionPane struct {
 			Command string `json:"command"`
 			Rows    int    `json:"rows"`
 		} `json:"companionPane"`
 	}
-	if json.Unmarshal(raw, &cfg) != nil || cfg.CompanionPane.Command == "" {
+	if !loadConfig(configDir, &cfg) || cfg.CompanionPane.Command == "" {
 		return CompanionPaneConfig{}
 	}
 	rows := cfg.CompanionPane.Rows
