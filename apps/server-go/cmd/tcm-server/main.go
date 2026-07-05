@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/kylesnowschwartz/agent-ouija/claude/claudedir"
+	"github.com/kylesnowschwartz/agent-ouija/claude/settings"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/gitinfo"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
@@ -41,9 +42,15 @@ import (
 )
 
 func main() {
-	port := flag.Int("port", wire.ServerPort, "listen port (use a non-default port to A/B against the bun server)")
+	port := flag.Int("port", wire.ServerPort, "listen port (use a non-default port to A/B against a live instance)")
 	refresh := flag.Duration("refresh", 2*time.Second, "state refresh interval")
+	doRegisterHooks := flag.Bool("register-hooks", false, "register tcm's lifecycle hooks in Claude Code's settings.json and exit")
 	flag.Parse()
+
+	if *doRegisterHooks {
+		registerClaudeHooks()
+		return
+	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -150,6 +157,75 @@ func restartInPlace(reloadTUI bool) {
 	if err := syscall.Exec(exe, os.Args, os.Environ()); err != nil {
 		log.Printf("restart: exec failed: %v", err)
 	}
+}
+
+// hookEvents are the Claude Code lifecycle events tcm listens to.
+// StopFailure fires when a turn ends on an API error (rate limit, server
+// error, max output tokens) instead of a normal Stop — without it a turn
+// that dies mid-flight leaves the agent stuck showing "running".
+var hookEvents = []string{
+	"SessionStart",
+	"UserPromptSubmit",
+	"PreToolUse",
+	"PermissionRequest",
+	"PostToolUse",
+	"Stop",
+	"StopFailure",
+	"Notification",
+	"SessionEnd",
+}
+
+// registerClaudeHooks registers scripts/hook.sh for every lifecycle event
+// in Claude Code's settings.json (the -register-hooks one-shot; replaces
+// the retired bun setup-hooks.ts). Idempotent against entries already
+// present in either shell-string or exec form; hooks register async so
+// they never block the agent.
+func registerClaudeHooks() {
+	hookScript := resolveHookScript()
+	if hookScript == "" {
+		log.Fatalf("register-hooks: scripts/hook.sh not found (set TCM_DIR or run from a tcm checkout)")
+	}
+	root, err := claudedir.DefaultRoot()
+	if err != nil {
+		log.Fatalf("register-hooks: claude root: %v", err)
+	}
+
+	cmds := make([]settings.HookCommand, 0, len(hookEvents))
+	for _, event := range hookEvents {
+		cmds = append(cmds, settings.HookCommand{Event: event, Command: hookScript, Args: []string{event}, Async: true})
+	}
+
+	added, err := settings.RegisterHooks(root.SettingsPath(), cmds)
+	if err != nil {
+		log.Fatalf("register-hooks: %v", err)
+	}
+	if len(added) == 0 {
+		fmt.Println("All hooks already registered.")
+		return
+	}
+	fmt.Printf("Registered hooks for: %v\n", added)
+}
+
+// resolveHookScript locates scripts/hook.sh at the repo root, trying the
+// same roots as resolveScriptsDir (TCM_DIR, then exe-relative). The result
+// is symlink-resolved: TCM_DIR is usually the tpm plugin symlink, and
+// registering the symlink path alongside an existing real-path entry would
+// duplicate every hook.
+func resolveHookScript() string {
+	var roots []string
+	if env := os.Getenv("TCM_DIR"); env != "" {
+		roots = append(roots, env)
+	}
+	if exe, err := os.Executable(); err == nil {
+		roots = append(roots, filepath.Join(filepath.Dir(exe), "..", "..", ".."))
+	}
+	for _, root := range roots {
+		script := filepath.Join(root, "scripts", "hook.sh")
+		if resolved, err := filepath.EvalSymlinks(script); err == nil {
+			return resolved
+		}
+	}
+	return ""
 }
 
 // resolveScriptsDir locates apps/tui/scripts (the sidebar TUI launcher):
