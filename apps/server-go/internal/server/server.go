@@ -2,12 +2,11 @@
 // hub + client-command dispatch, mirroring the route surface of
 // packages/runtime/src/server/index.ts.
 //
-// Stage 3 skeleton scope, deliberately:
+// Stage 4 scope: the Claude Code hook watcher, tracker, pane scanner, and
+// liveness sweeps are live (see watch.go). Still deliberately deferred:
 //
-//   - GET /state, POST /hook (parse + drop; watchers are stage 4), and
-//     the WS session-list commands are live.
-//   - mark-seen / dismiss-agent / focus-agent-pane / kill-agent-pane are
-//     accepted no-ops until the tracker lands.
+//   - kill-agent-pane is an accepted no-op (its pid-verification gate
+//     lands with stage 5).
 //   - set-theme / report-width / equalize-width are accepted but do NOT
 //     write config.json while the bun server owns it — A/B runs must not
 //     fight over shared config files.
@@ -18,26 +17,42 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ws"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
-// Server owns the hub and the state builder. All state mutation runs
-// under mu — commands and refresh ticks serialize the same way the bun
-// server's single JS thread does.
+// Server owns the hub, the state builder, and the agent pipeline. All
+// state mutation runs under mu — commands, hooks, and refresh ticks
+// serialize the same way the bun server's single JS thread does.
 type Server struct {
 	Builder *state.Builder
+	Tracker *tracker.Tracker
+	Watcher *ccwatch.Adapter
+	Scanner *panescan.Scanner
 
 	mu        sync.Mutex
 	clients   map[*client]bool
 	lastState []byte // last broadcast ServerState, JSON-encoded
+
+	// Watcher plumbing (see watch.go).
+	watchersSeeded    bool
+	broadcastTimer    *time.Timer
+	lastSessions      []string // names from the last Build, for empty-presence sweeps
+	dirSessionCache   map[string]string
+	dirSessionCacheAt time.Time
+	panePidCache      map[int]string
+	panePidCacheAt    time.Time
 }
 
 // client is one connected TUI instance plus the identity it reported.
@@ -47,9 +62,13 @@ type client struct {
 	sessionName string // from "identify-pane"
 }
 
-// New returns a Server around the builder.
-func New(b *state.Builder) *Server {
-	return &Server{Builder: b, clients: map[*client]bool{}}
+// New returns a Server around the builder and agent pipeline. Tracker is
+// required; watcher and scanner may be nil (tests).
+func New(b *state.Builder, tr *tracker.Tracker, w *ccwatch.Adapter, sc *panescan.Scanner) *Server {
+	if tr != nil {
+		b.Agents = tr
+	}
+	return &Server{Builder: b, Tracker: tr, Watcher: w, Scanner: sc, clients: map[*client]bool{}}
 }
 
 // Handler returns the HTTP handler with every route mounted.
@@ -57,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /state", s.handleState)
 	mux.HandleFunc("POST /hook", s.handleHook)
+	mux.HandleFunc("POST /focus", s.handleFocus)
 	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
 		s.broadcast()
 		w.WriteHeader(http.StatusNoContent)
@@ -85,7 +105,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleState(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()
-	data, err := json.MarshalIndent(s.Builder.Build(), "", "  ")
+	data, err := json.MarshalIndent(s.prepareStateLocked(), "", "  ")
 	s.mu.Unlock()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -95,9 +115,9 @@ func (s *Server) handleState(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// handleHook is the /hook ingress. Stage 3 parses and drops; the watcher
-// stages route payloads to adapters. The contract holds already: always
-// 200, a malformed payload never blocks the agent.
+// handleHook is the /hook ingress: parse, then dispatch to the watcher
+// under the state lock. The contract: always 200, a malformed payload
+// never blocks the agent (dropped, not 4xx'd).
 func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 	body := make([]byte, 0, 4096)
 	buf := make([]byte, 4096)
@@ -112,7 +132,29 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if p, ok := wire.ParseHookPayload(body); ok {
-		log.Printf("hook: %s session=%s (dropped — watchers land in stage 4)", p.Event, p.SessionID)
+		if s.Watcher != nil {
+			s.mu.Lock()
+			s.Watcher.HandleHook(p)
+			s.mu.Unlock()
+		}
+	} else {
+		log.Printf("hook: rejected-malformed")
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleFocus is the tmux focus hook: switching sessions outside the
+// sidebar marks the target session active and clears its unseen flags.
+func (s *Server) handleFocus(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if session := parseFocusContext(string(body)); session != "" {
+		s.mu.Lock()
+		s.Builder.SetFocused(session)
+		if s.Tracker != nil {
+			s.Tracker.HandleFocus(session)
+		}
+		s.broadcastLocked()
+		s.mu.Unlock()
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -190,8 +232,12 @@ func (s *Server) handleCommand(c *client, cmd wire.ClientCommand) {
 		if err := s.Builder.Tmux.SwitchClient(cmd.Name, tty); err != nil {
 			log.Printf("switch-session %q: %v", cmd.Name, err)
 		}
-		// Optimistic focus update, ported from the bun handler.
+		// Optimistic focus update, ported from the bun handler; focusing a
+		// session marks it active and clears its unseen flags.
 		s.Builder.SetFocused(cmd.Name)
+		if s.Tracker != nil {
+			s.Tracker.HandleFocus(cmd.Name)
+		}
 		s.broadcastLocked()
 
 	case wire.CmdSwitchIndex:
@@ -257,8 +303,29 @@ func (s *Server) handleCommand(c *client, cmd wire.ClientCommand) {
 		log.Printf("quit command received")
 		s.broadcastLocked()
 
-	case wire.CmdMarkSeen, wire.CmdDismissAgent, wire.CmdFocusAgentPane, wire.CmdKillAgentPane:
-		// Tracker commands — live in stage 4/5.
+	case wire.CmdMarkSeen:
+		if s.Tracker != nil && s.Tracker.MarkSeen(cmd.Name) {
+			s.broadcastLocked()
+		}
+
+	case wire.CmdDismissAgent:
+		pid := 0
+		if cmd.PID != nil {
+			pid = *cmd.PID
+		}
+		if s.Tracker != nil && s.Tracker.Dismiss(cmd.Session, cmd.Agent, cmd.ThreadID, cmd.PaneID, pid) {
+			s.broadcastLocked()
+		}
+
+	case wire.CmdFocusAgentPane:
+		if s.Tracker != nil {
+			s.focusAgentPane(cmd)
+		}
+
+	case wire.CmdKillAgentPane:
+		// Deliberately inert until stage 5: killing needs the pid
+		// re-verification gate (pane recycling) before it is safe.
+		log.Printf("kill-agent-pane: not implemented (stage 5)")
 
 	case wire.CmdSetTheme, wire.CmdReportWidth, wire.CmdEqualizeWidth:
 		// Config writers — deliberately inert while the bun server owns
@@ -297,13 +364,32 @@ func (s *Server) broadcastLocked() {
 	s.sendAllLocked(data)
 }
 
+// prepareStateLocked runs the tracker maintenance the bun server performs
+// on every broadcast — reconcile stale running entries against the
+// authoritative probe BEFORE pruning (a stale running whose process is
+// still alive is invisible to pruneStuck's liveness guard), then the prune
+// tiers — and builds the state. Runs with s.mu held.
+func (s *Server) prepareStateLocked() wire.ServerState {
+	if s.Tracker != nil {
+		s.Tracker.ReconcileStaleRunning(reconcileStaleMS, s.probeLiveness)
+		s.Tracker.PruneStuck(stuckRunningTimeoutMS)
+		s.Tracker.PruneTerminal()
+	}
+	st := s.Builder.Build()
+	s.lastSessions = s.lastSessions[:0]
+	for _, sess := range st.Sessions {
+		s.lastSessions = append(s.lastSessions, sess.Name)
+	}
+	return st
+}
+
 // encodeState builds and encodes ServerState with a stable ts for change
 // comparison: ts is excluded from the diff by zeroing it in the comparison
 // copy — simplest correct form is to compare the encoding without ts, but
 // re-encoding twice per tick for two small JSON docs is cheaper to just
 // accept; instead we zero ts pre-encode and stamp it on send.
 func (s *Server) encodeState() ([]byte, error) {
-	st := s.Builder.Build()
+	st := s.prepareStateLocked()
 	st.TS = 0
 	return json.Marshal(st)
 }

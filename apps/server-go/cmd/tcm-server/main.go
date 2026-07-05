@@ -16,11 +16,15 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/kylesnowschwartz/agent-ouija/claude/claudedir"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/gitinfo"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/server"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/sessionorder"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
@@ -43,7 +47,15 @@ func main() {
 		SidebarWidth: state.LoadSidebarWidth(configDir),
 	}
 
-	srv := server.New(builder)
+	var watcher *ccwatch.Adapter
+	if root, err := claudedir.DefaultRoot(); err == nil {
+		watcher = ccwatch.New(root.ProjectsDir(), root.SessionsDir())
+	} else {
+		log.Printf("claude root unavailable, hook watcher disabled: %v", err)
+	}
+
+	srv := server.New(builder, tracker.New(), watcher, panescan.New())
+	srv.StartWatchers()
 	go srv.Run(*refresh)
 
 	addr := fmt.Sprintf("%s:%d", wire.ServerHost, *port)

@@ -20,12 +20,22 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
+// AgentSource supplies the tracker-derived per-session fields. The
+// tracker satisfies it; nil means "no agents" (stage-3 skeleton behavior).
+type AgentSource interface {
+	GetState(session string) *wire.AgentEvent
+	GetAgents(session string) []wire.AgentEvent
+	GetEventTimestamps(session string) []int64
+	IsUnseen(session string) bool
+}
+
 // Builder holds the pieces computeState needs. Fields are set once at
 // startup; Build is called from the server's single command/refresh loop.
 type Builder struct {
-	Tmux  *tmux.Tmux
-	Git   *gitinfo.Cache
-	Order *sessionorder.Order
+	Tmux   *tmux.Tmux
+	Git    *gitinfo.Cache
+	Order  *sessionorder.Order
+	Agents AgentSource
 
 	// ConfigDir is ~/.config/tcm — the home of config.json and
 	// active-theme.json.
@@ -83,7 +93,7 @@ func (b *Builder) Build() wire.ServerState {
 			dir = d
 		}
 		git := b.Git.Get(dir)
-		sessions = append(sessions, wire.SessionData{
+		sd := wire.SessionData{
 			Name:       name,
 			CreatedAt:  s.CreatedAt,
 			Dir:        dir,
@@ -93,12 +103,18 @@ func (b *Builder) Build() wire.ServerState {
 			Panes:      paneCounts[name],
 			Windows:    s.Windows,
 			Uptime:     formatUptime(now.Unix() - s.CreatedAt),
-			// Tracker fields arrive in stage 4. Non-nil slices matter:
-			// the TUI iterates these, and null is not [].
-			AgentState:      nil,
+			// Non-nil slices matter: the TUI iterates these, and null
+			// is not [].
 			Agents:          []wire.AgentEvent{},
 			EventTimestamps: []int64{},
-		})
+		}
+		if b.Agents != nil {
+			sd.Unseen = b.Agents.IsUnseen(name)
+			sd.AgentState = b.Agents.GetState(name)
+			sd.Agents = b.Agents.GetAgents(name)
+			sd.EventTimestamps = b.Agents.GetEventTimestamps(name)
+		}
+		sessions = append(sessions, sd)
 	}
 
 	// Focus persistence, ported: none when there are no sessions; keep the
