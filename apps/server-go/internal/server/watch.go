@@ -178,7 +178,7 @@ func (s *Server) deriveLogEntriesLocked(ev wire.AgentEvent) []wire.MetadataLogEn
 		out = append(out, wire.MetadataLogEntry{Source: source, Message: ev.ThreadName, Tone: "neutral"})
 	}
 	if ev.ToolDescription != "" && ev.ToolDescription != last.tool {
-		out = append(out, wire.MetadataLogEntry{Source: source, Message: ev.ToolDescription, Tone: "info"})
+		out = append(out, wire.MetadataLogEntry{Source: source, Message: ev.ToolDescription, Tone: "info", Verb: ev.ToolVerb})
 	}
 	if ev.Status != last.status {
 		switch ev.Status {

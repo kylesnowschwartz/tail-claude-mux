@@ -13,7 +13,13 @@ import (
 )
 
 const (
-	maxLogs          = 50
+	// maxLogs must cover the TUI seismograph's visible window, which scales
+	// with sidebar width: buckets = contentWidth / BUCKET_COLS(3), 8 s each,
+	// so a 90-col pane shows ~29 buckets ≈ 4 min. A smaller cap lets
+	// in-window buckets decay to a false-calm baseline as eviction removes
+	// their entries. 400 covers ~4 min at a busy ~1.5 entries/s with
+	// headroom; memory cost is trivial (≤ ~250 KB/session).
+	maxLogs          = 400
 	maxMessageLength = 500
 	maxLabelLength   = 100
 	maxSourceLength  = 50

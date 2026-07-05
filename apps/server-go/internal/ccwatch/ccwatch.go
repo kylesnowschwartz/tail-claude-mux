@@ -93,6 +93,9 @@ type threadState struct {
 	// lastToolDescription from PreToolUse/PermissionRequest — cleared on
 	// non-tool events.
 	lastToolDescription string
+	// lastToolVerb is the structured verb for lastToolDescription — same
+	// lifecycle.
+	lastToolVerb string
 	// subagent from sessions/<pid>.json `agent`, "" when the parent thread
 	// is in control.
 	subagent string
@@ -196,6 +199,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	if payload.Event == "SessionEnd" {
 		state.status = newStatus
 		state.lastToolDescription = ""
+		state.lastToolVerb = ""
 		a.emit(threadID, state, session, true)
 		delete(a.threads, threadID)
 		return
@@ -204,10 +208,12 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	hasToolContext := payload.Event == "PreToolUse" || payload.Event == "PermissionRequest"
 	if hasToolContext {
 		state.lastToolDescription = ToolDescription(payload.ToolName, payload.ToolInput)
+		state.lastToolVerb = ToolVerb(payload.ToolName)
 	} else if payload.Event != "PostToolUse" {
 		// Clear on non-tool events; PostToolUse keeps the prior description
 		// (a tool just finished).
 		state.lastToolDescription = ""
+		state.lastToolVerb = ""
 	}
 
 	// Dedup: skip when status is unchanged — except new threads and tool
@@ -252,6 +258,7 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, ende
 		ThreadID:        threadID,
 		ThreadName:      state.threadName,
 		ToolDescription: state.lastToolDescription,
+		ToolVerb:        state.lastToolVerb,
 		PID:             state.pid,
 		Subagent:        state.subagent,
 		Ended:           ended,
@@ -731,6 +738,32 @@ func ToolDescription(toolName string, toolInput map[string]json.RawMessage) stri
 		return "Asking question"
 	default:
 		return toolName
+	}
+}
+
+// ToolVerb maps a tool name to its shared.ts MetadataVerb, from the same
+// switch ToolDescription uses. The watcher knows the tool name; tagging here
+// spares renderers from regex-guessing the verb back out of the message
+// (the TUI's classify.ts remains the fallback for untagged producers).
+// Unknown/custom tools return "".
+func ToolVerb(toolName string) string {
+	switch toolName {
+	case "Read":
+		return "read"
+	case "Edit", "Write", "NotebookEdit":
+		return "edit"
+	case "Bash":
+		return "run"
+	case "Glob", "Grep":
+		return "search"
+	case "Agent", "Task":
+		return "task"
+	case "WebFetch", "WebSearch":
+		return "web"
+	case "Skill":
+		return "skill"
+	default:
+		return ""
 	}
 }
 

@@ -80,9 +80,14 @@ type AgentEvent struct {
 	Liveness        string `json:"liveness,omitempty"`
 	PID             int    `json:"pid,omitempty"`
 	ToolDescription string `json:"toolDescription,omitempty"`
-	PaneTitle       string `json:"paneTitle,omitempty"`
-	Subagent        string `json:"subagent,omitempty"`
-	Ended           bool   `json:"ended,omitempty"`
+	// ToolVerb is the structured verb for ToolDescription (shared.ts
+	// MetadataVerb), derived from the tool name by the watcher so renderers
+	// don't regex-guess it back out of the message. Same lifecycle as
+	// ToolDescription.
+	ToolVerb  string `json:"toolVerb,omitempty"`
+	PaneTitle string `json:"paneTitle,omitempty"`
+	Subagent  string `json:"subagent,omitempty"`
+	Ended     bool   `json:"ended,omitempty"`
 }
 
 // MetadataStatus is shared.ts MetadataStatus (programmatic API).
@@ -102,11 +107,15 @@ type MetadataProgress struct {
 	TS      int64    `json:"ts"`
 }
 
-// MetadataLogEntry is shared.ts MetadataLogEntry.
+// MetadataLogEntry is shared.ts MetadataLogEntry. Verb is the shared.ts
+// MetadataVerb union (read/list/search/edit/run/web/task/skill/thinking/
+// error) — producer-tagged so the TUI doesn't regex-guess the verb back
+// out of Message; empty when the producer only has free text.
 type MetadataLogEntry struct {
 	Message string `json:"message"`
 	Tone    string `json:"tone,omitempty"`
 	Source  string `json:"source,omitempty"`
+	Verb    string `json:"verb,omitempty"`
 	TS      int64  `json:"ts"`
 }
 

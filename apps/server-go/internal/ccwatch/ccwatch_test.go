@@ -740,6 +740,33 @@ func TestToolDescription(t *testing.T) {
 	}
 }
 
+func TestToolVerb(t *testing.T) {
+	cases := []struct {
+		tool string
+		want string
+	}{
+		{"Read", "read"},
+		{"Edit", "edit"},
+		{"Write", "edit"},
+		{"NotebookEdit", "edit"},
+		{"Bash", "run"},
+		{"Glob", "search"},
+		{"Grep", "search"},
+		{"Agent", "task"},
+		{"Task", "task"},
+		{"WebFetch", "web"},
+		{"WebSearch", "web"},
+		{"Skill", "skill"},
+		{"TodoRead", ""}, // unknown tools stay untagged — TUI classifier decides
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := ToolVerb(c.tool); got != c.want {
+			t.Errorf("ToolVerb(%q) = %q, want %q", c.tool, got, c.want)
+		}
+	}
+}
+
 // describe("ClaudeCodeHookAdapter — pid resolution")
 func TestClaudeCodeHookAdapterPidResolution(t *testing.T) {
 	setup := func(t *testing.T) (*Adapter, *testCtx) {
