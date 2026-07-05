@@ -1,0 +1,119 @@
+// Sidebar pane operations: the Go port of the tmux provider's sidebar
+// surface (packages/mux/providers/tmux/src/provider.ts) — spawn (fresh or
+// restore-from-stash), kill, and stash-orphan pruning. Orchestration
+// (when to spawn where) stays in the server, mirroring the bun split.
+package tmux
+
+import "strconv"
+
+const (
+	// SidebarPaneTitle is the legacy identification title; the
+	// @tcm-sidebar pane option is the stable marker (survives pane_title
+	// rewriting by escape sequences the TUI emits).
+	SidebarPaneTitle    = "tcm-sidebar"
+	sidebarMarkerOption = "@tcm-sidebar"
+	sidebarMarkerValue  = "1"
+)
+
+// SidebarPanes derives the non-stash sidebar panes from a listing.
+func SidebarPanes(panes []Pane) []Pane {
+	var out []Pane
+	for _, p := range panes {
+		if p.Sidebar && p.Session != StashSession {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// PruneStashOrphans kills stash-session panes whose title drifted away
+// from tcm-sidebar (a dead TUI lets tmux automatic-rename re-derive the
+// title, often to $USER); they accumulate forever and confuse future
+// restore-from-stash attempts.
+func (t *Tmux) PruneStashOrphans(panes []Pane) {
+	for _, p := range panes {
+		if p.Session == StashSession && !p.Sidebar {
+			t.KillPane(p.ID)
+		}
+	}
+}
+
+// KillPane kills one pane by id.
+func (t *Tmux) KillPane(paneID string) {
+	_, _ = t.Run("kill-pane", "-t", paneID)
+}
+
+// KillStashSession removes the hidden stash session (provider.ts
+// cleanupSidebar).
+func (t *Tmux) KillStashSession() {
+	_, _ = t.Run("kill-session", "-t", StashSession)
+}
+
+// SpawnSidebar creates a sidebar pane in windowID at the given edge and
+// returns its pane id ("" on failure). A stashed sidebar pane is restored
+// via join-pane when one exists; otherwise a fresh pane runs
+// scriptsDir/start.sh. Neither path focuses the new pane — the TUI
+// refocuses itself after terminal-capability detection, and focusing
+// earlier leaks capability query responses into the main pane as garbage
+// escape sequences (see provider.ts spawnSidebar).
+//
+// Lists panes itself, fresh per call: a caller-shared listing would offer
+// the same stashed pane to every window, and join-pane would keep moving
+// it instead of spawning new TUIs.
+func (t *Tmux) SpawnSidebar(windowID string, width int, position, scriptsDir string) string {
+	panes := t.ListAllPanes()
+	var target *Pane
+	for i := range panes {
+		p := &panes[i]
+		if p.WindowID != windowID {
+			continue
+		}
+		switch {
+		case target == nil:
+			target = p
+		case position == "left" && p.Left < target.Left:
+			target = p
+		case position != "left" && p.Right > target.Right:
+			target = p
+		}
+	}
+	if target == nil {
+		return ""
+	}
+
+	// Restore-from-stash first: hide/show cycles park live TUI panes in
+	// the stash session rather than killing them.
+	for _, p := range panes {
+		if p.Session != StashSession || !p.Sidebar {
+			continue
+		}
+		joinFlag := "-h"
+		if position == "left" {
+			joinFlag = "-hb"
+		}
+		if _, err := t.Run("join-pane", joinFlag, "-f", "-l", strconv.Itoa(width), "-s", p.ID, "-t", target.ID); err != nil {
+			break // fall through to a fresh spawn
+		}
+		t.markSidebar(p.ID)
+		return p.ID
+	}
+
+	args := []string{"split-window", "-h"}
+	if position == "left" {
+		args = append(args, "-b")
+	}
+	args = append(args, "-f", "-l", strconv.Itoa(width), "-t", target.ID, "-P", "-F", "#{pane_id}",
+		"REFOCUS_WINDOW="+windowID+" exec "+scriptsDir+"/start.sh")
+	newID, err := t.Run(args...)
+	if err != nil || newID == "" {
+		return ""
+	}
+	t.markSidebar(newID)
+	return newID
+}
+
+// markSidebar stamps the identification title + stable marker option.
+func (t *Tmux) markSidebar(paneID string) {
+	_, _ = t.Run("select-pane", "-t", paneID, "-T", SidebarPaneTitle)
+	_, _ = t.Run("set-option", "-p", "-t", paneID, sidebarMarkerOption, sidebarMarkerValue)
+}

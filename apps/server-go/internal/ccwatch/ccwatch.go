@@ -260,6 +260,17 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, ende
 
 // --- sessions/<pid>.json (agent-ouija registry format) ---
 
+// SessionIDForPid returns the sessionId recorded in sessions/<pid>.json,
+// "" when the file is missing or undecodable. The server's agent-pane
+// resolver uses it to match a candidate claude pid to a tracker threadId
+// (index.ts resolveClaudeCodePane).
+func (a *Adapter) SessionIDForPid(pid int) string {
+	if l := a.readSessionFile(pid); l != nil {
+		return l.SessionID
+	}
+	return ""
+}
+
 // readSessionFile decodes one sessions/<pid>.json through registry.Live.
 func (a *Adapter) readSessionFile(pid int) *registry.Live {
 	raw, err := os.ReadFile(filepath.Join(a.SessionsDir, strconv.Itoa(pid)+".json"))

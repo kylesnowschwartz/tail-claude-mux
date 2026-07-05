@@ -31,6 +31,7 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/gitinfo"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/server"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/sessionorder"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
@@ -64,13 +65,23 @@ func main() {
 	} else {
 		log.Printf("claude root unavailable, hook watcher disabled: %v", err)
 	}
+	piWatcher := piwatch.New(filepath.Join(home, ".pi", "agent", "sessions"))
 
-	srv := server.New(builder, tracker.New(), watcher, panescan.New())
+	srv := server.New(builder, tracker.New(), watcher, piWatcher, panescan.New())
 	srv.Restart = restartInPlace
 	srv.Quit = func() {
 		_ = os.Remove(wire.PIDFile)
 		os.Exit(0)
 	}
+	srv.ScriptsDir = resolveScriptsDir()
+	srv.SidebarPosition = state.LoadSidebarPosition(configDir)
+
+	// TCM_RELOAD_TUI travels through the /restart self-exec: the previous
+	// incarnation sets it so THIS one cycles the sidebar TUIs onto new
+	// code. Consume it immediately — it must not survive into the next
+	// restart by default.
+	reloadTUI := os.Getenv("TCM_RELOAD_TUI") == "1"
+	_ = os.Unsetenv("TCM_RELOAD_TUI")
 
 	// Bind before the pid file: a failed bind (stale server still holding
 	// the port) must not clobber the live server's pid record.
@@ -85,6 +96,9 @@ func main() {
 	}
 
 	srv.StartWatchers()
+	if *port == wire.ServerPort {
+		go srv.BootstrapSidebars(reloadTUI)
+	}
 	go srv.Run(*refresh)
 
 	log.Printf("tcm server (go) listening on %s", addr)
@@ -116,14 +130,42 @@ func cleanupOnSignal() {
 // restartInPlace re-execs the current binary with the same argv — the
 // POST /restart contract. Same pid (pid file stays valid); Go sockets are
 // CLOEXEC, so the listener closes at exec and the fresh image binds anew.
-func restartInPlace() {
+// reloadTUI rides the environment into the next incarnation.
+func restartInPlace(reloadTUI bool) {
 	exe, err := os.Executable()
 	if err != nil {
 		log.Printf("restart: %v", err)
 		return
 	}
-	log.Printf("restart: re-exec %s", exe)
+	if reloadTUI {
+		_ = os.Setenv("TCM_RELOAD_TUI", "1")
+	}
+	log.Printf("restart: re-exec %s (reload-tui=%v)", exe, reloadTUI)
 	if err := syscall.Exec(exe, os.Args, os.Environ()); err != nil {
 		log.Printf("restart: exec failed: %v", err)
 	}
+}
+
+// resolveScriptsDir locates apps/tui/scripts (the sidebar TUI launcher):
+// TCM_DIR when it actually holds start.sh, else relative to this binary
+// (apps/server-go/bin/tcm-server → repo root is three levels up). The
+// exe-relative fallback also covers a stale TCM_DIR — a dangling tpm
+// symlink after a repo move burned us once. Empty disables sidebar
+// bootstrap rather than spawning panes with a broken command.
+func resolveScriptsDir() string {
+	var roots []string
+	if env := os.Getenv("TCM_DIR"); env != "" {
+		roots = append(roots, env)
+	}
+	if exe, err := os.Executable(); err == nil {
+		roots = append(roots, filepath.Join(filepath.Dir(exe), "..", "..", ".."))
+	}
+	for _, root := range roots {
+		dir := filepath.Join(root, "apps", "tui", "scripts")
+		if _, err := os.Stat(filepath.Join(dir, "start.sh")); err == nil {
+			return dir
+		}
+	}
+	log.Printf("sidebar: start.sh not found under %v — bootstrap disabled", roots)
+	return ""
 }

@@ -196,6 +196,22 @@ func LoadSidebarWidth(configDir string) int {
 	return cfg.SidebarWidth
 }
 
+// LoadSidebarPosition reads sidebarPosition from config.json ("left" or
+// "right"), defaulting to the bun server's "left".
+func LoadSidebarPosition(configDir string) string {
+	raw, err := os.ReadFile(filepath.Join(configDir, "config.json"))
+	if err != nil {
+		return "left"
+	}
+	var cfg struct {
+		SidebarPosition string `json:"sidebarPosition"`
+	}
+	if json.Unmarshal(raw, &cfg) != nil || cfg.SidebarPosition != "right" {
+		return "left"
+	}
+	return "right"
+}
+
 // formatUptime renders seconds as the bun server does: 17d9h / 3h42m / 12m.
 func formatUptime(diff int64) string {
 	if diff < 0 {

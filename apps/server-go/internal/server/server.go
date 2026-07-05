@@ -27,6 +27,7 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/metadata"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
@@ -38,18 +39,26 @@ import (
 // state mutation runs under mu — commands, hooks, and refresh ticks
 // serialize the same way the bun server's single JS thread does.
 type Server struct {
-	Builder  *state.Builder
-	Tracker  *tracker.Tracker
-	Watcher  *ccwatch.Adapter
-	Scanner  *panescan.Scanner
-	Metadata *metadata.Store
+	Builder   *state.Builder
+	Tracker   *tracker.Tracker
+	Watcher   *ccwatch.Adapter
+	PiWatcher *piwatch.Adapter
+	Scanner   *panescan.Scanner
+	Metadata  *metadata.Store
 
 	// Restart is invoked ~50ms after answering POST /restart (the dev
-	// loop's `restart.sh` ingress). main wires it to a self-exec.
-	Restart func()
+	// loop's `restart.sh` ingress). main wires it to a self-exec;
+	// reloadTUI asks the next incarnation to kill + respawn sidebars so
+	// TUIs pick up new code (bun: TCM_RELOAD_TUI env).
+	Restart func(reloadTUI bool)
 	// Quit is invoked ~50ms after POST /quit broadcasts quit-notify to
 	// every sidebar (stop.sh's graceful path). main wires it to exit.
 	Quit func()
+
+	// ScriptsDir is apps/tui/scripts (start.sh lives there); empty
+	// disables sidebar bootstrap. SidebarPosition is "left" or "right".
+	ScriptsDir      string
+	SidebarPosition string
 
 	mu        sync.Mutex
 	clients   map[*client]bool
@@ -74,15 +83,15 @@ type client struct {
 }
 
 // New returns a Server around the builder and agent pipeline. Tracker is
-// required; watcher and scanner may be nil (tests).
-func New(b *state.Builder, tr *tracker.Tracker, w *ccwatch.Adapter, sc *panescan.Scanner) *Server {
+// required; watchers and scanner may be nil (tests).
+func New(b *state.Builder, tr *tracker.Tracker, w *ccwatch.Adapter, pi *piwatch.Adapter, sc *panescan.Scanner) *Server {
 	if tr != nil {
 		b.Agents = tr
 	}
 	md := metadata.NewStore()
 	b.Metadata = md
 	return &Server{
-		Builder: b, Tracker: tr, Watcher: w, Scanner: sc, Metadata: md,
+		Builder: b, Tracker: tr, Watcher: w, PiWatcher: pi, Scanner: sc, Metadata: md,
 		clients:          map[*client]bool{},
 		lastSeenByThread: map[string]lastSeen{},
 	}
@@ -94,32 +103,29 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /state", s.handleState)
 	mux.HandleFunc("POST /hook", s.handleHook)
 	mux.HandleFunc("POST /focus", s.handleFocus)
+	mux.HandleFunc("POST /set-status", s.handleSetStatus)
+	mux.HandleFunc("POST /set-progress", s.handleSetProgress)
+	mux.HandleFunc("POST /log", s.handleLog)
+	mux.HandleFunc("POST /notify", s.handleLog)
+	mux.HandleFunc("POST /clear-log", s.handleClearLog)
 	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
 		s.broadcast()
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /restart", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("POST /restart")
+		reloadTUI := r.URL.Query().Get("reload-tui") != "false"
+		log.Printf("POST /restart reload-tui=%v", reloadTUI)
 		_, _ = fmt.Fprint(w, "restarting")
 		if s.Restart != nil {
 			// Respond before restarting so the caller gets confirmation
 			// (mirrors the bun server's 50ms grace).
-			time.AfterFunc(50*time.Millisecond, s.Restart)
+			time.AfterFunc(50*time.Millisecond, func() { s.Restart(reloadTUI) })
 		}
 	})
 	mux.HandleFunc("POST /quit", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("POST /quit")
-		s.mu.Lock()
-		if quit, err := json.Marshal(wire.QuitNotify{Type: wire.TypeQuit}); err == nil {
-			for c := range s.clients {
-				_ = c.conn.WriteText(string(quit))
-			}
-		}
-		s.mu.Unlock()
 		_, _ = fmt.Fprint(w, "quitting")
-		if s.Quit != nil {
-			time.AfterFunc(50*time.Millisecond, s.Quit)
-		}
+		go s.quitAll()
 	})
 	mux.HandleFunc("/", s.handleRoot)
 	return mux
@@ -155,18 +161,23 @@ func (s *Server) handleState(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// handleHook is the /hook ingress: parse, then dispatch to the watcher
-// under the state lock. The contract: always 200, a malformed payload
-// never blocks the agent (dropped, not 4xx'd).
+// handleHook is the /hook ingress: parse, then fan out to every watcher
+// under the state lock — each adapter filters on the payload's agent
+// discriminator itself (missing falls through as Claude Code). The
+// contract: always 200, a malformed payload never blocks the agent
+// (dropped, not 4xx'd).
 func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 	// 1 MiB bound matches the bun server's tolerance for big ps snapshots.
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if p, ok := wire.ParseHookPayload(body); ok {
+		s.mu.Lock()
 		if s.Watcher != nil {
-			s.mu.Lock()
 			s.Watcher.HandleHook(p)
-			s.mu.Unlock()
 		}
+		if s.PiWatcher != nil {
+			s.PiWatcher.HandleHook(p)
+		}
+		s.mu.Unlock()
 	} else {
 		log.Printf("hook: rejected-malformed")
 	}
@@ -331,7 +342,9 @@ func (s *Server) handleCommand(c *client, cmd wire.ClientCommand) {
 
 	case wire.CmdQuit:
 		log.Printf("quit command received")
-		s.broadcastLocked()
+		// quitAll retakes s.mu for the notify broadcast — dispatch off
+		// this locked path.
+		go s.quitAll()
 
 	case wire.CmdMarkSeen:
 		if s.Tracker != nil && s.Tracker.MarkSeen(cmd.Name) {
@@ -353,9 +366,9 @@ func (s *Server) handleCommand(c *client, cmd wire.ClientCommand) {
 		}
 
 	case wire.CmdKillAgentPane:
-		// Deliberately inert until stage 5: killing needs the pid
-		// re-verification gate (pane recycling) before it is safe.
-		log.Printf("kill-agent-pane: not implemented (stage 5)")
+		if s.Tracker != nil {
+			s.killAgentPane(cmd)
+		}
 
 	case wire.CmdSetTheme, wire.CmdReportWidth, wire.CmdEqualizeWidth:
 		// Config writers — deliberately inert while the bun server owns

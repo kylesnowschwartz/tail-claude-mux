@@ -42,7 +42,7 @@ if server_alive; then
 else
   echo "==> Server not running, starting fresh..."
   if [[ "${TCM_SERVER:-}" != "bun" && -x "$GO_BIN" ]]; then
-    "$GO_BIN" >/dev/null 2>&1 &
+    "$GO_BIN" >>/tmp/tcm-server-go.log 2>&1 &
   else
     "$BUN" run "$ROOT/apps/server/src/main.ts" >/dev/null 2>&1 &
   fi

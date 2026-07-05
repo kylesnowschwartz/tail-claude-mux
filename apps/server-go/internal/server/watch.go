@@ -11,6 +11,7 @@ import (
 
 	"github.com/kylesnowschwartz/agent-ouija/claude/claudedir"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
@@ -68,18 +69,28 @@ func (s *Server) StartWatchers() {
 	}
 	s.Tracker.SetActiveSessions(active)
 
+	locked := func(fn func()) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		fn()
+	}
 	if s.Watcher != nil {
 		s.Watcher.Start(&ccwatch.Context{
 			ResolveSession:      s.resolveSessionLocked,
 			ResolveSessionByPid: s.resolveSessionByPidLocked,
 			Emit:                s.emitLocked,
-			Locked: func(fn func()) {
-				s.mu.Lock()
-				defer s.mu.Unlock()
-				fn()
-			},
+			Locked:              locked,
 		})
 		log.Printf("agent watcher started: %s", s.Watcher.Name())
+	}
+	if s.PiWatcher != nil {
+		s.PiWatcher.Start(&piwatch.Context{
+			ResolveSession:      s.resolveSessionLocked,
+			ResolveSessionByPid: s.resolveSessionByPidLocked,
+			Emit:                s.emitLocked,
+			Locked:              locked,
+		})
+		log.Printf("agent watcher started: %s", s.PiWatcher.Name())
 	}
 	s.mu.Unlock()
 
@@ -347,6 +358,11 @@ func (s *Server) focusAgentPane(cmd wire.ClientCommand) {
 		if ev := s.Tracker.GetEvent(cmd.Session, cmd.Agent, cmd.ThreadID, ""); ev != nil {
 			paneID = ev.PaneID
 		}
+	}
+	if paneID == "" {
+		// Rows the tracker has no paneId for yet: full per-agent
+		// re-resolution (index.ts resolveAgentPaneId).
+		paneID = s.resolveAgentPaneIDLocked(cmd.Session, cmd.Agent, cmd.ThreadID, cmd.ThreadName)
 	}
 	if paneID == "" {
 		return
