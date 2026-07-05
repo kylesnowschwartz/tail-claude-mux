@@ -73,6 +73,10 @@ type Server struct {
 	dirSessionCacheAt time.Time
 	panesCache        []tmux.Pane
 	panesCacheAt      time.Time
+
+	// Debounced /ensure-sidebar state (see sidebar.go).
+	ensureSidebarTimer    *time.Timer
+	ensureSidebarWindowID string
 }
 
 // client is one connected TUI instance plus the identity it reported.
@@ -108,6 +112,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /log", s.handleLog)
 	mux.HandleFunc("POST /notify", s.handleLog)
 	mux.HandleFunc("POST /clear-log", s.handleClearLog)
+	mux.HandleFunc("POST /ensure-sidebar", s.handleEnsureSidebar)
+	mux.HandleFunc("POST /pane-exited", s.handlePaneExited)
 	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
 		s.broadcast()
 		w.WriteHeader(http.StatusNoContent)
