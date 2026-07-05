@@ -197,6 +197,81 @@ func TestClaudeCodeHookAdapter(t *testing.T) {
 		}
 	})
 
+	// --- ToolInvoked ---
+
+	t.Run("consecutive identical PreToolUse events each mark ToolInvoked", func(t *testing.T) {
+		a, tc := setup(t)
+		input := map[string]json.RawMessage{"file_path": json.RawMessage(`"/src/main.go"`)}
+		a.HandleHook(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Read", input))
+		a.HandleHook(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Read", input))
+
+		wantLen(t, tc.events, 2)
+		for i, ev := range tc.events {
+			if !ev.ToolInvoked {
+				t.Errorf("events[%d].toolInvoked = false, want true", i)
+			}
+		}
+	})
+
+	t.Run("approved PreToolUse echo of a PermissionRequest does not mark ToolInvoked", func(t *testing.T) {
+		a, tc := setup(t)
+		input := map[string]json.RawMessage{"command": json.RawMessage(`"git push"`)}
+		a.HandleHook(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "Bash", input))
+		a.HandleHook(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Bash", input))
+
+		wantLen(t, tc.events, 2)
+		if !tc.events[0].ToolInvoked {
+			t.Errorf("PermissionRequest toolInvoked = false, want true")
+		}
+		if tc.events[1].ToolInvoked {
+			t.Errorf("approved PreToolUse toolInvoked = true, want false (echo of one call)")
+		}
+	})
+
+	t.Run("PreToolUse for a different call after a PermissionRequest marks ToolInvoked", func(t *testing.T) {
+		a, tc := setup(t)
+		a.HandleHook(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "Bash", map[string]json.RawMessage{"command": json.RawMessage(`"git push"`)}))
+		a.HandleHook(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Read", map[string]json.RawMessage{"file_path": json.RawMessage(`"/src/main.go"`)}))
+
+		wantLen(t, tc.events, 2)
+		if !tc.events[1].ToolInvoked {
+			t.Errorf("unrelated PreToolUse toolInvoked = false, want true")
+		}
+	})
+
+	t.Run("the echo guard clears after one PreToolUse", func(t *testing.T) {
+		a, tc := setup(t)
+		input := map[string]json.RawMessage{"command": json.RawMessage(`"git push"`)}
+		a.HandleHook(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "Bash", input))
+		a.HandleHook(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Bash", input)) // approval echo
+		a.HandleHook(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Bash", input)) // genuine repeat
+
+		wantLen(t, tc.events, 3)
+		if tc.events[1].ToolInvoked {
+			t.Errorf("approval echo toolInvoked = true, want false")
+		}
+		if !tc.events[2].ToolInvoked {
+			t.Errorf("repeated identical call toolInvoked = false, want true")
+		}
+	})
+
+	t.Run("non-tool events do not mark ToolInvoked", func(t *testing.T) {
+		a, tc := setup(t)
+		a.HandleHook(hook("UserPromptSubmit", "sess-1", "/tmp/myproject"))
+		a.HandleHook(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Read", nil))
+		a.HandleHook(toolHook("PostToolUse", "sess-1", "/tmp/myproject", "Read", nil))
+		a.HandleHook(hook("Stop", "sess-1", "/tmp/myproject"))
+
+		// PostToolUse dedups away (status unchanged); prompt/stop emit.
+		wantLen(t, tc.events, 3)
+		if tc.events[0].ToolInvoked {
+			t.Errorf("UserPromptSubmit toolInvoked = true, want false")
+		}
+		if tc.events[2].ToolInvoked {
+			t.Errorf("Stop toolInvoked = true, want false")
+		}
+	})
+
 	// --- Stop ---
 
 	t.Run("Stop emits done", func(t *testing.T) {

@@ -176,7 +176,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	if payload.Event == "session_shutdown" {
 		state.status = wire.StatusDone
 		state.lastToolDescription = ""
-		a.emit(threadID, state, session, true)
+		a.emit(threadID, state, session, false, true)
 		delete(a.threads, threadID)
 		return
 	}
@@ -200,15 +200,21 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	hadToolUpdate := newDescription != prevDescription
 	state.lastToolDescription = newDescription
 
+	// tool_execution_start is the start of a NEW call even when its
+	// description matches the previous one — repeated identical calls must
+	// each reach the activity log (agent_end's descSet error label is not
+	// an invocation).
+	toolInvoked := payload.Event == "tool_execution_start"
+
 	// Dedup: suppress emission when nothing meaningful changed. Always emit
-	// for a new thread, for status changes, or when a tool event updates the
-	// visible description.
-	if state.status == newStatus && !isNewThread && !hadToolUpdate {
+	// for a new thread, for status changes, a visible description update, or
+	// a fresh tool invocation.
+	if state.status == newStatus && !isNewThread && !hadToolUpdate && !toolInvoked {
 		return
 	}
 
 	state.status = newStatus
-	a.emit(threadID, state, session, false)
+	a.emit(threadID, state, session, toolInvoked, false)
 }
 
 // descDirective is the tool-description directive attached to an event:
@@ -264,7 +270,7 @@ func resolveEvent(payload wire.HookPayload) (string, descDirective) {
 	}
 }
 
-func (a *Adapter) emit(threadID string, state *threadState, session string, ended bool) {
+func (a *Adapter) emit(threadID string, state *threadState, session string, invoked, ended bool) {
 	if a.ctx == nil {
 		return
 	}
@@ -276,6 +282,7 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, ende
 		ThreadID:        threadID,
 		ThreadName:      state.threadName,
 		ToolDescription: state.lastToolDescription,
+		ToolInvoked:     invoked,
 		PID:             state.pid,
 		Ended:           ended,
 	})
@@ -404,7 +411,7 @@ func (a *Adapter) resolveThreadNameAsync(threadID string, state *threadState) {
 					if cur, ok := a.threads[threadID]; ok && cur == state {
 						state.threadName = threadName
 						if session := ctx.ResolveSession(state.projectDir); session != "" {
-							a.emit(threadID, state, session, false)
+							a.emit(threadID, state, session, false, false)
 						}
 					}
 				})

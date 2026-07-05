@@ -84,10 +84,17 @@ type AgentEvent struct {
 	// MetadataVerb), derived from the tool name by the watcher so renderers
 	// don't regex-guess it back out of the message. Same lifecycle as
 	// ToolDescription.
-	ToolVerb  string `json:"toolVerb,omitempty"`
-	PaneTitle string `json:"paneTitle,omitempty"`
-	Subagent  string `json:"subagent,omitempty"`
-	Ended     bool   `json:"ended,omitempty"`
+	ToolVerb string `json:"toolVerb,omitempty"`
+	// ToolInvoked marks this event as the START of a new tool call, set by
+	// watchers on their tool-start signal (ccwatch: PreToolUse/
+	// PermissionRequest; piwatch: tool_execution_start). The activity log
+	// appends a tool entry only when it is set, so repeated identical calls
+	// each count while echoes of one call (PermissionRequest → approved
+	// PreToolUse, PostToolUse keeping the description) don't double-log.
+	ToolInvoked bool   `json:"toolInvoked,omitempty"`
+	PaneTitle   string `json:"paneTitle,omitempty"`
+	Subagent    string `json:"subagent,omitempty"`
+	Ended       bool   `json:"ended,omitempty"`
 }
 
 // MetadataStatus is shared.ts MetadataStatus (programmatic API).

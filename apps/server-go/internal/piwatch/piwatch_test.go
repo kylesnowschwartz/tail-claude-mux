@@ -316,6 +316,40 @@ func TestPiHookAdapter(t *testing.T) {
 		}
 	})
 
+	t.Run("consecutive identical tool_execution_start events both emit with ToolInvoked", func(t *testing.T) {
+		a, tc := setup(t)
+		a.HandleHook(toolHook("tool_execution_start", "sess-1", "/tmp/myproject", "read",
+			in("path", "/tmp/a.ts")))
+		a.HandleHook(toolHook("tool_execution_start", "sess-1", "/tmp/myproject", "read",
+			in("path", "/tmp/a.ts")))
+
+		wantLen(t, tc.events, 2)
+		for i, ev := range tc.events {
+			if !ev.ToolInvoked {
+				t.Errorf("events[%d].toolInvoked = false, want true", i)
+			}
+		}
+	})
+
+	t.Run("tool_execution_end does not mark ToolInvoked", func(t *testing.T) {
+		a, tc := setup(t)
+		a.HandleHook(toolHook("tool_execution_start", "sess-1", "/tmp/myproject", "bash",
+			in("command", "npm test")))
+		a.HandleHook(hook("agent_start", "sess-2", "/tmp/myproject")) // unrelated thread, breaks nothing
+		p := toolHook("tool_execution_end", "sess-1", "/tmp/myproject", "bash", nil)
+		a.HandleHook(p)
+
+		// start emits (invoked), sess-2 agent_start emits, end dedups away
+		// (running→running, description kept, not an invocation).
+		wantLen(t, tc.events, 2)
+		if !tc.events[0].ToolInvoked {
+			t.Errorf("tool_execution_start toolInvoked = false, want true")
+		}
+		if tc.events[1].ToolInvoked {
+			t.Errorf("agent_start toolInvoked = true, want false")
+		}
+	})
+
 	t.Run("agent_start after tool_execution_start clears toolDescription", func(t *testing.T) {
 		a, tc := setup(t)
 		a.HandleHook(toolHook("tool_execution_start", "sess-1", "/tmp/myproject", "read",

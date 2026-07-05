@@ -43,6 +43,12 @@ export interface AgentEvent {
    *  watcher (which knows it) so renderers don't regex-guess it back out of
    *  the message. Same lifecycle as `toolDescription`. */
   toolVerb?: MetadataVerb;
+  /** Marks this event as the START of a new tool call, set by watchers on
+   *  their tool-start signal. The activity log appends a tool entry only when
+   *  set, so repeated identical calls each count while echoes of one call
+   *  (permission request → approved PreToolUse, PostToolUse keeping the
+   *  description) don't double-log. */
+  toolInvoked?: boolean;
   /** tmux `pane_title` for this agent's pane, captured by the scanner. Claude
    *  Code encodes turn state in its OSC title (braille = working, ✳ = idle);
    *  the watcher's probe uses it to fill the gap when the session file yields

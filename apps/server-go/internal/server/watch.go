@@ -129,10 +129,12 @@ func (s *Server) emitLocked(ev wire.AgentEvent) {
 	s.debouncedBroadcastLocked()
 }
 
-// lastSeen tracks the last thread/tool/status surfaced per thread so the
-// log only records changes (deriveLogEntries' lastSeenByThread).
+// lastSeen tracks the last thread name/status surfaced per thread so the
+// log only records changes (deriveLogEntries' lastSeenByThread). Tool
+// entries are NOT change-keyed: the watcher marks each fresh invocation
+// via AgentEvent.ToolInvoked, so identical back-to-back calls all count.
 type lastSeen struct {
-	tool, thread, status string
+	thread, status string
 }
 
 // agentCode is the two-letter source prefix in ln-zone entries.
@@ -177,7 +179,7 @@ func (s *Server) deriveLogEntriesLocked(ev wire.AgentEvent) []wire.MetadataLogEn
 	if ev.ThreadName != "" && ev.ThreadName != last.thread {
 		out = append(out, wire.MetadataLogEntry{Source: source, Message: ev.ThreadName, Tone: "neutral"})
 	}
-	if ev.ToolDescription != "" && ev.ToolDescription != last.tool {
+	if ev.ToolInvoked && ev.ToolDescription != "" {
 		out = append(out, wire.MetadataLogEntry{Source: source, Message: ev.ToolDescription, Tone: "info", Verb: ev.ToolVerb})
 	}
 	if ev.Status != last.status {
@@ -192,7 +194,6 @@ func (s *Server) deriveLogEntriesLocked(ev wire.AgentEvent) []wire.MetadataLogEn
 	}
 
 	s.lastSeenByThread[ev.ThreadID] = lastSeen{
-		tool:   ev.ToolDescription,
 		thread: ev.ThreadName,
 		status: ev.Status,
 	}

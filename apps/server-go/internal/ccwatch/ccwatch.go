@@ -96,6 +96,10 @@ type threadState struct {
 	// lastToolVerb is the structured verb for lastToolDescription — same
 	// lifecycle.
 	lastToolVerb string
+	// permissionDesc is the description last flagged as a tool invocation by
+	// a PermissionRequest. The approved call's PreToolUse arrives with the
+	// same description and must not count as a second invocation.
+	permissionDesc string
 	// subagent from sessions/<pid>.json `agent`, "" when the parent thread
 	// is in control.
 	subagent string
@@ -200,14 +204,25 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		state.status = newStatus
 		state.lastToolDescription = ""
 		state.lastToolVerb = ""
-		a.emit(threadID, state, session, true)
+		a.emit(threadID, state, session, false, true)
 		delete(a.threads, threadID)
 		return
 	}
 
 	hasToolContext := payload.Event == "PreToolUse" || payload.Event == "PermissionRequest"
+	toolInvoked := false
 	if hasToolContext {
-		state.lastToolDescription = ToolDescription(payload.ToolName, payload.ToolInput)
+		desc := ToolDescription(payload.ToolName, payload.ToolInput)
+		// A PreToolUse matching the pending PermissionRequest description is
+		// the approval echo of ONE call, not a second invocation. Identical
+		// back-to-back PreToolUse events are distinct calls and all count.
+		toolInvoked = !(payload.Event == "PreToolUse" && desc == state.permissionDesc)
+		if payload.Event == "PermissionRequest" {
+			state.permissionDesc = desc
+		} else {
+			state.permissionDesc = ""
+		}
+		state.lastToolDescription = desc
 		state.lastToolVerb = ToolVerb(payload.ToolName)
 	} else if payload.Event != "PostToolUse" {
 		// Clear on non-tool events; PostToolUse keeps the prior description
@@ -223,7 +238,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	}
 
 	state.status = newStatus
-	a.emit(threadID, state, session, false)
+	a.emit(threadID, state, session, toolInvoked, false)
 }
 
 // waiting/idle Notification subtypes (user must act / agent idle at prompt).
@@ -246,7 +261,7 @@ func (a *Adapter) resolveStatus(payload wire.HookPayload) string {
 	return hookStatusMap[payload.Event]
 }
 
-func (a *Adapter) emit(threadID string, state *threadState, session string, ended bool) {
+func (a *Adapter) emit(threadID string, state *threadState, session string, invoked, ended bool) {
 	if a.ctx == nil {
 		return
 	}
@@ -259,6 +274,7 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, ende
 		ThreadName:      state.threadName,
 		ToolDescription: state.lastToolDescription,
 		ToolVerb:        state.lastToolVerb,
+		ToolInvoked:     invoked,
 		PID:             state.pid,
 		Subagent:        state.subagent,
 		Ended:           ended,
@@ -537,7 +553,7 @@ func (a *Adapter) resolveThreadNameAsync(threadID string, state *threadState) {
 					if cur, ok := a.threads[threadID]; ok && cur == state {
 						state.threadName = threadName
 						if session := ctx.ResolveSession(state.projectDir); session != "" {
-							a.emit(threadID, state, session, false)
+							a.emit(threadID, state, session, false, false)
 						}
 					}
 				})
