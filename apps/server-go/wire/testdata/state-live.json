@@ -1,0 +1,833 @@
+{
+  "type": "state",
+  "sessions": [
+    {
+      "name": "ai-engineering-domain",
+      "createdAt": 1781731808,
+      "dir": "/Users/kyle/Code/Envato-non-market/ai-engineering-domain",
+      "branch": "",
+      "dirty": false,
+      "isWorktree": false,
+      "unseen": false,
+      "panes": 6,
+      "windows": 3,
+      "uptime": "17d9h",
+      "agentState": {
+        "agent": "claude-code",
+        "session": "ai-engineering-domain",
+        "status": "done",
+        "ts": 1783069952970,
+        "threadId": "93001ef7-cd2d-4b12-83cf-643105a489cc",
+        "pid": 62182,
+        "paneId": "%323",
+        "liveness": "alive",
+        "windowIndex": 3,
+        "paneIndex": 2,
+        "paneTitle": "✳ ai-engineering-team · main",
+        "firstSeenTs": 1783056729140
+      },
+      "agents": [
+        {
+          "agent": "claude-code",
+          "session": "ai-engineering-domain",
+          "status": "done",
+          "ts": 1783047878697,
+          "threadId": "4b3d2d6b-c7ce-4312-b660-42c0774e30d4",
+          "threadName": "ai-engineering-domain",
+          "pid": 12839,
+          "paneId": "%278",
+          "liveness": "alive",
+          "windowIndex": 1,
+          "paneIndex": 2,
+          "paneTitle": "✳ ai-engineering-domain",
+          "firstSeenTs": 1782774909063
+        },
+        {
+          "agent": "claude-code",
+          "session": "ai-engineering-domain",
+          "status": "done",
+          "ts": 1783061268396,
+          "threadId": "87d1222c-85c7-4ede-ad93-f1f18cad97f9",
+          "pid": 97160,
+          "paneId": "%281",
+          "liveness": "alive",
+          "windowIndex": 2,
+          "paneIndex": 2,
+          "paneTitle": "✳ ai-engineering-domain",
+          "firstSeenTs": 1783048824031
+        },
+        {
+          "agent": "claude-code",
+          "session": "ai-engineering-domain",
+          "status": "done",
+          "ts": 1783069952970,
+          "threadId": "93001ef7-cd2d-4b12-83cf-643105a489cc",
+          "pid": 62182,
+          "paneId": "%323",
+          "liveness": "alive",
+          "windowIndex": 3,
+          "paneIndex": 2,
+          "paneTitle": "✳ ai-engineering-team · main",
+          "firstSeenTs": 1783056729140
+        }
+      ],
+      "eventTimestamps": [
+        1783060653644,
+        1783060660048,
+        1783060861335,
+        1783060879372,
+        1783060934348,
+        1783060942451,
+        1783060954681,
+        1783060964086,
+        1783060972439,
+        1783060980375,
+        1783060991900,
+        1783061011251,
+        1783061037658,
+        1783061051787,
+        1783061070452,
+        1783061230406,
+        1783061268396,
+        1783069941513,
+        1783069952970,
+        1783070057209,
+        1783070109046,
+        1783070114009,
+        1783070117044,
+        1783070128935,
+        1783070129334,
+        1783070145418,
+        1783070145844,
+        1783070165134,
+        1783119016116,
+        1783119019674
+      ],
+      "metadata": {
+        "status": null,
+        "progress": null,
+        "logs": [
+          {
+            "message": "Running rg -n 'journal/dependabot-con…",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783059406933
+          },
+          {
+            "message": "Running sed -i '' 's|/Users/kyle/Code…",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783059415259
+          },
+          {
+            "message": "Running rg -in 'ghp_[A-Za-z0-9]{20,}|…",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783059429028
+          },
+          {
+            "message": "Running cd /Users/kyle/Code/Envato-no…",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783059442502
+          },
+          {
+            "message": "Reading project_dependabot-consolidation.md",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783059576054
+          },
+          {
+            "message": "Running sed -n '420,426p' /Users/kyle…",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783059586610
+          },
+          {
+            "message": "Running cd /Users/kyle/Code/Envato-no…",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783059590003
+          },
+          {
+            "message": "Editing project_dependabot-consolidation.md",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783059610261
+          },
+          {
+            "message": "Reading MEMORY.md",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783059634874
+          },
+          {
+            "message": "Editing MEMORY.md",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783059644788
+          },
+          {
+            "message": "Running cd /Users/kyle/Code/Envato-no…",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783059654394
+          },
+          {
+            "message": "Running git -C /Users/kyle/Code/Envat…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783059879113
+          },
+          {
+            "message": "Running ls /Users/kyle/Code/Envato-no…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783059880662
+          },
+          {
+            "message": "Running gh run list --repo envato/ai-…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783059890437
+          },
+          {
+            "message": "Running ls /Users/kyle/Code/Envato-no…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783059909832
+          },
+          {
+            "message": "Running ruby -rjson -e 'm=JSON.parse(…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783059918295
+          },
+          {
+            "message": "Running rg -n \"manifest\" /Users/kyle/…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783059933098
+          },
+          {
+            "message": "Running rg -n \"files/\" /Users/kyle/Co…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783059968849
+          },
+          {
+            "message": "Reading index.html",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783059977363
+          },
+          {
+            "message": "Running rg -n \"fileUrl|iframe|img \" /…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060005635
+          },
+          {
+            "message": "Reading index.html",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060015394
+          },
+          {
+            "message": "Editing index.html",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060024337
+          },
+          {
+            "message": "Running ruby tools/journal-viewer/bui…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060037885
+          },
+          {
+            "message": "Running git -C /Users/kyle/Code/Envat…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060049173
+          },
+          {
+            "message": "Reading index.html",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060119178
+          },
+          {
+            "message": "Editing index.html",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060151893
+          },
+          {
+            "message": "Running ruby tools/journal-viewer/bui…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060184175
+          },
+          {
+            "message": "Running playwright-cli open 'http://1…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060195432
+          },
+          {
+            "message": "Reading drill-overview.png",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060207101
+          },
+          {
+            "message": "Running playwright-cli goto 'http://1…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060219680
+          },
+          {
+            "message": "Reading html-wide.png",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060230629
+          },
+          {
+            "message": "Running playwright-cli close; rm -f d…",
+            "tone": "info",
+            "source": "cc 89cc",
+            "ts": 1783060241205
+          },
+          {
+            "message": "Running cd /Users/kyle/Code/Envato-no…",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783060612061
+          },
+          {
+            "message": "Reading README.md",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783060617860
+          },
+          {
+            "message": "Reading dependabot-consolidation-onepager.html",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783060618426
+          },
+          {
+            "message": "Reading 10-staging-and-onboarding.md",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783060644979
+          },
+          {
+            "message": "Reading 11-harvest-order.md",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783060645751
+          },
+          {
+            "message": "Running cd /Users/kyle/Code/Envato-no…",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783060653645
+          },
+          {
+            "message": "Reading dependabot-consolidation-walkthrough.html",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783060660049
+          },
+          {
+            "message": "Running cd /Users/kyle/Code/Envato-no…",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783060861335
+          },
+          {
+            "message": "Editing dependabot-consolidation-onepager.html",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783060879372
+          },
+          {
+            "message": "Editing README.md",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783060954681
+          },
+          {
+            "message": "Running cd /Users/kyle/Code/Envato-no…",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783060980375
+          },
+          {
+            "message": "Editing project_dependabot-consolidation.md",
+            "tone": "info",
+            "source": "cc 97f9",
+            "ts": 1783061051787
+          },
+          {
+            "message": "ToolSearch",
+            "tone": "info",
+            "source": "cc ab11",
+            "ts": 1783070114009
+          },
+          {
+            "message": "Fetching URL",
+            "tone": "info",
+            "source": "cc ab11",
+            "ts": 1783070117044
+          },
+          {
+            "message": "Search: Claude Code beginner tutorial…",
+            "tone": "info",
+            "source": "cc ab11",
+            "ts": 1783070128935
+          },
+          {
+            "message": "Search: best resources learn to code …",
+            "tone": "info",
+            "source": "cc ab11",
+            "ts": 1783070129334
+          },
+          {
+            "message": "Fetching URL",
+            "tone": "info",
+            "source": "cc ab11",
+            "ts": 1783070145418
+          },
+          {
+            "message": "Search: DeepLearning.AI course \"vibe …",
+            "tone": "info",
+            "source": "cc ab11",
+            "ts": 1783070145844
+          }
+        ]
+      }
+    },
+    {
+      "name": "my-projects",
+      "createdAt": 1780800652,
+      "dir": "/Users/kyle/Code/my-projects/gearshifter",
+      "branch": "refactor/m5-frame-dedup",
+      "dirty": true,
+      "isWorktree": false,
+      "unseen": false,
+      "panes": 4,
+      "windows": 2,
+      "uptime": "28d3h",
+      "agentState": {
+        "agent": "claude-code",
+        "session": "my-projects",
+        "status": "idle",
+        "ts": 1783228569316,
+        "paneId": "%538",
+        "liveness": "alive",
+        "windowIndex": 1,
+        "paneIndex": 2,
+        "pid": 89904,
+        "paneTitle": "⠂ gearshifter · main"
+      },
+      "agents": [
+        {
+          "agent": "claude-code",
+          "session": "my-projects",
+          "status": "idle",
+          "ts": 1783228569316,
+          "paneId": "%538",
+          "liveness": "alive",
+          "windowIndex": 1,
+          "paneIndex": 2,
+          "pid": 89904,
+          "paneTitle": "⠂ gearshifter · main"
+        },
+        {
+          "agent": "claude-code",
+          "session": "my-projects",
+          "status": "idle",
+          "ts": 1783227620797,
+          "paneId": "%478",
+          "liveness": "alive",
+          "windowIndex": 2,
+          "paneIndex": 2,
+          "pid": 81282,
+          "paneTitle": "⠐ agent-ouija · main"
+        }
+      ],
+      "eventTimestamps": [
+        1783216151620,
+        1783216153848,
+        1783216159796,
+        1783216161037,
+        1783216166630,
+        1783216173954,
+        1783216179401,
+        1783216188366,
+        1783216190785,
+        1783216203533,
+        1783216212416,
+        1783216234589,
+        1783216285655,
+        1783216299074,
+        1783216300318,
+        1783216306495,
+        1783216313791,
+        1783216326148,
+        1783216341524,
+        1783216356562,
+        1783216365175,
+        1783216365218,
+        1783216369204,
+        1783216428329,
+        1783216433309,
+        1783216465413,
+        1783216476279,
+        1783216480056,
+        1783216508585,
+        1783216512757
+      ],
+      "metadata": {
+        "status": null,
+        "progress": null,
+        "logs": [
+          {
+            "message": "Reading export_test.go",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216066674
+          },
+          {
+            "message": "Reading whimsical-hopping-spark.md",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216067236
+          },
+          {
+            "message": "Running rg -n \"parseTimestamp|isAgent…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216068266
+          },
+          {
+            "message": "Running ls /Users/kyle/Code/my-projec…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216068615
+          },
+          {
+            "message": "StructuredOutput",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216071275
+          },
+          {
+            "message": "Reading whimsical-hopping-spark.md",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216072257
+          },
+          {
+            "message": "Running git -C /Users/kyle/Code/my-pr…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216073343
+          },
+          {
+            "message": "Running rg -n \"testdata\" /Users/kyle/…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216074454
+          },
+          {
+            "message": "Reading whimsical-hopping-spark.md",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216076273
+          },
+          {
+            "message": "Reading project.go",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216077441
+          },
+          {
+            "message": "Running ls /Users/kyle/Code/my-projec…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216077936
+          },
+          {
+            "message": "Reading session.go",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216078316
+          },
+          {
+            "message": "StructuredOutput",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216081273
+          },
+          {
+            "message": "Running git -C /Users/kyle/Code/my-pr…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216081492
+          },
+          {
+            "message": "StructuredOutput",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216084167
+          },
+          {
+            "message": "Running cd /Users/kyle/Code/my-projec…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216084689
+          },
+          {
+            "message": "Running git -C /Users/kyle/Code/my-pr…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216085168
+          },
+          {
+            "message": "Reading whimsical-hopping-spark.md",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216086411
+          },
+          {
+            "message": "Reading CLAUDE.md",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216087118
+          },
+          {
+            "message": "StructuredOutput",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216089510
+          },
+          {
+            "message": "Running git -C /Users/kyle/Code/my-pr…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216090619
+          },
+          {
+            "message": "Running cd /Users/kyle/Code/my-projec…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216094283
+          },
+          {
+            "message": "Running for b in worktree-staged-snug…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216098705
+          },
+          {
+            "message": "StructuredOutput",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216103387
+          },
+          {
+            "message": "Running ls /Users/kyle/Code/my-projec…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216109144
+          },
+          {
+            "message": "Running rg -n \"CLAUDE\" /Users/kyle/.c…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216109762
+          },
+          {
+            "message": "Running cd /Users/kyle/Code/my-projec…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216113159
+          },
+          {
+            "message": "Running git -C /Users/kyle/Code/my-pr…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216113382
+          },
+          {
+            "message": "StructuredOutput",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216114079
+          },
+          {
+            "message": "Running git -C /Users/kyle/Code/my-pr…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216145691
+          },
+          {
+            "message": "Running cd /Users/kyle/Code/my-projec…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216151620
+          },
+          {
+            "message": "Writing code-decomposition-preferences.md",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216153848
+          },
+          {
+            "message": "Reading MEMORY.md",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216159796
+          },
+          {
+            "message": "Running git -C /Users/kyle/Code/my-pr…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216161037
+          },
+          {
+            "message": "Editing MEMORY.md",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216166630
+          },
+          {
+            "message": "Reading ARCHITECTURE.md",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216173954
+          },
+          {
+            "message": "StructuredOutput",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216179401
+          },
+          {
+            "message": "Reading M3-DECK.md",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216190785
+          },
+          {
+            "message": "Running cd /private/tmp/claude-502/-U…",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216203533
+          },
+          {
+            "message": "Editing whimsical-hopping-spark.md",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216285655
+          },
+          {
+            "message": "Reading go.mod",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216300318
+          },
+          {
+            "message": "Running go get github.com/pelletier/g…",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216306495
+          },
+          {
+            "message": "ExitPlanMode",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216365175
+          },
+          {
+            "message": "awaiting input",
+            "tone": "info",
+            "source": "cc b534",
+            "ts": 1783216365218
+          },
+          {
+            "message": "Editing layout.go",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216428329
+          },
+          {
+            "message": "Running go test ./internal/app/ ./int…",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216433309
+          },
+          {
+            "message": "Writing toml.go",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216465413
+          },
+          {
+            "message": "Editing toml.go",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216476279
+          },
+          {
+            "message": "Writing toml_test.go",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216508585
+          },
+          {
+            "message": "Running go test ./internal/layout/ -c…",
+            "tone": "info",
+            "source": "cc 2de2",
+            "ts": 1783216512757
+          }
+        ]
+      }
+    }
+  ],
+  "focusedSession": "my-projects",
+  "currentSession": "my-projects",
+  "theme": {
+    "name": "cobalt-next-neon-v2",
+    "variant": "dark",
+    "palette": {
+      "blue": "#3ba5ff",
+      "lavender": "#cf8de8",
+      "pink": "#cf8de8",
+      "mauve": "#cf8de8",
+      "yellow": "#e9e75c",
+      "green": "#8ff586",
+      "red": "#ff6b6b",
+      "peach": "#e9e75c",
+      "teal": "#5fced8",
+      "sky": "#5fced8",
+      "text": "#8ff586",
+      "subtext0": "#6a8098",
+      "subtext1": "#6a8098",
+      "overlay0": "#6a8098",
+      "overlay1": "#6a8098",
+      "surface0": "#094fb1",
+      "surface1": "#094fb1",
+      "surface2": "#6a8098",
+      "base": "#142838",
+      "mantle": "#142838",
+      "crust": "#142838"
+    }
+  },
+  "sidebarWidth": 33,
+  "ts": 1783234002992
+}
