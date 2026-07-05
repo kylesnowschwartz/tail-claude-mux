@@ -8,9 +8,7 @@
     "build": "turbo build",
     "test": "turbo test",
     "dev": "turbo dev",
-    "start:server": "bun run apps/server/src/main.ts",
     "start:tui": "cd apps/tui && bun run start",
-    "dev:server": "cd apps/server && bun run dev",
     "dev:tui": "cd apps/tui && bun run dev"
   },
   "devDependencies": {

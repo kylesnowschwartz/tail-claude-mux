@@ -18,6 +18,5 @@ if [[ -f /tmp/tcm.pid ]]; then
   kill "$(cat /tmp/tcm.pid)" 2>/dev/null || true
   rm -f /tmp/tcm.pid
 fi
-pkill -f "bun.*apps/server/src/main.ts" 2>/dev/null || true
 
 echo "==> Stopped."

@@ -12,35 +12,22 @@ async function isPortOpen(host: string, port: number, timeoutMs = 200): Promise<
   });
 }
 
-function resolveServerEntryPath(): string {
-  const envDir = process.env.TCM_DIR;
-  if (envDir) {
-    const fromEnv = join(envDir, "apps", "server", "src", "main.ts");
-    if (existsSync(fromEnv)) return fromEnv;
+/** Resolve the Go server binary (apps/server-go, built to bin/tcm-server by
+ *  restart.sh). The bun server is retired — there is no fallback; a missing
+ *  binary is a build error to surface, not to paper over. */
+function resolveServerBin(): string {
+  const candidates = [
+    process.env.TCM_DIR
+      ? join(process.env.TCM_DIR, "apps", "server-go", "bin", "tcm-server")
+      : "",
+    new URL("../../../../apps/server-go/bin/tcm-server", import.meta.url).pathname,
+  ];
+  for (const bin of candidates) {
+    if (bin && existsSync(bin)) return bin;
   }
-
-  const fromWorkspace = new URL("../../../../apps/server/src/main.ts", import.meta.url).pathname;
-  if (existsSync(fromWorkspace)) return fromWorkspace;
-
-  return fromWorkspace;
-}
-
-/** Resolve the server spawn command. The Go server (apps/server-go, built
- *  to bin/tcm-server by restart.sh) is the default when its binary exists;
- *  TCM_SERVER=bun is the kill-switch back to the bun implementation. */
-function resolveServerCmd(): string[] {
-  if (process.env.TCM_SERVER !== "bun") {
-    const goCandidates = [
-      process.env.TCM_DIR
-        ? join(process.env.TCM_DIR, "apps", "server-go", "bin", "tcm-server")
-        : "",
-      new URL("../../../../apps/server-go/bin/tcm-server", import.meta.url).pathname,
-    ];
-    for (const bin of goCandidates) {
-      if (bin && existsSync(bin)) return [bin];
-    }
-  }
-  return [process.execPath, "run", resolveServerEntryPath()];
+  throw new Error(
+    "tcm-server binary not found — build it with: cd apps/server-go && go build -o bin/tcm-server ./cmd/tcm-server (or run scripts/restart.sh)",
+  );
 }
 
 export async function ensureServer(): Promise<void> {
@@ -48,7 +35,7 @@ export async function ensureServer(): Promise<void> {
   // spawn gate (a hand-started A/B server may not have written one).
   if (await isPortOpen(SERVER_HOST, SERVER_PORT)) return;
 
-  const proc = Bun.spawn(resolveServerCmd(), {
+  const proc = Bun.spawn([resolveServerBin()], {
     stdio: ["ignore", "ignore", "ignore"],
     env: { ...process.env },
   });

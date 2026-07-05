@@ -7,9 +7,6 @@
   "scripts": {
     "test": "bun test"
   },
-  "dependencies": {
-    "@tcm/mux": "workspace:*"
-  },
   "devDependencies": {
     "@tcm/mux-tmux": "workspace:*",
     "@types/bun": "latest",

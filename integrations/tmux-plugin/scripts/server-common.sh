@@ -5,8 +5,7 @@ HOST="${TCM_HOST:-127.0.0.1}"
 
 PLUGIN_DIR="$(tmux show-environment -g TCM_DIR 2>/dev/null | cut -d= -f2)"
 PLUGIN_DIR="${PLUGIN_DIR:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
-BUN_PATH="${BUN_PATH:-$(command -v bun 2>/dev/null || echo "$HOME/.bun/bin/bun")}"
-SERVER_ENTRY="$PLUGIN_DIR/apps/server/src/main.ts"
+SERVER_BIN="$PLUGIN_DIR/apps/server-go/bin/tcm-server"
 
 server_alive() {
   curl -s -o /dev/null -m 0.2 "http://${HOST}:${PORT}/" 2>/dev/null
@@ -17,7 +16,11 @@ ensure_server() {
     return 0
   fi
 
-  "$BUN_PATH" run "$SERVER_ENTRY" >/dev/null 2>&1 &
+  # The Go binary is the only backend (bun server retired). A missing
+  # binary is a build error — scripts/restart.sh builds it.
+  [ -x "$SERVER_BIN" ] || return 1
+
+  "$SERVER_BIN" >>/tmp/tcm-server-go.log 2>&1 &
 
   attempt=0
   while [ "$attempt" -lt 30 ]; do

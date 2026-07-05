@@ -1,14 +1,13 @@
 // tcm-server is the Go tcm backend (see .agent-history/SCOPING-go-backend.md
 // at the repo root).
 //
-// Cutover contract with the bun tooling: the launcher and restart.sh treat
-// this binary as a drop-in for `bun run apps/server/src/main.ts` — it binds
-// the same port, writes the same /tmp/tcm.pid after a successful bind, and
-// answers POST /restart by re-exec'ing itself in place (same pid, so the
-// pid file stays true; sockets are CLOEXEC so the port frees for the fresh
-// image).
+// Tooling contract: the TUI launcher, restart.sh, and the tmux plugin all
+// spawn this binary directly — it binds the tcm port, writes /tmp/tcm.pid
+// after a successful bind, and answers POST /restart by re-exec'ing itself
+// in place (same pid, so the pid file stays true; sockets are CLOEXEC so
+// the port frees for the fresh image).
 //
-// A/B usage against the live bun server:
+// A/B usage against a live instance:
 //
 //	go run ./cmd/tcm-server -port 7392
 //	curl -s localhost:7392/state | jq .sessions[].name

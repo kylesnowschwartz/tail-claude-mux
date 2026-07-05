@@ -5,7 +5,7 @@
 # Install:
 #   1. Add to .tmux.conf:  set -g @plugin 'kylesnowschwartz/tail-claude-mux'
 #   2. Press prefix + I to install
-#   3. Requires: bun (https://bun.sh)
+#   3. Requires: bun (https://bun.sh) for the TUI, go for the server
 #
 # Default keybindings:
 #   prefix + o → s   — reveal and focus sidebar
@@ -61,28 +61,28 @@ bind_global_index_keys() {
 tmux set-environment -g TCM_DIR "$CURRENT_DIR"
 tmux set-environment -g TCM_WIDTH "$WIDTH"
 
-# --- Bootstrap: tie bun-server lifetime to tmux-server lifetime (1:1) ---
+# --- Bootstrap: tie tcm-server lifetime to tmux-server lifetime (1:1) ---
 #
-# Why unconditional: the bun server holds in-memory caches (palette diff,
-# sidebar visibility, sessionProviders map) that are only valid for the tmux
+# Why unconditional: the server holds in-memory caches (palette diff,
+# sidebar visibility, metadata store) that are only valid for the tmux
 # server it bootstrapped against. After `tmux kill-server`, those caches
 # diverge from the new tmux server's empty option store — hooks gone, palette
-# tokens gone — and the long-lived bun process refuses to re-emit because its
-# diff cache says "already wrote that". Killing on every TPM init guarantees
-# the bun server boots fresh whenever tmux does, mirroring the catppuccin/tmux
-# pattern where TPM init = source of truth.
+# tokens gone — and the long-lived server process refuses to re-emit because
+# its diff cache says "already wrote that". Killing on every TPM init
+# guarantees the server boots fresh whenever tmux does, mirroring the
+# catppuccin/tmux pattern where TPM init = source of truth.
 #
 # Persistent state worth keeping (theme, sidebar width, session order, agent
 # metadata) lives on disk under ~/.config/tcm/*.json and rehydrates on the
 # fresh boot — only ephemeral in-memory caches are lost.
-# Verify the PID file actually points at our bun server before killing.
+# Verify the PID file actually points at our server before killing.
 # /tmp is per-boot on macOS, but Linux keeps it around — a stale PID file
 # from a previous crash could now point at someone else's process whose PID
-# was reused. Match against the server entry path so we only kill our own.
-SERVER_ENTRY="$CURRENT_DIR/apps/server/src/main.ts"
+# was reused. Match against the binary path so we only kill our own.
+SERVER_BIN="$CURRENT_DIR/apps/server-go/bin/tcm-server"
 if [ -f /tmp/tcm.pid ]; then
   OLD_PID="$(cat /tmp/tcm.pid 2>/dev/null)"
-  if [ -n "$OLD_PID" ] && ps -p "$OLD_PID" -o command= 2>/dev/null | grep -qF "$SERVER_ENTRY"; then
+  if [ -n "$OLD_PID" ] && ps -p "$OLD_PID" -o command= 2>/dev/null | grep -qF "$SERVER_BIN"; then
     kill "$OLD_PID" 2>/dev/null || true
     # Wait up to 1s for the kill to actually release port 7391. `kill` is
     # async; without this wait the OLD process is still answering on the
@@ -108,13 +108,13 @@ if [ ! -d "$CURRENT_DIR/node_modules" ]; then
 fi
 
 # --- Bootstrap: install tmux hooks declaratively (catppuccin pattern) ---
-# Hooks are static curl POSTs; they don't need the bun server to be alive at
-# install time — curl fails-soft until the server boots. Installing them here
-# (rather than from the bun server's setupHooks()) removes the "tmux ready /
-# bun not booted" race that used to leave new tmux servers without hooks.
+# Hooks are static curl POSTs; they don't need the server to be alive at
+# install time — curl fails-soft until the server boots. Installing them
+# here removes the "tmux ready / server not booted" race that used to leave
+# new tmux servers without hooks.
 sh "$SCRIPTS_DIR/install-hooks.sh" >/dev/null 2>&1 || true
 
-# --- Bootstrap: spawn the bun server in the background ---
+# --- Bootstrap: spawn the Go server in the background ---
 # Spawn directly rather than going through ensure_server's alive-check.
 # We just killed the previous server above, but its port may not be released
 # until the kernel finishes the FIN/CLOSE_WAIT cycle (a few ms after the
@@ -122,9 +122,13 @@ sh "$SCRIPTS_DIR/install-hooks.sh" >/dev/null 2>&1 || true
 # response and decline to spawn, which is wrong here — we KNOW we want a
 # fresh server. Other call sites (focus.sh, toggle.sh) keep using
 # ensure_server because they don't know whether one is running.
-BUN_PATH="$(command -v bun 2>/dev/null || echo "$HOME/.bun/bin/bun")"
-if [ -x "$BUN_PATH" ] && [ -f "$SERVER_ENTRY" ]; then
-  "$BUN_PATH" run "$SERVER_ENTRY" >/dev/null 2>&1 &
+# Missing binary: build it first if a Go toolchain is available (fresh TPM
+# install), spawning once the build lands; otherwise scripts/restart.sh is
+# the manual path.
+if [ -x "$SERVER_BIN" ]; then
+  "$SERVER_BIN" >>/tmp/tcm-server-go.log 2>&1 &
+elif command -v go >/dev/null 2>&1; then
+  (cd "$CURRENT_DIR/apps/server-go" && go build -o bin/tcm-server ./cmd/tcm-server 2>>/tmp/tcm-install.log && exec "$SERVER_BIN" >>/tmp/tcm-server-go.log 2>&1) &
 fi
 
 # --- Bind tmux shortcuts ---
