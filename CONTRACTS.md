@@ -1,270 +1,114 @@
-# Contracts And Extension Interfaces
+# Contracts
 
-This document is the reference for extending tcm. It describes the agent event model, watcher interfaces, mux provider capabilities, and the runtime behaviors extension authors need to match.
+The behavioral contract for tcm's backend (`apps/server-go`): what an
+integration, watcher, or port must match. Wire types are NOT restated
+here — the normative definitions live in code, kept in lockstep by the
+golden fixtures in the Go suite:
 
-For end-user setup, start with the docs linked from [README.md](./README.md).
+- `packages/runtime/src/shared.ts` — server↔TUI WebSocket messages
+  (`ServerMessage`, `ClientCommand`) and session metadata shapes.
+- `apps/server-go/wire` — the same contract on the Go side, plus
+  `AgentEvent`.
+- `packages/runtime/src/contracts/agent.ts` — the TUI's view of
+  `AgentEvent` and `AgentStatus`.
+
+For end-user setup, start with the docs linked from
+[README.md](./README.md).
+
+## Hook Transport
+
+`POST /hook` (default `127.0.0.1:7391`) is the single ingestion
+endpoint. Adapters claim payloads by the optional `agent` discriminator:
+
+- `agent` missing or `"claude-code"` → Claude Code adapter.
+- `agent: "pi"` → pi adapter.
+- Other values are ignored.
+
+Every hook POST is fire-and-forget: a failure must never block the
+agent that fired it.
 
 ## Built-In Watchers
 
-tcm registers two built-in watchers at server startup: Claude Code
-and pi. Both share the single `POST /hook` endpoint and are distinguished
-by an optional `agent` field on the payload.
-
-### Shared Hook Transport
-
-`POST /hook` delivers a `HookPayload` to every registered `HookReceiver`.
-Adapters filter on the `agent` discriminator:
-
-- `agent` missing or `"claude-code"` → handled by `ClaudeCodeHookAdapter`.
-- `agent: "pi"` → handled by `PiHookAdapter`.
-- Other values are ignored by both built-in adapters.
-
-A single hook body can in principle be observed by multiple watchers, but
-built-in adapters claim payloads exclusively via the discriminator.
-
 ### Claude Code (Hook-Based)
 
-- Receives lifecycle hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `Stop`, `StopFailure`, `Notification`, `SessionEnd`) via `POST /hook`.
-- Claude Code pushes events through `scripts/hook.sh`, registered in `~/.claude/settings.json`.
-- Maps hooks to status: `SessionStart` → `idle`, `UserPromptSubmit`/`PreToolUse`/`PostToolUse` → `running`, `PermissionRequest` → `waiting`, `Stop`/`SessionEnd` → `done`, `StopFailure` → `error` (a turn killed by an API error — rate limit, server error, max output tokens — fires `StopFailure`, not `Stop`; without it the row would stay stuck on `running`).
-- Routes hooks by pid, not cwd: resolves the long-lived `claude` pid from the hook's `process_snapshot` (ancestor walk), then `resolveSessionByPid`. Falls back to `resolveSession(cwd)` only when no pid is resolvable; drops the event if pid resolves but the pane lookup fails (no silent cwd fallback). Mirrors the pi adapter.
-- `Notification` branches on `notification_type`: `permission_prompt` → `waiting`, `idle_prompt` → `done`, others ignored.
-- `PreToolUse` and `PermissionRequest` extract `tool_name` + `tool_input` to generate human-readable descriptions (e.g. "Reading config.ts", "Running git status") emitted as `AgentEvent.toolDescription`.
-- `SessionEnd` cleans up thread state for immediate cleanup instead of waiting for pane scanner pruning.
-- On cold start, performs a one-time seed scan of `~/.claude/projects/` JSONL files to bootstrap state for sessions already running. The seed resolves each thread's pid from `~/.claude/sessions/` and routes by pid (same channel as live hooks, falling back to cwd), so a seeded entry shares the live hook's session key and carries a pid the liveness sweep and reconcile pass can act on.
-- On first hook for an unknown session, reads the JSONL file once to resolve the thread name.
-- Implements `probeLiveStatus(pid, threadId)` for the tracker's reconcile pass (see Tracker Semantics): reads `~/.claude/sessions/<pid>.json` and returns `working` (status `busy` + fresh `updatedAt`), `ended` (status `idle`/`waiting`, a `busy` turn stale past 30 min, or pid reused for another session), or `null` (file absent / no `status`, e.g. `sdk-cli`). An `ended` verdict also drops the cached thread so a resumed session re-emits cleanly.
-- No proactive polling or `fs.watch` after startup. The only on-demand reads are the one-time thread-name resolve and `probeLiveStatus`, which the tracker calls solely for a stale-running entry — not a steady-state poll.
-
-#### Claude Code Hook Setup
-
-Run `bun run scripts/setup-hooks.ts` to register hooks in `~/.claude/settings.json`. The setup is idempotent.
+- `scripts/hook.sh <Event>` is registered in `~/.claude/settings.json`
+  for `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
+  `PermissionRequest`, `PostToolUse`, `Stop`, `StopFailure`,
+  `Notification`, `SessionEnd`. It injects `event`, `pid`, and
+  `process_snapshot` into the hook's stdin JSON and POSTs it.
+  Register with `tcm-server -register-hooks` (idempotent; entries are
+  async so hooks never block a turn).
+- Status mapping: `SessionStart` → `idle`;
+  `UserPromptSubmit`/`PreToolUse`/`PostToolUse` → `running`;
+  `PermissionRequest` → `waiting`; `Stop`/`SessionEnd` → `done`;
+  `StopFailure` → `error` (a turn killed by an API error fires
+  `StopFailure`, not `Stop` — without it the row sticks on `running`).
+  `Notification` branches on `notification_type`: `permission_prompt` →
+  `waiting`, `idle_prompt` → `done`, others ignored.
+- Routing is pid-first: resolve the long-lived `claude` pid from
+  `process_snapshot` (ancestor walk against the tmux pane table), then
+  pid → session. If the pid resolves but no pane matches, the event is
+  dropped — no silent cwd fallback. cwd resolution is used only when no
+  pid is available (cold-start seed).
+- Cold start seeds from `~/.claude/projects/` JSONL plus
+  `~/.claude/sessions/` pids, through the same pid-first channel as
+  live hooks.
+- `probeLiveStatus(pid, threadId)` reads `~/.claude/sessions/<pid>.json`
+  for the tracker's reconcile pass: `working` (status `busy`, fresh
+  `updatedAt`), `ended` (status `idle`/`waiting`, stale `busy`, or pid
+  reused), or `null` (file absent / no status). `ended` also drops the
+  cached thread so a resumed session re-emits cleanly.
+- No polling or file watching after startup.
 
 ### Pi (Hook-Based)
 
-- Receives pi-native snake_case events (`session_start`, `agent_start`, `agent_end`, `tool_execution_start`, `tool_execution_end`, `session_shutdown`) via `POST /hook` with `agent: "pi"` on the payload.
-- A pi extension (`integrations/pi-extension/`) subscribes to pi's lifecycle events and POSTs to `http://127.0.0.1:${TCM_PORT:-7391}/hook`. Every POST is fire-and-forget with a 2s request timeout so hook failures never block the agent.
-- Status mapping:
-  - `session_start` → `idle` (optional `session_name` becomes `threadName`).
-  - `agent_start` → `running`, clears `toolDescription`.
-  - `tool_execution_start` → `running` with a description like `Reading foo.ts` / `Running git status`.
-  - `tool_execution_end` → `running`; tool-level errors (`tool_is_error: true`) are surfaced in logs but do not change status. The LLM routinely recovers from tool failures.
-  - `agent_end` with `stop_reason: "stop" | "length" | "toolUse"` → `done`; `"aborted"` → `interrupted`; `"error"` → `error` with the truncated `error_message` as `toolDescription`.
-  - `session_shutdown` → emits `done` with `ended: true` and drops thread state immediately so the tracker does not hold the instance through the terminal-prune window.
-- `threadId` is pi's session UUID (`ctx.sessionManager.getSessionId()`), so multiple concurrent pi instances in the same mux session render as separate sidebar rows.
-- On cold start, scans `~/.pi/agent/sessions/` for files modified within the last 5 minutes and reads `SessionHeader.cwd` from each to avoid pi's lossy directory-name encoding. Hooks always win if a thread is known from both sources.
-- Does not yet implement `probeLiveStatus`, so a stale pi `running` entry relies on the tracker's 30-minute prune ceiling rather than authoritative reconciliation. Follow-up: add a probe against `~/.pi/agent/sessions/`.
-
-#### Pi Extension Setup
-
-Run `bun run scripts/setup-pi-extension.ts` to symlink `integrations/pi-extension/` into `~/.pi/agent/extensions/tcm`. The setup is idempotent. See [`integrations/pi-extension/README.md`](./integrations/pi-extension/README.md) for details.
+- The pi extension (`integrations/pi-extension/`, installed by
+  `bun run scripts/setup-pi-extension.ts`) POSTs pi's snake_case
+  lifecycle events with `agent: "pi"` and a 2s timeout.
+- Status mapping: `session_start` → `idle` (optional `session_name`
+  becomes `threadName`); `agent_start` → `running`;
+  `tool_execution_start` → `running` with a tool description;
+  `tool_execution_end` → `running` (tool-level errors don't change
+  status — the LLM routinely recovers); `agent_end` → `done`, or
+  `interrupted` (`stop_reason: "aborted"`), or `error` with the
+  truncated message; `session_shutdown` → `done` with `ended: true`
+  and immediate thread-state drop.
+- `threadId` is pi's session UUID, so concurrent pi instances in one
+  mux session render as separate rows.
+- Cold start scans `~/.pi/agent/sessions/` files modified in the last
+  5 minutes, reading `SessionHeader.cwd` (pi's directory-name encoding
+  is lossy). Hooks win over the seed.
+- No `probeLiveStatus` yet: a stale pi `running` entry rides the
+  tracker's 30-minute ceiling. Follow-up: probe against
+  `~/.pi/agent/sessions/`.
 
 ## Agent Model
 
-### `AgentStatus`
-
-```ts
-type AgentStatus =
-  | "idle"
-  | "running"
-  | "done"
-  | "error"
-  | "waiting"
-  | "interrupted";
-```
-
-Terminal states are `done`, `error`, and `interrupted`. The tracker uses those states to decide unseen behavior.
-
-### `AgentEvent`
-
-```ts
-interface AgentEvent {
-  agent: string;
-  session: string;
-  status: AgentStatus;
-  ts: number;
-  threadId?: string;
-  threadName?: string;
-  unseen?: boolean;
-}
-```
-
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `agent` | `string` | yes | Stable watcher identifier such as `amp`, `claude-code`, `codex`, or `opencode` |
-| `session` | `string` | yes | Resolved mux session name |
-| `status` | `AgentStatus` | yes | Current agent state |
-| `ts` | `number` | yes | Millisecond timestamp |
-| `threadId` | `string` | no | Instance key used to track multiple threads in one session |
-| `threadName` | `string` | no | Human-readable label shown in the detail panel |
-| `unseen` | `boolean` | no | Added by the tracker when serializing to the TUI |
+`AgentStatus`: `idle`, `running`, `done`, `error`, `waiting`,
+`interrupted`. Terminal: `done`, `error`, `interrupted`.
 
 ### Tracker Semantics
 
-- The tracker keys instances by `agent:threadId` when `threadId` exists, otherwise by `agent`.
-- A session can have multiple active agent instances.
-- Unseen state is tracked per instance, then derived to the session level.
-- Non-terminal updates clear unseen state for that instance.
-- Stale `running` events: an `exited` instance is pruned after 3 minutes. An `alive` instance (interactive agents keep their process alive between turns, so liveness ≠ "working") is first reconciled against the watcher's `probeLiveStatus` once it has gone ~60s without a hook — `ended` → marked `done` (renders "ready"), `working` → staleness clock reset. Only an alive instance that reaches a 30-minute ceiling with no event and no `working` confirmation (probe returned `null`) is pruned as a lost terminal signal.
+- Instances are keyed `agent:threadId` when `threadId` exists,
+  otherwise `agent`. A session can hold multiple active instances.
+- Unseen state is tracked per instance, derived to the session level;
+  non-terminal updates clear it for that instance.
+- Stale `running`: an `exited` instance is pruned after 3 minutes. An
+  `alive` instance (interactive agents stay alive between turns, so
+  liveness ≠ working) is reconciled via `probeLiveStatus` after ~60s
+  without a hook — `ended` → marked `done`, `working` → staleness clock
+  reset. Only an alive instance that reaches the 30-minute ceiling with
+  no event and no `working` confirmation is pruned.
 - Seen terminal instances are pruned after 5 minutes.
 
-## `AgentWatcher`
+## Runtime Notes
 
-```ts
-interface AgentWatcher {
-  readonly name: string;
-  start(ctx: AgentWatcherContext): void;
-  stop(): void;
-  /** Optional authoritative liveness probe. The tracker's reconcile pass calls
-   *  this for a stale `running` + alive instance to decide whether the agent is
-   *  genuinely working or its terminal hook was lost. Omit it if the watcher has
-   *  no reliable status source. */
-  probeLiveStatus?(pid: number, threadId: string): "working" | "ended" | null;
-}
-```
-
-### `AgentWatcherContext`
-
-```ts
-interface AgentWatcherContext {
-  resolveSession(projectDir: string): string | null;
-  resolveSessionByPid(pid: number): string | null;
-  emit(event: AgentEvent): void;
-}
-```
-
-`resolveSession(projectDir)` first checks for an exact directory match across registered mux sessions. If there is no exact match, the server falls back to parent-child prefix matching so nested project paths can still resolve. It is fragile by construction — a tmux session does not have a single canonical cwd, and the recorded `s.dir` reflects whichever pane is currently active. Prefer `resolveSessionByPid` for live hook routing; use `resolveSession` only when no live pid is available (cold-start seed paths).
-
-`resolveSessionByPid(pid)` walks upward through the OS process tree from `pid` until the chain hits a pid that matches some tmux pane's shell pid, and returns that pane's session. It is the authoritative routing channel for live hooks: every payload carries the agent's pid, the answer is independent of where the user has focused, and a failure to resolve is a hard failure (the watcher drops the event rather than silently falling through to `resolveSession`).
-
-### Minimal Watcher Example
-
-```ts
-import type { AgentWatcher, AgentWatcherContext } from "@tcm/runtime";
-
-export class MyAgentWatcher implements AgentWatcher {
-  readonly name = "my-agent";
-
-  start(ctx: AgentWatcherContext): void {
-    const projectDir = "/path/to/project";
-    const session = ctx.resolveSession(projectDir);
-    if (!session) return;
-
-    ctx.emit({
-      agent: this.name,
-      session,
-      status: "running",
-      ts: Date.now(),
-      threadId: "thread-1",
-      threadName: "Example task",
-    });
-  }
-
-  stop(): void {
-  }
-}
-```
-
-## Mux Contracts
-
-tcm uses the capability model exported from `@tcm/mux`. A provider must implement the required `MuxProviderV1` contract and may opt into extra capabilities.
-
-### Core Types
-
-```ts
-interface MuxSessionInfo {
-  readonly name: string;
-  readonly createdAt: number;
-  readonly dir: string;
-  readonly windows: number;
-}
-
-interface ActiveWindow {
-  readonly id: string;
-  readonly sessionName: string;
-  readonly active: boolean;
-}
-
-interface SidebarPane {
-  readonly paneId: string;
-  readonly sessionName: string;
-  readonly windowId: string;
-}
-
-type SidebarPosition = "left" | "right";
-```
-
-### Required Provider Interface
-
-```ts
-interface MuxProviderV1 {
-  readonly name: string;
-
-  listSessions(): MuxSessionInfo[];
-  switchSession(name: string, clientTty?: string): void;
-  getCurrentSession(): string | null;
-  getSessionDir(name: string): string;
-  getPaneCount(name: string): number;
-  getClientTty(): string;
-  createSession(name?: string, dir?: string): void;
-  killSession(name: string): void;
-  setupHooks(serverHost: string, serverPort: number): void;
-  cleanupHooks(): void;
-}
-```
-
-### Optional Capabilities
-
-```ts
-interface WindowCapable {
-  listActiveWindows(): ActiveWindow[];
-  getCurrentWindowId(): string | null;
-}
-
-interface SidebarCapable {
-  listSidebarPanes(sessionName?: string): SidebarPane[];
-  spawnSidebar(
-    sessionName: string,
-    windowId: string,
-    width: number,
-    position: SidebarPosition,
-    scriptsDir: string,
-  ): string | null;
-  hideSidebar(paneId: string): void;
-  killSidebarPane(paneId: string): void;
-  resizeSidebarPane(paneId: string, width: number): void;
-  cleanupSidebar(): void;
-}
-
-interface BatchCapable {
-  getAllPaneCounts(): Map<string, number>;
-}
-```
-
-The server narrows providers with the runtime type guards exported from `@tcm/mux`:
-
-- `isWindowCapable()`
-- `isSidebarCapable()`
-- `isBatchCapable()`
-- `isFullSidebarCapable()`
-
-### Provider Expectations
-
-- `listSessions()` should return enough information for the server to sort and render sessions.
-- `getCurrentSession()` should reflect the session attached to the current client when possible.
-- `setupHooks()` should install mux-native hooks if the mux supports them. If it does not, a no-op implementation is acceptable.
-- `createSession()` and `killSession()` power the TUI's new-session and kill-session flows.
-
-## Built-In Runtime Behaviors To Know About
-
-- The server exposes sessions from the registered mux provider as one state payload.
-- Session ordering is persisted separately from mux ordering.
-- tmux sidebars can be hidden into a stash session instead of being killed.
-- tmux is the only supported mux. The contracts are extensible but no other provider is shipped or supported.
-- The TUI expects a WebSocket server on `127.0.0.1:7391`.
-- The server exposes HTTP POST endpoints for programmatic metadata (status, progress, logs, notifications). See [docs/reference/programmatic-api.md](./docs/reference/programmatic-api.md).
-
-## Where To Start
-
-- Build a custom watcher: see the `AgentWatcher` section above.
-- Push metadata from scripts: see [docs/reference/programmatic-api.md](./docs/reference/programmatic-api.md).
+- tmux is the only supported mux. The Go server shells out to tmux
+  directly (`apps/server-go/internal/tmux`); `@tcm/mux` remains as the
+  TUI's tmux client seam.
+- Session ordering, sidebar width, and theme persist under
+  `~/.config/tcm/`; sidebars hide into a stash session rather than
+  being killed.
+- Programmatic metadata (status, progress, logs, notifications) is
+  plain HTTP POST — see
+  [docs/reference/programmatic-api.md](./docs/reference/programmatic-api.md).

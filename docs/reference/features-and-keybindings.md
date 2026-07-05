@@ -107,4 +107,4 @@ The focused session detail panel can show:
 ## Related Docs
 
 - [Configuration reference](./configuration.md)
-- [Contracts and extension interfaces](../../CONTRACTS.md)
+- [Contracts](../../CONTRACTS.md)

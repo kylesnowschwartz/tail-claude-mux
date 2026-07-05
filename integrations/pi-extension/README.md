@@ -51,6 +51,6 @@ can route it to the pi adapter.
 ## See also
 
 - [`CONTRACTS.md`](../../CONTRACTS.md) — built-in watcher reference and
-  full wire format.
-- [`packages/runtime/src/agents/watchers/pi-hooks.ts`](../../packages/runtime/src/agents/watchers/pi-hooks.ts)
+  status mapping.
+- [`apps/server-go/internal/piwatch`](../../apps/server-go/internal/piwatch)
   — the server-side adapter this extension talks to.

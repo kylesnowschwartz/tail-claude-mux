@@ -12,9 +12,8 @@ echo "tcm: uninstalling..."
 # --- Remove global hooks ---
 # Keep this list in lockstep with
 #   integrations/tmux-plugin/scripts/install-hooks.sh
-#   packages/runtime/src/server/index.ts -> EXPECTED_TMUX_GLOBAL_HOOKS / EXPECTED_TMUX_WINDOW_HOOKS
-# Every hook installed there must be unset here with the matching scope
-# (-gu vs -guw). The runtime's verifyTmuxHooksInstalled() smoke-tests both sides.
+# (the single source of truth for the tmux hook set). Every hook installed
+# there must be unset here with the matching scope (-gu vs -guw).
 for hook in \
   client-session-changed \
   session-created \

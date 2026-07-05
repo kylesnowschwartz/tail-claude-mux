@@ -1,18 +1,17 @@
 #!/usr/bin/env sh
 # tcm tmux hook installer — declarative, owned by TPM init.
 #
-# Why this lives in tmux-config-land, not in the bun server:
+# Why this lives in tmux-config-land, not in the server:
 # Hooks are static curl-POST strings that point at 127.0.0.1:7391. They have
-# no runtime dependency on the bun server actually being up — curl fails-soft
+# no runtime dependency on the server actually being up — curl fails-soft
 # until the server boots a few hundred ms later. Installing hooks declaratively
-# at TPM init removes the "tmux ready / bun not booted" race that used to
+# at TPM init removes the "tmux ready / server not booted" race that used to
 # leave new tmux servers without working hooks (see fix/tmux-cold-start-determinism).
 #
-# Lockstep: keep this list in sync with
+# This file is the single source of truth for the tmux hook set. Lockstep:
+# every hook installed here must be unset in
 #   integrations/tmux-plugin/scripts/uninstall.sh
-#   packages/runtime/src/server/index.ts -> EXPECTED_TMUX_GLOBAL_HOOKS / EXPECTED_TMUX_WINDOW_HOOKS
-# Verifier in the runtime confirms (after bun-server boot) that every hook
-# below ended up populated; missing ones land in /tmp/tcm-debug.log.
+# with the matching scope (-gu vs -guw).
 
 set -e
 
