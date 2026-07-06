@@ -24,16 +24,18 @@ const AbsoluteMin = 15
 
 // DefaultWidth is sidebar-width-sync.ts DEFAULT_SIDEBAR_WIDTH.
 //
-// Chosen for the activity zone: at 33 cols the description budget is 29
-// chars (after col-0 pad + col-1 verb glyph + separator), which fits the
-// median `tmux …` / `apps/tui/src/index.tsx`-style payloads without
-// truncation. Below 30 the activity descriptions get cropped mid-path;
-// above 36 the editing pane starts feeling pinched on a 192-col terminal.
+// Sized for both column tenants. Activity zone: at 33+ cols the
+// description budget fits the median `tmux …` /
+// `apps/tui/src/index.tsx`-style payloads without truncation. Companion
+// (gearshifter strip --compact, 12 rows): the chip flow wraps past 12
+// rows below 37 cols and degrades to "canvas too small" — 37 is the
+// narrowest width where both fit. Above ~37 the editing pane starts
+// feeling pinched on a 192-col terminal.
 //
 // `=` (equalize-width) snaps back to this constant. The runtime may push
 // further upward via enforceSidebarWidth when session/agent content needs
 // more room — this is the floor preference, not a hard cap.
-const DefaultWidth = 33
+const DefaultWidth = 37
 
 // MaxWidthPercent is sidebar-width-sync.ts MAX_SIDEBAR_WIDTH_PERCENT.
 const MaxWidthPercent = 0.4
