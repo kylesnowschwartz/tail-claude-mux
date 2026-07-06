@@ -776,7 +776,7 @@ func TestApplyPanePresence(t *testing.T) {
 
 	t.Run("mints under the thread key when the scan resolved a threadId", func(t *testing.T) {
 		tr := New(fixedNow())
-		changed := tr.ApplyPanePresence("sess-1", []PanePresence{{Agent: "claude-code", PaneID: "%5", PID: 42, ThreadID: "t-live"}})
+		changed := tr.ApplyPanePresence("sess-1", []PanePresence{{Agent: "claude-code", PaneID: "%5", PID: 42, ThreadID: "t-live", ThreadName: "fix-clicks"}})
 
 		if !changed {
 			t.Error("changed = false, want true")
@@ -788,9 +788,19 @@ func TestApplyPanePresence(t *testing.T) {
 		if agents[0].ThreadID != "t-live" {
 			t.Errorf("threadID = %q, want t-live", agents[0].ThreadID)
 		}
+		if agents[0].ThreadName != "fix-clicks" {
+			t.Errorf("threadName = %q, want fix-clicks", agents[0].ThreadName)
+		}
+
+		// A registry rename shows up on the next scan stamp.
+		tr.ApplyPanePresence("sess-1", []PanePresence{{Agent: "claude-code", PaneID: "%5", PID: 42, ThreadID: "t-live", ThreadName: "fix-clicks-v2"}})
+		if got := tr.GetAgents("sess-1")[0].ThreadName; got != "fix-clicks-v2" {
+			t.Errorf("threadName after rename = %q, want fix-clicks-v2", got)
+		}
 
 		// A later hook event for the same thread merges into the minted row
-		// (same key) instead of creating a second instance.
+		// (same key) instead of creating a second instance; a hook that
+		// carries no name must not clear the registry-stamped one.
 		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Agent: "claude-code", ThreadID: "t-live", Status: wire.StatusRunning}), false)
 		agents = tr.GetAgents("sess-1")
 		if len(agents) != 1 {
@@ -801,6 +811,9 @@ func TestApplyPanePresence(t *testing.T) {
 		}
 		if agents[0].PaneID != "%5" {
 			t.Errorf("paneID = %q, want %%5 (pane enrichment preserved)", agents[0].PaneID)
+		}
+		if agents[0].ThreadName != "fix-clicks-v2" {
+			t.Errorf("threadName after nameless hook = %q, want fix-clicks-v2", agents[0].ThreadName)
 		}
 	})
 

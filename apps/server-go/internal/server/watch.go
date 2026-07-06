@@ -236,14 +236,15 @@ func (s *Server) paneScanLoop() {
 		panes := s.Builder.Tmux.ListAllPanes()
 		next := s.Scanner.Scan(panes)
 
-		// Resolve thread identity at scan time (sessions/<pid>.json) so
-		// minted rows carry their threadId from birth instead of waiting
-		// for a hook to graduate them. File IO, so outside the lock.
+		// Resolve thread identity + registry session name at scan time
+		// (sessions/<pid>.json) so minted rows carry their threadId and
+		// display name from birth instead of waiting for a hook to
+		// graduate them. File IO, so outside the lock.
 		if s.Watcher != nil {
 			for _, paneAgents := range next {
 				for i, pa := range paneAgents {
 					if pa.Agent == "claude-code" && pa.PID != 0 {
-						paneAgents[i].ThreadID = s.Watcher.SessionIDForPid(pa.PID)
+						paneAgents[i].ThreadID, paneAgents[i].ThreadName = s.Watcher.SessionInfoForPid(pa.PID)
 					}
 				}
 			}

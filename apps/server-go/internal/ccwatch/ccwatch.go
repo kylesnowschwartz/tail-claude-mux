@@ -208,9 +208,10 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		return
 	}
 
-	// Refresh subagent from sessions/<pid>.json; failures leave the prior
-	// value in place (preserved through transient errors).
-	a.refreshSubagent(threadID, state)
+	// Refresh subagent + registry session name from sessions/<pid>.json;
+	// failures leave prior values in place (preserved through transient
+	// errors).
+	a.refreshFromRegistry(threadID, state)
 
 	// SessionEnd bypasses the dedup below: a prior Stop already set done,
 	// so dedup would swallow the end signal and leave a ghost until prune.
@@ -312,10 +313,18 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, kind
 // resolver uses it to match a candidate claude pid to a tracker threadId
 // (index.ts resolveClaudeCodePane).
 func (a *Adapter) SessionIDForPid(pid int) string {
+	id, _ := a.SessionInfoForPid(pid)
+	return id
+}
+
+// SessionInfoForPid returns the sessionId and display name recorded in
+// sessions/<pid>.json (both "" when the file is missing or undecodable).
+// One read serves both — the pane scan wants the pair.
+func (a *Adapter) SessionInfoForPid(pid int) (sessionID, name string) {
 	if l := a.readSessionFile(pid); l != nil {
-		return l.SessionID
+		return l.SessionID, l.Name
 	}
-	return ""
+	return "", ""
 }
 
 // readSessionFile decodes one sessions/<pid>.json through registry.Live.
@@ -405,13 +414,16 @@ func (a *Adapter) ProbeLiveStatus(pid int, threadID, paneTitle string) tracker.P
 	return verdict
 }
 
-// refreshSubagent refreshes state.subagent from sessions/<pid>.json.
+// refreshFromRegistry refreshes state.subagent and state.threadName from
+// sessions/<pid>.json. The registry name is the user-facing session name
+// (renamable live) and outranks the transcript-derived fallback; an empty
+// registry name leaves the transcript name in place.
 //
 // PID precedence: (1) state.pid from the process-ancestry walker; (2) the
 // sessions/-walk fallback. PID-reuse detection: the file's sessionId must
 // match the thread — a mismatch clears the cached pid for re-resolution. A
 // missing file is NOT reuse (may be transient) and never clobbers the pid.
-func (a *Adapter) refreshSubagent(threadID string, state *threadState) {
+func (a *Adapter) refreshFromRegistry(threadID string, state *threadState) {
 	if state.pid == 0 {
 		resolved := a.resolvePidFromSessions(threadID)
 		if resolved == 0 {
@@ -432,6 +444,9 @@ func (a *Adapter) refreshSubagent(threadID string, state *threadState) {
 		return
 	}
 	state.subagent = cached.Agent
+	if cached.Name != "" {
+		state.threadName = cached.Name
+	}
 }
 
 // --- Cold-start seed from JSONL files ---

@@ -70,6 +70,7 @@ type PanePresence struct {
 	PaneIndex   *int
 	PaneTitle   string
 	ThreadID    string
+	ThreadName  string
 }
 
 // ProbeVerdict is a watcher's authoritative liveness answer.
@@ -220,6 +221,11 @@ func (t *Tracker) ApplyEvent(event wire.AgentEvent, seed bool) {
 		}
 		if event.Subagent == "" {
 			event.Subagent = prev.Subagent
+		}
+		if event.ThreadName == "" {
+			// A scan-stamped registry name must survive hook events that
+			// carry no name of their own.
+			event.ThreadName = prev.ThreadName
 		}
 		if prev.FirstSeenTS != 0 {
 			event.FirstSeenTS = prev.FirstSeenTS
@@ -651,12 +657,18 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 			wasDifferent := bestEv.PaneID != pa.PaneID ||
 				bestEv.Liveness != wire.LivenessAlive ||
 				!intPtrEq(bestEv.WindowIndex, pa.WindowIndex) ||
-				!intPtrEq(bestEv.PaneIndex, pa.PaneIndex)
+				!intPtrEq(bestEv.PaneIndex, pa.PaneIndex) ||
+				(pa.ThreadName != "" && bestEv.ThreadName != pa.ThreadName)
 			bestEv.PaneID = pa.PaneID
 			bestEv.Liveness = wire.LivenessAlive
 			bestEv.WindowIndex = pa.WindowIndex
 			bestEv.PaneIndex = pa.PaneIndex
 			bestEv.PaneTitle = pa.PaneTitle // never drives a broadcast
+			if pa.ThreadName != "" {
+				// Registry name is the user-facing one (renamable live);
+				// it outranks the transcript-derived fallback.
+				bestEv.ThreadName = pa.ThreadName
+			}
 			t.clearMissState(session, bestKey)
 			if wasDifferent {
 				changed = true
@@ -682,6 +694,10 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 				sk, threadID = tk, pa.ThreadID
 			}
 		}
+		threadName := ""
+		if threadID != "" {
+			threadName = pa.ThreadName
+		}
 		if existing, ok := si[sk]; !ok {
 			si[sk] = &wire.AgentEvent{
 				Agent:       pa.Agent,
@@ -689,6 +705,7 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 				Status:      wire.StatusIdle,
 				TS:          t.now(),
 				ThreadID:    threadID,
+				ThreadName:  threadName,
 				PaneID:      pa.PaneID,
 				Liveness:    wire.LivenessAlive,
 				WindowIndex: pa.WindowIndex,
@@ -702,13 +719,17 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 				existing.Liveness != wire.LivenessAlive ||
 				!intPtrEq(existing.WindowIndex, pa.WindowIndex) ||
 				!intPtrEq(existing.PaneIndex, pa.PaneIndex) ||
-				existing.PID != pa.PID
+				existing.PID != pa.PID ||
+				(threadName != "" && existing.ThreadName != threadName)
 			existing.PaneID = pa.PaneID
 			existing.Liveness = wire.LivenessAlive
 			existing.WindowIndex = pa.WindowIndex
 			existing.PaneIndex = pa.PaneIndex
 			existing.PID = pa.PID
 			existing.PaneTitle = pa.PaneTitle
+			if threadName != "" {
+				existing.ThreadName = threadName
+			}
 			t.clearMissState(session, sk)
 			if wasDifferent {
 				changed = true

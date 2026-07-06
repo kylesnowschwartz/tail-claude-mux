@@ -444,10 +444,6 @@ function App() {
   // focused-card frame never resizes as you cycle.
   // Accounts for text wrapping in narrow sidebars.
   const maxCardHeight = createMemo(() => {
-    // Available width for wrapped text (sidebar minus border, padding, indent)
-    const textWidth = Math.max(8, termDims().width - 10);
-    const wrapLines = (text: string) => Math.max(1, Math.ceil(text.length / textWidth));
-
     let max = 0;
     for (const session of sessions) {
       let h = 1; // row 1: name
@@ -460,18 +456,10 @@ function App() {
         if (parent) h++;
       }
 
-      const agents = session.agents ?? [];
-      for (const agent of agents) {
-        // Mirror the AgentListItem render so subagent + threadId wrapping is
-        // accounted for. Without this, rows that wrap to 2 lines push the
-        // card's effective click area outside its frame and later rows
-        // become un-clickable even though they appear visible.
-        let text = "00 X"; // 2-cell win-num + space + 1-cell icon = 4 cells
-        if (agent.subagent) text += "  " + agent.subagent;
-        if (agent.threadId) text += "  " + shortThreadId(agent.threadId);
-        text += "  X"; // status glyph slot on the right
-        h += wrapLines(text);
-      }
+      // Agent rows are single-line by construction (the row text has
+      // `truncate`, never wraps) — estimating wrap here would add a
+      // phantom empty row whenever a registry session name is long.
+      h += (session.agents ?? []).length;
       // no gap between agents — card border provides visual grouping
 
       // Status / progress / logs render in the ActivityZone now, not in the
@@ -1564,8 +1552,10 @@ function AgentListItem(props: AgentListItemProps) {
             <Show when={props.agent.subagent}>
               <span style={{ fg: P().overlay1 }}>{"  "}{props.agent.subagent}</span>
             </Show>
-            <Show when={props.agent.threadId}>
-              <span style={{ fg: P().overlay0, attributes: DIM }}>{"  "}{shortThreadId(props.agent.threadId!)}</span>
+            {/* Session name from the agent-ouija registry when known;
+                the 4-char uuid suffix is the fallback identity. */}
+            <Show when={props.agent.threadName || props.agent.threadId}>
+              <span style={{ fg: P().overlay0, attributes: DIM }}>{"  "}{props.agent.threadName || shortThreadId(props.agent.threadId!)}</span>
             </Show>
             <Show when={props.isPaneFocused}>
               <span style={{ fg: P().sky }}>{" •"}</span>
