@@ -165,8 +165,8 @@ func TestRunningExitedGovernedByPruneStuck(t *testing.T) {
 	}
 }
 
-// "buildExplain — terminal status" / "done + exited → terminal-prune countdown"
-func TestDoneExitedTerminalPruneCountdown(t *testing.T) {
+// "buildExplain — terminal status" / "done + exited → pruned immediately"
+func TestDoneExitedPrunedImmediately(t *testing.T) {
 	ev := baseEvent()
 	ev.Status = wire.StatusDone
 	ev.Liveness = wire.LivenessExited
@@ -177,8 +177,8 @@ func TestDoneExitedTerminalPruneCountdown(t *testing.T) {
 	if !terminal.Applies {
 		t.Error("prune-terminal.applies = false, want true")
 	}
-	if got := eligibleMS(t, terminal); got != tracker.TerminalPruneMS-60_000 {
-		t.Errorf("prune-terminal.eligibleInMs = %d, want %d", got, tracker.TerminalPruneMS-60_000)
+	if got := eligibleMS(t, terminal); got != 0 {
+		t.Errorf("prune-terminal.eligibleInMs = %d, want 0", got)
 	}
 	if report.Lifecycle.Governing != TierPruneTerminal {
 		t.Errorf("governing = %q, want prune-terminal", report.Lifecycle.Governing)

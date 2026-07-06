@@ -658,11 +658,10 @@ func TestAgentTracker(t *testing.T) {
 
 	// --- pruneTerminal ---
 
-	t.Run("pruneTerminal removes seen terminal instances after timeout when pane exited", func(t *testing.T) {
+	t.Run("pruneTerminal removes terminal + exited immediately (no age threshold)", func(t *testing.T) {
 		tr := New(fixedNow())
-		oldTs := baseTS - minutesMS(6) // 6 min ago, past TerminalPruneMS
-		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Status: wire.StatusDone, TS: oldTs, Liveness: wire.LivenessExited}), false)
-		tr.MarkSeen("sess-1") // Mark seen so pruneTerminal can remove it
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Status: wire.StatusDone, TS: baseTS, Liveness: wire.LivenessExited}), false)
+		tr.MarkSeen("sess-1")
 
 		tr.PruneTerminal()
 
@@ -671,16 +670,15 @@ func TestAgentTracker(t *testing.T) {
 		}
 	})
 
-	t.Run("pruneTerminal does NOT remove unseen terminal instances", func(t *testing.T) {
+	t.Run("pruneTerminal removes unseen terminal + exited too (dead rows are dead click targets)", func(t *testing.T) {
 		tr := New(fixedNow())
-		oldTs := baseTS - minutesMS(6)
-		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Status: wire.StatusDone, TS: oldTs}), false)
-		// NOT marked seen
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Status: wire.StatusDone, TS: baseTS, Liveness: wire.LivenessExited}), false)
+		// NOT marked seen — unseen no longer exempts a confirmed-dead row
 
 		tr.PruneTerminal()
 
-		if tr.GetState("sess-1") == nil {
-			t.Error("expected non-nil state")
+		if tr.GetState("sess-1") != nil {
+			t.Error("expected nil state")
 		}
 	})
 

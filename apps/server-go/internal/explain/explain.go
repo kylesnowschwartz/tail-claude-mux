@@ -11,7 +11,7 @@
 // unit-testable). The tier math mirrors the guards in:
 //   - Tracker.ReconcileStaleRunning (ReconcileStaleMS)
 //   - Tracker.PruneStuck            (StuckRunningTimeoutMS / tracker.AlivePruneCeilingMS)
-//   - Tracker.PruneTerminal         (tracker.TerminalPruneMS)
+//   - Tracker.PruneTerminal         (immediate once exited)
 //
 // If those guards change, update this in lockstep.
 package explain
@@ -160,17 +160,17 @@ func Build(event wire.AgentEvent, nowMS int64, verdict tracker.ProbeVerdict) Rep
 		aliveCeiling.Note = "running+alive: pruned only if it reaches the ceiling with no fresh hook and no 'working' confirmation (lost terminal signal)"
 	}
 
-	// --- pruneTerminal: terminal+exited at TerminalPruneMS; idle/waiting+exited now ---
+	// --- pruneTerminal: terminal+exited now; idle/waiting+exited now ---
 	terminalApplies := isTerminal && isExited
 	pruneTerminal := Tier{
 		ID:           TierPruneTerminal,
 		Applies:      terminalApplies,
-		ThresholdMS:  tracker.TerminalPruneMS,
-		EligibleInMS: eligibleIn(tracker.TerminalPruneMS, ageMS, terminalApplies),
+		ThresholdMS:  0,
+		EligibleInMS: eligibleIn(0, ageMS, terminalApplies),
 		Note:         "applies to done/error/interrupted entries that have exited",
 	}
 	if terminalApplies {
-		pruneTerminal.Note = "terminal+exited: held so the outcome is visible, then pruned (unseen entries are exempt)"
+		pruneTerminal.Note = "terminal+exited: pruned immediately (a dead process is a dead click target)"
 	} else if isTerminal {
 		pruneTerminal.Note = "terminal+alive: not pruned until the process exits"
 	}
@@ -184,7 +184,7 @@ func Build(event wire.AgentEvent, nowMS int64, verdict tracker.ProbeVerdict) Rep
 		Note:         "applies to idle/waiting entries that have exited",
 	}
 	if idleApplies {
-		pruneIdle.Note = "idle/waiting+exited: pruned immediately (no narrative to preserve; unseen entries are exempt)"
+		pruneIdle.Note = "idle/waiting+exited: pruned immediately (no narrative to preserve)"
 	}
 
 	tiers := []Tier{reconcile, pruneStuck, aliveCeiling, pruneTerminal, pruneIdle}

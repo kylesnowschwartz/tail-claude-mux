@@ -23,9 +23,6 @@ import (
 
 const maxEventTimestamps = 30
 
-// TerminalPruneMS is how long a seen terminal instance stays visible.
-const TerminalPruneMS = 5 * 60 * 1000
-
 // recentEndSuppressMS: window after SessionEnd during which the pane
 // scanner must not mint a synthetic for that pane (ps shows the exiting
 // process for a beat).
@@ -519,28 +516,17 @@ func (t *Tracker) ReconcileStaleRunning(staleMS int64, probe func(wire.AgentEven
 	return changed
 }
 
-// PruneTerminal removes exited instances: terminal statuses after
-// TerminalPruneMS, idle/waiting immediately, running never (PruneStuck
-// owns it). Unseen instances are never pruned.
+// PruneTerminal removes exited instances immediately — a dead process has
+// no pane to navigate to, so the row is a dead click target the moment the
+// exit is confirmed. Running is exempt (PruneStuck owns it); unknown
+// liveness is exempt (no scan has confirmed the process is gone).
 func (t *Tracker) PruneTerminal() {
-	now := t.now()
 	for session, si := range t.instances {
 		for key, ev := range si {
-			if ev.Liveness != wire.LivenessExited {
+			if ev.Liveness != wire.LivenessExited || ev.Status == wire.StatusRunning {
 				continue
 			}
-			if t.unseen[unseenKey(session, key)] {
-				continue
-			}
-			if wire.IsTerminalStatus(ev.Status) {
-				if now-ev.TS > TerminalPruneMS {
-					t.deleteInstance(session, key)
-				}
-				continue
-			}
-			if ev.Status == wire.StatusIdle || ev.Status == wire.StatusWaiting {
-				t.deleteInstance(session, key)
-			}
+			t.deleteInstance(session, key)
 		}
 	}
 }

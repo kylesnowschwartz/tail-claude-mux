@@ -99,7 +99,9 @@ agent that fired it.
   without a hook — `ended` → marked `done`, `working` → staleness clock
   reset. Only an alive instance that reaches the 30-minute ceiling with
   no event and no `working` confirmation is pruned.
-- Seen terminal instances are pruned after 5 minutes.
+- Any non-`running` instance whose process has `exited` is pruned
+  immediately (a dead process has no pane to navigate to). Unknown
+  liveness is never pruned — no scan has confirmed the exit.
 
 ## Runtime Notes
 
