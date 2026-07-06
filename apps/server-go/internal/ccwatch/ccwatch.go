@@ -21,6 +21,7 @@ package ccwatch
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -125,6 +126,14 @@ func New(projectsDir, sessionsDir string) *Adapter {
 // Name is the watcher/agent discriminator.
 func (a *Adapter) Name() string { return "claude-code" }
 
+// shortThread is the last-4 thread id used across tcm's log surfaces.
+func shortThread(id string) string {
+	if len(id) <= 4 {
+		return id
+	}
+	return id[len(id)-4:]
+}
+
 // Start binds the context and runs the cold-start seed. Call with the
 // server lock held.
 func (a *Adapter) Start(ctx *Context) {
@@ -174,6 +183,9 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 			// liveness sweep would false-fire.
 			state.pid = payload.PID
 		}
+		if state.pid == 0 {
+			log.Printf("cc-hook %s: pid unresolved (reported=%d, snapshot=%dB)", shortThread(threadID), payload.PID, len(payload.ProcessSnapshot))
+		}
 	}
 
 	// Routing: pid is authoritative. When pid resolves but the pane lookup
@@ -187,6 +199,12 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		session = a.ctx.ResolveSession(payload.Cwd)
 	}
 	if session == "" {
+		// Silent drops cost real debugging time; say which channel failed.
+		if state.pid != 0 {
+			log.Printf("cc-hook %s: dropped — pid %d resolved but no pane owns it", shortThread(threadID), state.pid)
+		} else {
+			log.Printf("cc-hook %s: dropped — no pid, cwd %q matches no session", shortThread(threadID), payload.Cwd)
+		}
 		return
 	}
 

@@ -352,6 +352,13 @@ func (s *Server) handleCommand(c *client, cmd wire.ClientCommand) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Trace client commands (sans the chatty width reports): the cheapest
+	// way to tell "the click never fired" from "the click fired the wrong
+	// zone" — both have burned real debugging hours when silent.
+	if cmd.Type != wire.CmdReportWidth {
+		log.Printf("ws-cmd %s session=%s pane=%s thread=%s", cmd.Type, cmd.Session, cmd.PaneID, shortThreadIDSuffix(cmd.ThreadID))
+	}
+
 	switch cmd.Type {
 	case wire.CmdIdentify:
 		c.tty = cmd.ClientTTY
