@@ -115,7 +115,7 @@ func (s *Server) StartWatchers() {
 // fold the event into the tracker, and schedule a debounced broadcast.
 // Runs with s.mu held.
 func (s *Server) emitLocked(ev wire.AgentEvent) {
-	log.Printf("agent-emit %s session=%s status=%s", ev.Agent, ev.Session, ev.Status)
+	log.Printf("agent-emit %s session=%s status=%s thread=%s pid=%d", ev.Agent, ev.Session, ev.Status, shortThreadIDSuffix(ev.ThreadID), ev.PID)
 	// Always update lastSeenByThread (so post-seed diffs are correct), but
 	// only push log entries once initial seeding is complete — otherwise
 	// every cold-start reconstruction would flood the buffer.
@@ -235,6 +235,19 @@ func (s *Server) paneScanLoop() {
 
 		panes := s.Builder.Tmux.ListAllPanes()
 		next := s.Scanner.Scan(panes)
+
+		// Resolve thread identity at scan time (sessions/<pid>.json) so
+		// minted rows carry their threadId from birth instead of waiting
+		// for a hook to graduate them. File IO, so outside the lock.
+		if s.Watcher != nil {
+			for _, paneAgents := range next {
+				for i, pa := range paneAgents {
+					if pa.Agent == "claude-code" && pa.PID != 0 {
+						paneAgents[i].ThreadID = s.Watcher.SessionIDForPid(pa.PID)
+					}
+				}
+			}
+		}
 
 		s.mu.Lock()
 		changed := false

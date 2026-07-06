@@ -59,7 +59,9 @@ func isSyntheticKey(k string) bool { return strings.Contains(k, ":pane:") }
 
 // PanePresence is contracts/agent.ts PanePresenceInput: the scanner's
 // answer to "is there a live agent process in this pane?". PID 0 = not
-// resolved; WindowIndex/PaneIndex nil = unknown.
+// resolved; WindowIndex/PaneIndex nil = unknown. ThreadID is the agent's
+// thread identity when the server can resolve it at scan time (e.g.
+// claude-code's sessions/<pid>.json); "" = unknown, mint synthetically.
 type PanePresence struct {
 	Agent       string
 	PaneID      string
@@ -67,6 +69,7 @@ type PanePresence struct {
 	WindowIndex *int
 	PaneIndex   *int
 	PaneTitle   string
+	ThreadID    string
 }
 
 // ProbeVerdict is a watcher's authoritative liveness answer.
@@ -665,13 +668,27 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 			continue
 		}
 
+		// Mint under the real thread key when the scan resolved one: the
+		// row carries its thread identity from birth, and later hook
+		// events for the same thread merge instead of graduating. Refuse
+		// the thread key only when it's held by a live different process
+		// (a thread id can't be in two processes; fall back to synthetic).
 		sk := syntheticKey(pa.Agent, pa.PaneID)
+		threadID := ""
+		if pa.ThreadID != "" {
+			tk := InstanceKey(pa.Agent, pa.ThreadID)
+			held, ok := si[tk]
+			if !ok || held.PID == 0 || held.PID == pa.PID || held.Liveness != wire.LivenessAlive {
+				sk, threadID = tk, pa.ThreadID
+			}
+		}
 		if existing, ok := si[sk]; !ok {
 			si[sk] = &wire.AgentEvent{
 				Agent:       pa.Agent,
 				Session:     session,
 				Status:      wire.StatusIdle,
 				TS:          t.now(),
+				ThreadID:    threadID,
 				PaneID:      pa.PaneID,
 				Liveness:    wire.LivenessAlive,
 				WindowIndex: pa.WindowIndex,

@@ -774,6 +774,76 @@ func TestApplyPanePresence(t *testing.T) {
 		}
 	})
 
+	t.Run("mints under the thread key when the scan resolved a threadId", func(t *testing.T) {
+		tr := New(fixedNow())
+		changed := tr.ApplyPanePresence("sess-1", []PanePresence{{Agent: "claude-code", PaneID: "%5", PID: 42, ThreadID: "t-live"}})
+
+		if !changed {
+			t.Error("changed = false, want true")
+		}
+		agents := tr.GetAgents("sess-1")
+		if len(agents) != 1 {
+			t.Fatalf("agents = %d, want 1", len(agents))
+		}
+		if agents[0].ThreadID != "t-live" {
+			t.Errorf("threadID = %q, want t-live", agents[0].ThreadID)
+		}
+
+		// A later hook event for the same thread merges into the minted row
+		// (same key) instead of creating a second instance.
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Agent: "claude-code", ThreadID: "t-live", Status: wire.StatusRunning}), false)
+		agents = tr.GetAgents("sess-1")
+		if len(agents) != 1 {
+			t.Fatalf("after hook: agents = %d, want 1", len(agents))
+		}
+		if agents[0].Status != wire.StatusRunning {
+			t.Errorf("status = %q, want running", agents[0].Status)
+		}
+		if agents[0].PaneID != "%5" {
+			t.Errorf("paneID = %q, want %%5 (pane enrichment preserved)", agents[0].PaneID)
+		}
+	})
+
+	t.Run("thread-keyed mint refuses a key held by a live different process", func(t *testing.T) {
+		tr := New(fixedNow())
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Agent: "claude-code", ThreadID: "t-dup", Status: wire.StatusRunning, PID: 100}), false)
+		tr.ApplyPanePresence("sess-1", []PanePresence{{Agent: "claude-code", PaneID: "%1", PID: 100}})
+
+		// A second pane claims the same threadId with a different pid —
+		// mint falls back to a synthetic row rather than hijacking t-dup.
+		tr.ApplyPanePresence("sess-1", []PanePresence{
+			{Agent: "claude-code", PaneID: "%1", PID: 100},
+			{Agent: "claude-code", PaneID: "%9", PID: 200, ThreadID: "t-dup"},
+		})
+		agents := tr.GetAgents("sess-1")
+		if len(agents) != 2 {
+			t.Fatalf("agents = %d, want 2", len(agents))
+		}
+		for _, a := range agents {
+			if a.PaneID == "%9" && a.ThreadID != "" {
+				t.Errorf("synthetic fallback row carries threadID %q, want empty", a.ThreadID)
+			}
+			if a.ThreadID == "t-dup" && a.PID != 100 {
+				t.Errorf("t-dup pid = %d, want 100 (not hijacked)", a.PID)
+			}
+		}
+	})
+
+	t.Run("thread-keyed mint resurrects an exited row for the same thread", func(t *testing.T) {
+		tr := New(fixedNow())
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Agent: "claude-code", ThreadID: "t-res", Status: wire.StatusDone, PID: 100, Liveness: wire.LivenessExited}), false)
+
+		// Same conversation resumed in a new process/pane.
+		tr.ApplyPanePresence("sess-1", []PanePresence{{Agent: "claude-code", PaneID: "%7", PID: 300, ThreadID: "t-res"}})
+		agents := tr.GetAgents("sess-1")
+		if len(agents) != 1 {
+			t.Fatalf("agents = %d, want 1", len(agents))
+		}
+		if agents[0].Liveness != wire.LivenessAlive || agents[0].PID != 300 || agents[0].PaneID != "%7" {
+			t.Errorf("resurrected row = %+v, want alive pid=300 pane=%%7", agents[0])
+		}
+	})
+
 	t.Run("creates minimal synthetic entry for unmatched pane agent", func(t *testing.T) {
 		tr := New(fixedNow())
 		changed := tr.ApplyPanePresence("sess-1", []PanePresence{{Agent: "claude-code", PaneID: "%5"}})
