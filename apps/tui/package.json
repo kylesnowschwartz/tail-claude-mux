@@ -11,10 +11,10 @@
     "audit:glyphs": "bun run scripts/glyph-audit.ts"
   },
   "dependencies": {
-    "@tcm/runtime": "workspace:*",
+    "@opentui/core": "0.1.107",
+    "@opentui/solid": "0.1.107",
     "@tcm/mux-tmux": "workspace:*",
-    "@opentui/core": "^0.1.88",
-    "@opentui/solid": "^0.1.88",
+    "@tcm/runtime": "workspace:*",
     "solid-js": "^1.9.11"
   },
   "devDependencies": {

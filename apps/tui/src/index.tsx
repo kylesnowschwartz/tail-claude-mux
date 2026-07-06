@@ -1055,7 +1055,13 @@ function App() {
             Without the +2, agent rows get silently truncated whenever the
             card has both a branch and any agents (regression visible since
             commit e1bf37d shrank agent rows from 2 lines to 1). */}
-        <box border borderStyle="rounded" borderColor={paneFocused() ? P().blue : P().surface2} flexShrink={0} height={maxCardHeight() + 2} overflow="hidden">
+        {/* overflow="hidden" is deliberately ABSENT: combined with `border`,
+            opentui's hit-grid clips the LAST content row's click zone (verified
+            against 0.1.90 and 0.1.107 with repro-zones.tsx — the bottom agent
+            row went dead while rendering fine). maxCardHeight() already sizes
+            the frame to fit content, so clipping only guarded against its own
+            estimation bugs — at the cost of unclickable rows. */}
+        <box border borderStyle="rounded" borderColor={paneFocused() ? P().blue : P().surface2} flexShrink={0} height={maxCardHeight() + 2}>
           <Show when={focusedData()}>
             {(data: Accessor<SessionData>) => (
               <SessionCard
