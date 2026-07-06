@@ -367,7 +367,21 @@ func (s *Server) resolveSessionByPidLocked(pid int) string {
 	if err != nil {
 		return ""
 	}
-	return procwalk.ResolveSessionByPid(pid, tmux.PanePidIndex(s.panesLocked()), procwalk.ParseProcessSnapshot(raw))
+	snapshot := procwalk.ParseProcessSnapshot(raw)
+	session := procwalk.ResolveSessionByPid(pid, tmux.PanePidIndex(s.panesLocked()), snapshot)
+	if session == "" {
+		// Pane-birth race: when the agent IS the pane's root process, its
+		// first hooks can arrive before the cached pane listing includes
+		// the brand-new pane — the pid resolves but the index misses it
+		// and the event would be hard-dropped (no cwd fallback once a pid
+		// exists, by design). Refresh the listing once and retry.
+		s.panesCache = nil
+		session = procwalk.ResolveSessionByPid(pid, tmux.PanePidIndex(s.panesLocked()), snapshot)
+		if session != "" {
+			log.Printf("resolve-by-pid: fresh pane listing rescued pid=%d → %s", pid, session)
+		}
+	}
+	return session
 }
 
 // focusAgentPane ports the select-window/select-pane navigation plus the
