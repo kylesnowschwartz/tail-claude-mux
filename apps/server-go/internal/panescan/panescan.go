@@ -95,22 +95,34 @@ func (s *Scanner) buildProcessTree() processTree {
 	return tree
 }
 
-// matchTree walks up to 3 levels of child processes and returns the matched
-// child pid (the agent process itself), or 0. Comm patterns first, then the
-// AgentFromCommand fallback for runtime/wrapper comms — which only knows
-// pi and claude-code, preserving comm-only behavior for amp/codex/opencode.
+// pidMatchesAgent reports whether one pid's process matches the agent —
+// comm patterns first, then the AgentFromCommand wrapper fallback (which
+// only knows pi and claude-code, preserving comm-only behavior for
+// amp/codex/opencode).
+func pidMatchesAgent(pid int, patterns []string, agentName string, tree processTree) bool {
+	comm := tree.commOf[pid]
+	for _, pat := range patterns {
+		if comm != "" && agentmatch.CommMatches(comm, pat) {
+			return true
+		}
+	}
+	return agentmatch.AgentFromCommand(comm, tree.cmdlineOf[pid]) == agentName
+}
+
+// matchTree tests the pane root itself, then walks up to 3 levels of child
+// processes; returns the matched pid (the agent process itself), or 0. The
+// root check matters for `tmux new-window 'claude'`-style panes where the
+// shell execs away and the agent IS the pane root — skipping it makes such
+// agents invisible to the scanner (no synthetic row, seed-ghost exiting).
 func matchTree(pid int, patterns []string, agentName string, tree processTree, depth int) int {
+	if depth == 0 && pidMatchesAgent(pid, patterns, agentName, tree) {
+		return pid
+	}
 	if depth > maxTreeDepth {
 		return 0
 	}
 	for _, childPid := range tree.childrenOf[pid] {
-		comm := tree.commOf[childPid]
-		for _, pat := range patterns {
-			if comm != "" && agentmatch.CommMatches(comm, pat) {
-				return childPid
-			}
-		}
-		if agentmatch.AgentFromCommand(comm, tree.cmdlineOf[childPid]) == agentName {
+		if pidMatchesAgent(childPid, patterns, agentName, tree) {
 			return childPid
 		}
 		if deeper := matchTree(childPid, patterns, agentName, tree, depth+1); deeper != 0 {
@@ -156,6 +168,10 @@ func (s *Scanner) AgentPidsByPane(panes []tmux.Pane, agentName string) map[strin
 	tree := s.buildProcessTree()
 	for _, p := range panes {
 		var pids []int
+		// Same pane-root check as matchTree: an exec'd agent IS the root.
+		if pidMatchesAgent(p.PID, patterns, agentName, tree) {
+			pids = append(pids, p.PID)
+		}
 		collectAgentPids(p.PID, patterns, agentName, tree, 0, &pids)
 		out[p.ID] = pids
 	}
@@ -171,18 +187,7 @@ func collectAgentPids(pid int, patterns []string, agentName string, tree process
 		return
 	}
 	for _, childPid := range tree.childrenOf[pid] {
-		comm := tree.commOf[childPid]
-		matched := false
-		for _, pat := range patterns {
-			if comm != "" && agentmatch.CommMatches(comm, pat) {
-				matched = true
-				break
-			}
-		}
-		if !matched && agentmatch.AgentFromCommand(comm, tree.cmdlineOf[childPid]) == agentName {
-			matched = true
-		}
-		if matched {
+		if pidMatchesAgent(childPid, patterns, agentName, tree) {
 			*acc = append(*acc, childPid)
 		}
 		collectAgentPids(childPid, patterns, agentName, tree, depth+1, acc)

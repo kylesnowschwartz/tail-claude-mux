@@ -85,6 +85,37 @@ func TestScanReportsClaudeChildWithChildPid(t *testing.T) {
 	}
 }
 
+func TestScanReportsPaneRootAgent(t *testing.T) {
+	// `tmux new-window 'claude'`: the shell execs away and the agent IS the
+	// pane root — no shell parent in the tree at all.
+	psComm := commLine(100, 1, "claude")
+	psFull := fullLine(100, 1, "/Users/x/.local/bin/claude")
+
+	s := &Scanner{Run: fakeExec(t, psComm, psFull)}
+	got := onlyPresence(t, s.Scan(workPane()), "work")
+
+	if got.Agent != "claude-code" {
+		t.Errorf("Agent = %q, want %q", got.Agent, "claude-code")
+	}
+	if got.PID != 100 {
+		t.Errorf("PID = %d, want the pane-root pid 100", got.PID)
+	}
+}
+
+func TestAgentPidsByPaneIncludesPaneRoot(t *testing.T) {
+	// Pane-root claude with a Task-spawned subagent child: both pids.
+	psComm := strings.Join([]string{
+		commLine(100, 1, "claude"),
+		commLine(200, 100, "claude"),
+	}, "\n")
+
+	s := &Scanner{Run: fakeExec(t, psComm, "")}
+	pids := s.AgentPidsByPane(workPane(), "claude-code")["%1"]
+	if len(pids) != 2 || pids[0] != 100 || pids[1] != 200 {
+		t.Errorf("pids = %v, want [100 200]", pids)
+	}
+}
+
 func TestScanDepthLimit(t *testing.T) {
 	t.Run("match three levels deep is found", func(t *testing.T) {
 		psComm := strings.Join([]string{
