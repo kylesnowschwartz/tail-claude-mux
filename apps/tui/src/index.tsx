@@ -326,7 +326,7 @@ function ActivityZone(props: {
     <box flexDirection="column" flexShrink={0} paddingLeft={PAD} paddingRight={PAD}>
       <Index each={sparkline()}>
         {(row) => (
-          <text truncate>
+          <text wrapMode="none">
             <span style={sparklineStyle()}>{row()}</span>
           </text>
         )}
@@ -336,7 +336,7 @@ function ActivityZone(props: {
           <text style={suffixStyle()}>{staleSuffix()}</text>
         </box>
       }>
-        <text truncate>
+        <text wrapMode="none">
           <span>{" ".repeat(geometry().leftoverCols)}</span>
           <Index each={icons()}>
             {(cell, idx) => (
@@ -457,8 +457,9 @@ function App() {
       }
 
       // Agent rows are single-line by construction (the row text has
-      // `truncate`, never wraps) — estimating wrap here would add a
-      // phantom empty row whenever a registry session name is long.
+      // wrapMode="none", so long names end-clip instead of wrapping) —
+      // estimating wrap here would add a phantom empty row whenever a
+      // registry session name is long.
       h += (session.agents ?? []).length;
       // no gap between agents — card border provides visual grouping
 
@@ -1542,7 +1543,13 @@ function AgentListItem(props: AgentListItemProps) {
           >
             <span style={{ fg: isDismissHover() ? P().red : P().overlay0 }}>{(props.agent.windowIndex != null ? String(props.agent.windowIndex).padStart(2, " ") : " ·") + " "}</span>
           </text>
-          <text flexGrow={1} truncate>
+          {/* wrapMode="none" is load-bearing: without it opentui measures
+              at the default word-wrap height and yoga grows the row,
+              spilling past the focused card's border (which no longer
+              clips; see the overflow note on the card frame). No
+              `truncate`: it renders a middle-ellipsis; plain end-clip is
+              the intended look. */}
+          <text flexGrow={1} wrapMode="none">
             <span style={{
               // Focused-pane highlight wins over the normal name-fg palette,
               // matching the trailing "•" dot. Same anchor color, two surfaces.
@@ -1726,7 +1733,7 @@ function SessionCard(props: SessionCardProps) {
         <box flexDirection="column" flexGrow={1} paddingRight={1}>
           {/* Row 1: name + agent badge (left) + status icons (right) */}
           <box flexDirection="row">
-            <text truncate>
+            <text wrapMode="none">
               <span style={{ fg: nameColor(), attributes: props.isCurrent ? BOLD : undefined }}>
                 {truncName()}
               </span>
@@ -1749,7 +1756,7 @@ function SessionCard(props: SessionCardProps) {
           {/* Row 2: branch + dir-mismatch flag (focused only) */}
           <Show when={props.session.branch}>
             <box flexDirection="row">
-              <text truncate>
+              <text wrapMode="none">
                 <span style={{ fg: props.isFocused ? P().pink : (props.paneFocused() ? P().overlay0 : P().surface2) }}>
                   {BRANCH_GLYPH}{" "}{truncBranch()}
                 </span>
@@ -1765,7 +1772,7 @@ function SessionCard(props: SessionCardProps) {
 
           {/* Row 3: metadata summary (status + progress) — only when collapsed */}
           <Show when={!props.isFocused && metaSummary()}>
-            <text truncate>
+            <text wrapMode="none">
               <span style={{ fg: toneColor(metaTone(), P()), attributes: DIM }}>{metaSummary()}</span>
             </text>
           </Show>
