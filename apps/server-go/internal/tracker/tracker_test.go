@@ -1384,6 +1384,71 @@ func TestApplyPanePresence(t *testing.T) {
 			t.Errorf("synthetic.liveness = %q, want alive", synthetic.Liveness)
 		}
 	})
+
+	// One process, one row: after /clear the same claude pid starts emitting
+	// a new session id. The old thread row never takes pane misses (its pane
+	// still exists), so both the hook path and the scan path must retire it.
+
+	t.Run("hook event supersedes the stale thread row after an in-place session-id swap", func(t *testing.T) {
+		tr := New(fixedNow())
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Agent: "claude-code", ThreadID: "t-old", Status: wire.StatusIdle, PID: 65521}), false)
+		tr.ApplyPanePresence("sess-1", []PanePresence{{Agent: "claude-code", PaneID: "%0", PID: 65521, ThreadID: "t-old", ThreadName: "questions-for-laz"}})
+
+		// /clear: same process, new session id — first hook event for it.
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Agent: "claude-code", ThreadID: "t-new", Status: wire.StatusRunning, PID: 65521}), false)
+
+		agents := tr.GetAgents("sess-1")
+		if len(agents) != 1 {
+			t.Fatalf("agents = %d, want 1 (stale identity retired)", len(agents))
+		}
+		if agents[0].ThreadID != "t-new" {
+			t.Errorf("threadID = %q, want t-new", agents[0].ThreadID)
+		}
+		if agents[0].PaneID != "%0" {
+			t.Errorf("paneID = %q, want %%0 (adopted from the superseded row)", agents[0].PaneID)
+		}
+	})
+
+	t.Run("pane scan retires the stale thread row when it claims the new identity", func(t *testing.T) {
+		tr := New(fixedNow())
+		// The old identity holds the pid; the new id's hook event arrived
+		// without one (routing drop), so the hook-side supersede never fired.
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Agent: "claude-code", ThreadID: "t-old", Status: wire.StatusIdle, PID: 65521}), false)
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Agent: "claude-code", ThreadID: "t-new", Status: wire.StatusDone}), false)
+
+		tr.ApplyPanePresence("sess-1", []PanePresence{{Agent: "claude-code", PaneID: "%0", PID: 65521, ThreadID: "t-new", ThreadName: "questions-for-laz"}})
+
+		agents := tr.GetAgents("sess-1")
+		if len(agents) != 1 {
+			t.Fatalf("agents = %d, want 1 (stale identity retired)", len(agents))
+		}
+		a := agents[0]
+		if a.ThreadID != "t-new" || a.PaneID != "%0" || a.Liveness != wire.LivenessAlive {
+			t.Errorf("row = %+v, want t-new alive in %%0", a)
+		}
+		if a.ThreadName != "questions-for-laz" {
+			t.Errorf("threadName = %q, want questions-for-laz", a.ThreadName)
+		}
+	})
+
+	t.Run("pane scan re-mints when only the stale identity remains after a swap", func(t *testing.T) {
+		tr := New(fixedNow())
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Agent: "claude-code", ThreadID: "t-old", Status: wire.StatusRunning, PID: 65521}), false)
+		tr.ApplyPanePresence("sess-1", []PanePresence{{Agent: "claude-code", PaneID: "%0", PID: 65521, ThreadID: "t-old"}})
+
+		// No hook for the new id ever routed; the scan alone resolves it. A
+		// bare pid match must not stamp the stale row — mint fresh, retire old.
+		tr.ApplyPanePresence("sess-1", []PanePresence{{Agent: "claude-code", PaneID: "%0", PID: 65521, ThreadID: "t-new", ThreadName: "questions-for-laz"}})
+
+		agents := tr.GetAgents("sess-1")
+		if len(agents) != 1 {
+			t.Fatalf("agents = %d, want 1 (stale identity retired)", len(agents))
+		}
+		a := agents[0]
+		if a.ThreadID != "t-new" || a.PID != 65521 || a.PaneID != "%0" {
+			t.Errorf("row = %+v, want t-new pid=65521 pane=%%0", a)
+		}
+	})
 }
 
 // Pane-presence hysteresis: a single missed scan must not transition an

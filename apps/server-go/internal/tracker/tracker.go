@@ -241,20 +241,28 @@ func (t *Tracker) ApplyEvent(event wire.AgentEvent, seed bool) {
 	stored.ToolInvoked = false
 	si[key] = &stored
 
-	// Graduate at most one synthetic: PID match first, then paneId /
-	// first-with-paneId fallback (tracker.ts graduation comments apply).
-	graduateKey := ""
+	// One live process hosts one thread row: an event with a known pid
+	// supersedes every other row holding that pid — synthetics awaiting
+	// graduation, and stale thread keys left behind when the process
+	// swapped session ids in place (/clear). Those stale rows never take
+	// pane misses (their pane still exists), so this is their only exit.
+	// Adopt the pane binding so enrichment survives the swap.
+	graduated := false
 	if stored.PID != 0 {
 		for k, ev := range si {
-			if k == key || ev.Agent != stored.Agent || !isSyntheticKey(k) || ev.PID != stored.PID {
+			if k == key || ev.Agent != stored.Agent || ev.PID != stored.PID {
 				continue
 			}
 			adoptPane(&stored, ev)
-			graduateKey = k
-			break
+			// k != key, so the delete can't empty the session map.
+			t.deleteInstance(stored.Session, k)
+			graduated = true
 		}
 	}
-	if graduateKey == "" {
+	// Pid-less matching graduates at most one synthetic: paneId /
+	// first-with-paneId fallback (tracker.ts graduation comments apply).
+	graduateKey := ""
+	if !graduated {
 		for k, ev := range si {
 			if k == key || ev.Agent != stored.Agent || !isSyntheticKey(k) {
 				continue
@@ -623,15 +631,34 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 			t.instances[session] = si
 		}
 
-		var bestKey, fallbackKey string
-		var bestEv, fallbackEv *wire.AgentEvent
+		// Thread identity outranks a pid match: after an in-place session-id
+		// swap (/clear) two rows can hold the same pid, and Go's randomized
+		// map order would let a bare pid match claim the stale one.
+		threadKey := ""
+		if pa.ThreadID != "" {
+			threadKey = InstanceKey(pa.Agent, pa.ThreadID)
+		}
+		var bestKey, pidKey, fallbackKey string
+		var bestEv, pidEv, fallbackEv *wire.AgentEvent
 		for k, ev := range si {
 			if ev.Agent != pa.Agent || claimed[k] || ev.Liveness == wire.LivenessExited || isSyntheticKey(k) {
 				continue
 			}
-			if pa.PID != 0 && ev.PID == pa.PID {
+			if k == threadKey {
 				bestKey, bestEv = k, ev
 				break
+			}
+			if pa.PID != 0 && ev.PID == pa.PID {
+				// A pid match carrying a different resolved thread id is the
+				// superseded identity itself — don't stamp fresh pane data
+				// onto it; the supersede sweep below retires it.
+				if threadKey != "" && ev.ThreadID != "" && ev.ThreadID != pa.ThreadID {
+					continue
+				}
+				if pidEv == nil {
+					pidKey, pidEv = k, ev
+				}
+				continue
 			}
 			// Fallback only for entries with no pid yet (cold-boot watcher);
 			// a different pid is a different process. Among fallback
@@ -647,6 +674,9 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 					fallbackKey, fallbackEv = k, ev
 				}
 			}
+		}
+		if bestEv == nil {
+			bestKey, bestEv = pidKey, pidEv
 		}
 		if bestEv == nil {
 			bestKey, bestEv = fallbackKey, fallbackEv
@@ -670,6 +700,9 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 				bestEv.ThreadName = pa.ThreadName
 			}
 			t.clearMissState(session, bestKey)
+			if t.retireSupersededPidRows(session, pa.Agent, bestKey, pa.PID) {
+				changed = true
+			}
 			if wasDifferent {
 				changed = true
 			}
@@ -735,6 +768,9 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 				changed = true
 			}
 		}
+		if t.retireSupersededPidRows(session, pa.Agent, sk, pa.PID) {
+			changed = true
+		}
 	}
 
 	// 3. Unclaimed seed ghosts (liveness unset, terminal-ish status) are
@@ -752,6 +788,27 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 		}
 	}
 
+	return changed
+}
+
+// retireSupersededPidRows enforces one-process-one-row after a pane scan
+// resolves a pid to keepKey: any other same-agent row holding that pid is
+// a stale identity (the process swapped session ids in place — /clear —
+// and the old row never takes pane misses because its pane still exists).
+// Reports whether anything was deleted.
+func (t *Tracker) retireSupersededPidRows(session, agent, keepKey string, pid int) bool {
+	if pid == 0 {
+		return false
+	}
+	changed := false
+	for k, ev := range t.instances[session] {
+		if k == keepKey || ev.Agent != agent || ev.PID != pid {
+			continue
+		}
+		// keepKey exists in the map, so the delete can't empty the session.
+		t.deleteInstance(session, k)
+		changed = true
+	}
 	return changed
 }
 
