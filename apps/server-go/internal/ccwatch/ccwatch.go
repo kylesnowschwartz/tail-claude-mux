@@ -319,10 +319,13 @@ func (a *Adapter) SessionIDForPid(pid int) string {
 
 // SessionInfoForPid returns the sessionId and display name recorded in
 // sessions/<pid>.json (both "" when the file is missing or undecodable).
-// One read serves both — the pane scan wants the pair.
+// One read serves both — the pane scan wants the pair. The name is
+// sanitized and width-capped like transcript-derived thread names
+// (extractThreadName): registry names come from raw user prompts and can
+// otherwise run hundreds of columns into the sidebar.
 func (a *Adapter) SessionInfoForPid(pid int) (sessionID, name string) {
 	if l := a.readSessionFile(pid); l != nil {
-		return l.SessionID, l.Name
+		return l.SessionID, textutil.TruncateToWidth(textutil.SanitizeForDisplay(l.Name), threadNameMaxWidth)
 	}
 	return "", ""
 }
@@ -714,8 +717,13 @@ func firstText(items []contentItem) string {
 	return ""
 }
 
+// threadNameMaxWidth caps thread display names — both transcript-derived
+// (extractThreadName) and registry-derived (SessionInfoForPid) — so a
+// prompt-sized name never floods the sidebar.
+const threadNameMaxWidth = 80
+
 // extractThreadName pulls a display name from a user entry, rejecting
-// markup/JSON/interrupt lines, sanitized and width-capped at 80 cells.
+// markup/JSON/interrupt lines, sanitized and width-capped.
 func extractThreadName(e transcript.Entry) string {
 	if e.Message.Role != "user" {
 		return ""
@@ -727,7 +735,7 @@ func extractThreadName(e transcript.Entry) string {
 	if strings.HasPrefix(text, "<") || strings.HasPrefix(text, "{") || strings.HasPrefix(text, "[Request") {
 		return ""
 	}
-	return textutil.TruncateToWidth(textutil.SanitizeForDisplay(text), 80)
+	return textutil.TruncateToWidth(textutil.SanitizeForDisplay(text), threadNameMaxWidth)
 }
 
 func extractCustomTitle(e transcript.Entry) string {
