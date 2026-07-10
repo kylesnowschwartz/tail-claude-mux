@@ -12,14 +12,10 @@ import (
 	"testing"
 )
 
-func TestSpawnAgentValidation(t *testing.T) {
+func TestValidateSpawnAgentRequest(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "file")
 	if err := os.WriteFile(file, []byte("test"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	reservedDir := filepath.Join(dir, StashSession)
-	if err := os.Mkdir(reservedDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -36,19 +32,21 @@ func TestSpawnAgentValidation(t *testing.T) {
 		{name: "empty prompt", req: SpawnAgentRequest{Dir: dir, Agent: "codex"}, want: "prompt is required"},
 		{name: "blank prompt", req: SpawnAgentRequest{Dir: dir, Agent: "codex", Prompt: " \n\t"}, want: "prompt is required"},
 		{name: "pi flag-like prompt", req: SpawnAgentRequest{Dir: dir, Agent: "pi", Prompt: "--help"}, want: "this agent cannot accept a prompt that begins with '-'"},
-		{name: "empty sanitized name", req: SpawnAgentRequest{Dir: dir, Agent: "codex", Prompt: "task", Name: "\x00\n"}, want: "name must contain printable characters"},
-		{name: "reserved requested name", req: SpawnAgentRequest{Dir: dir, Agent: "codex", Prompt: "task", Name: "\x1b[31m_tcm_stash\x1b[0m"}, want: "name is reserved by tcm"},
-		{name: "reserved derived name", req: SpawnAgentRequest{Dir: reservedDir, Agent: "codex", Prompt: "task"}, want: "name is reserved by tcm"},
+		{name: "codex flag-like prompt", req: SpawnAgentRequest{Dir: dir, Agent: "codex", Prompt: "--help"}},
+		{name: "claude flag-like prompt", req: SpawnAgentRequest{Dir: dir, Agent: "claude", Prompt: "--help"}},
+		{name: "override allows flag-like prompt", req: SpawnAgentRequest{Dir: dir, Agent: "pi", Prompt: "--help", Command: []string{"custom"}}},
+		{name: "valid", req: SpawnAgentRequest{Dir: dir, Agent: "pi", Prompt: "task"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			calls := 0
-			tm := &Tmux{Run: func(args ...string) (string, error) {
-				calls++
-				return "", errors.New("missing")
-			}}
-			_, err := tm.SpawnAgent(tt.req)
+			err := validateSpawnAgentRequest(tt.req)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("validateSpawnAgentRequest() error = %v", err)
+				}
+				return
+			}
 			var validationErr *SpawnAgentValidationError
 			if !errors.As(err, &validationErr) {
 				t.Fatalf("error = %v, want validation error", err)
@@ -56,70 +54,84 @@ func TestSpawnAgentValidation(t *testing.T) {
 			if err.Error() != tt.want {
 				t.Errorf("error = %q, want %q", err, tt.want)
 			}
-			if calls != 0 {
-				t.Errorf("runner calls = %d, want 0", calls)
-			}
 		})
 	}
 }
 
-func TestSpawnAgentNameResolution(t *testing.T) {
+func TestResolveSpawnAgentName(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "project")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	reservedDir := filepath.Join(parent, StashSession)
+	if err := os.Mkdir(reservedDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
 	tests := []struct {
 		name        string
+		dir         string
 		requestName string
 		existing    map[string]bool
 		want        string
+		wantErr     string
 	}{
-		{name: "derived from directory", want: "project"},
+		{name: "derived from directory", dir: dir, want: "project"},
 		{name: "sanitizes explicit name", requestName: "\x1b[31mfix-auth\x1b[0m\x00", want: "fix-auth"},
-		{name: "replaces tmux target separators", requestName: "a.b:c", want: "a-b-c"},
-		{name: "replaces one space", requestName: "a b", want: "a-b"},
+		{name: "replaces colons dots and spaces", requestName: "a:b.c d", want: "a-b-c-d"},
 		{name: "collapses and trims spaces", requestName: " a  b ", want: "a-b"},
 		{name: "replaces tab", requestName: "a\tb", want: "a-b"},
 		{name: "uses exact matches", requestName: "fix-auth", existing: map[string]bool{"fix-auth-extra": true}, want: "fix-auth"},
-		{
-			name: "deduplicates", requestName: "fix-auth",
-			existing: map[string]bool{"fix-auth": true, "fix-auth-2": true},
-			want:     "fix-auth-3",
-		},
+		{name: "deduplicates first collision", requestName: "fix-auth", existing: map[string]bool{"fix-auth": true}, want: "fix-auth-2"},
+		{name: "deduplicates repeated collisions", requestName: "fix-auth", existing: map[string]bool{"fix-auth": true, "fix-auth-2": true}, want: "fix-auth-3"},
+		{name: "rejects empty sanitized name", requestName: "\x00\n", wantErr: "name must contain printable characters"},
+		{name: "rejects reserved requested name", requestName: "\x1b[31m_tcm_stash\x1b[0m", wantErr: "name is reserved by tcm"},
+		{name: "rejects reserved derived name", dir: reservedDir, wantErr: "name is reserved by tcm"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			parent := t.TempDir()
-			dir := filepath.Join(parent, "project")
-			if err := os.Mkdir(dir, 0o700); err != nil {
-				t.Fatal(err)
+			requestDir := tt.dir
+			if requestDir == "" {
+				requestDir = dir
 			}
-			var calls [][]string
 			listCalls := 0
 			tm := &Tmux{Run: func(args ...string) (string, error) {
-				calls = append(calls, append([]string(nil), args...))
-				if args[0] == "list-sessions" {
-					listCalls++
-					names := make([]string, 0, len(tt.existing))
-					for name := range tt.existing {
-						names = append(names, name)
-					}
-					sort.Strings(names)
-					rows := make([]string, 0, len(names))
-					for i, name := range names {
-						rows = append(rows, fmt.Sprintf("$%d\t%s\t0\t0\t1\t/tmp", i, name))
-					}
-					return strings.Join(rows, "\n"), nil
+				if args[0] != "list-sessions" {
+					t.Fatalf("tmux command = %q, want list-sessions", args[0])
 				}
-				return tt.want + " %42 @7", nil
+				listCalls++
+				names := make([]string, 0, len(tt.existing))
+				for name := range tt.existing {
+					names = append(names, name)
+				}
+				sort.Strings(names)
+				rows := make([]string, 0, len(names))
+				for i, name := range names {
+					rows = append(rows, fmt.Sprintf("$%d\t%s\t0\t0\t1\t/tmp", i, name))
+				}
+				return strings.Join(rows, "\n"), nil
 			}}
-			got, err := tm.SpawnAgent(SpawnAgentRequest{Dir: dir, Agent: "codex", Prompt: "task", Name: tt.requestName})
+			got, err := tm.resolveSpawnAgentName(SpawnAgentRequest{Dir: requestDir, Name: tt.requestName})
+			if tt.wantErr != "" {
+				var validationErr *SpawnAgentValidationError
+				if !errors.As(err, &validationErr) {
+					t.Fatalf("error = %v, want validation error", err)
+				}
+				if err.Error() != tt.wantErr {
+					t.Errorf("error = %q, want %q", err, tt.wantErr)
+				}
+				if listCalls != 0 {
+					t.Errorf("list-sessions calls = %d, want 0", listCalls)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.SessionName != tt.want {
-				t.Errorf("session name = %q, want %q", got.SessionName, tt.want)
-			}
-			newSession := calls[len(calls)-1]
-			if newSession[3] != tt.want {
-				t.Errorf("new-session name = %q, want %q", newSession[3], tt.want)
+			if got != tt.want {
+				t.Errorf("resolveSpawnAgentName() = %q, want %q", got, tt.want)
 			}
 			if listCalls != 1 {
 				t.Errorf("list-sessions calls = %d, want 1", listCalls)
