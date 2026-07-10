@@ -144,6 +144,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /clear-log", s.handleClearLog)
 	mux.HandleFunc("POST /ensure-sidebar", s.handleEnsureSidebar)
 	mux.HandleFunc("POST /pane-exited", s.handlePaneExited)
+	mux.HandleFunc("POST /pane-focus", s.handlePaneFocus)
 	mux.HandleFunc("POST /toggle", s.handleToggle)
 	mux.HandleFunc("POST /client-resized", s.handleClientResized)
 	mux.HandleFunc("POST /switch-index", s.handleSwitchIndex)
@@ -311,6 +312,26 @@ func (s *Server) handleFocus(w http.ResponseWriter, r *http.Request) {
 		}
 		s.broadcastLocked()
 		s.mu.Unlock()
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// handlePaneFocus is the POST /pane-focus ingress (tmux pane-focus-in
+// hook): the body is the newly focused pane id ("%12"). Relayed verbatim
+// to every TUI client; each compares against its own pane id to decide
+// whether it holds keyboard focus (header chip, agent-row focus marker).
+// Not a state broadcast — lastState must stay a ServerState for replays.
+func (s *Server) handlePaneFocus(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+	paneID := strings.TrimSpace(string(body))
+	if paneID != "" {
+		if data, err := json.Marshal(wire.PaneFocusUpdate{Type: wire.TypePaneFocus, PaneID: paneID}); err == nil {
+			s.mu.Lock()
+			for c := range s.clients {
+				_ = c.conn.WriteText(string(data))
+			}
+			s.mu.Unlock()
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 }
