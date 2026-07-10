@@ -68,6 +68,11 @@ const SPINNERS = SEV_WORKING_SPINNER;
 const BOLD = TextAttributes.BOLD;
 const DIM = TextAttributes.DIM;
 const THEME_NAMES = Object.keys(BUILTIN_THEMES);
+const HEADER_ROWS = 2; // App header: one title row plus paddingTop={1}; keep in sync with its box.
+const FOOTER_ROWS = 3; // App footer: separator, key row, and paddingBottom={1}; keep in sync with its box.
+const ACTIVITY_ZONE_ROWS = SPARK_ROWS + 1; // ActivityZone: histogram rows plus the icon/suffix row.
+const CARD_CHROME_ROWS = 3; // Session frame: rounded border top/bottom plus the name row.
+const BRANCH_ROWS = 1; // SessionCard adds exactly one row when session.branch is present.
 
 function toneColor(tone: MetadataTone | undefined, palette: ReturnType<() => Theme["palette"]>): string {
   switch (tone) {
@@ -388,13 +393,10 @@ function App() {
   });
 
   const visibleAgentCounts = createMemo(() => {
-    const headerRows = 2;
-    const footerRows = 3;
-    const activityZoneRows = SPARK_ROWS + 1;
-    const availableRows = Math.max(0, termDims().height - headerRows - footerRows - activityZoneRows);
+    const availableRows = Math.max(0, termDims().height - HEADER_ROWS - FOOTER_ROWS - ACTIVITY_ZONE_ROWS);
     const counts = sessions.map((session) => session.agents?.length ?? 0);
     const fixedRows = sessions.reduce(
-      (total, session) => total + 2 + 1 + (session.branch ? 1 : 0),
+      (total, session) => total + CARD_CHROME_ROWS + (session.branch ? BRANCH_ROWS : 0),
       0,
     );
     const agentRows = () => counts.reduce((total, visible, index) => {
