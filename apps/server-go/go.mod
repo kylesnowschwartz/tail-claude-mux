@@ -2,4 +2,4 @@ module github.com/kylesnowschwartz/tail-claude-mux/apps/server-go
 
 go 1.25.5
 
-require github.com/kylesnowschwartz/agent-ouija v1.3.0
+require github.com/kylesnowschwartz/agent-ouija v1.4.0

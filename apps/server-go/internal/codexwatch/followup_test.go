@@ -50,7 +50,7 @@ func TestRolloutForFollowup(t *testing.T) {
 	}
 }
 
-func TestRolloutForFollowupReturnsReadError(t *testing.T) {
+func TestRolloutForFollowupSkipsMalformedRollout(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "2026", "07", "11")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -60,7 +60,8 @@ func TestRolloutForFollowupReturnsReadError(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not-json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := New(root, "").RolloutForFollowup("/project", ""); err == nil {
-		t.Fatal("expected malformed rollout error")
+	gotPath, gotID, err := New(root, "").RolloutForFollowup("/project", "")
+	if err != nil || gotPath != "" || gotID != "" {
+		t.Fatalf("got (%q, %q, %v), want empty result without error", gotPath, gotID, err)
 	}
 }

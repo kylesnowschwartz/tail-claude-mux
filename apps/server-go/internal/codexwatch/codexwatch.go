@@ -11,8 +11,6 @@
 package codexwatch
 
 import (
-	"bufio"
-	"encoding/json"
 	"errors"
 	"log"
 	"os"
@@ -35,7 +33,6 @@ import (
 const staleMS = 5 * 60 * 1000
 
 var codexCmdRE = regexp.MustCompile(`(?i)(?:^|/)codex($|[\s/])`)
-var rolloutIDRE = regexp.MustCompile(`[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
 
 var hookStatusMap = map[string]string{
 	"SessionStart":      wire.StatusIdle,
@@ -117,27 +114,17 @@ func (a *Adapter) RolloutForFollowup(cwd, trackedThreadID string) (path, threadI
 	return "", "", nil
 }
 
-// TODO: move into agent-ouija: follow-up fallback needs the cwd from Codex's
-// first session_meta line, while rollout.TrailingState intentionally reads cwd
-// only from turn_context entries.
 func followupRolloutCwd(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			return "", err
-		}
-		return "", nil
+	meta, ok, err := rollout.SessionMeta(file)
+	if err != nil || !ok {
+		return "", err
 	}
-	entry, ok := rollout.ParseEntry(scanner.Bytes())
-	if !ok {
-		return "", errors.New("invalid first rollout entry")
-	}
-	return entry.Payload.Cwd, nil
+	return meta.Payload.Cwd, nil
 }
 
 func (a *Adapter) Start(ctx *Context) {
@@ -437,28 +424,14 @@ func (a *Adapter) isRolloutPath(path string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && filepath.Ext(path) == ".jsonl"
 }
 
-// TODO: move into agent-ouija: primary-vs-subagent selection needs the
-// session_meta source, which rollout.Entry does not model.
 func isPrimaryRollout(path string) bool {
 	file, err := os.Open(path)
 	if err != nil {
 		return false
 	}
 	defer file.Close()
-	for scanner := bufio.NewScanner(file); scanner.Scan(); {
-		var entry struct {
-			Type    string `json:"type"`
-			Payload struct {
-				Source json.RawMessage `json:"source"`
-			} `json:"payload"`
-		}
-		if json.Unmarshal(scanner.Bytes(), &entry) != nil || entry.Type != "session_meta" {
-			continue
-		}
-		var source string
-		return json.Unmarshal(entry.Payload.Source, &source) == nil && source == "cli"
-	}
-	return false
+	meta, ok, err := rollout.SessionMeta(file)
+	return err == nil && ok && meta.Payload.Source.Kind == "cli"
 }
 
 func lsofPathsForPID(pid int) []string {
@@ -508,11 +481,8 @@ func (a *Adapter) seedFromJSONL() {
 	}
 }
 
-// TODO: move into agent-ouija: discover exposes IDs for a full tree walk but
-// not UUID extraction for rollout paths already supplied by lsof.
 func threadIDFromPath(path string) string {
-	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	return rolloutIDRE.FindString(base)
+	return discover.SessionIDFromPath(path)
 }
 
 func trailingRolloutState(path string) (rollout.State, error) {
