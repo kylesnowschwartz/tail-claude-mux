@@ -42,13 +42,25 @@ PANE_FOCUS_CMD="$(post_with_data /pane-focus '#{pane_id}')"
 # Note: client-session-changed runs both /focus and /ensure-sidebar so a
 # session switch repaints the panel AND auto-spawns the sidebar in the new
 # session's active window if visibility is on.
-tmux set-hook -g client-session-changed "$FOCUS_CMD ; $ENSURE_CMD"
+tmux set-hook -g client-session-changed "$FOCUS_CMD ; $ENSURE_CMD ; $PANE_FOCUS_CMD"
 tmux set-hook -g session-created        "$REFRESH_CMD"
 tmux set-hook -g session-closed         "$REFRESH_CMD"
 tmux set-hook -g after-select-window    "$ENSURE_CMD"
 tmux set-hook -g after-new-window       "$ENSURE_CMD"
 tmux set-hook -g client-resized         "$RESIZED_CMD"
 tmux set-hook -g after-kill-pane        "$PANE_EXITED_CMD"
+
+# Focused-pane tracking (/pane-focus → the TUI's FOCUS chip + agent-row
+# marker). On tmux 3.7b pane-focus-in does NOT fire when the active pane
+# changes under an already-focused client (select-pane, clicks, prefix
+# navigation — verified empirically), so window-pane-changed is the
+# workhorse; session-window-changed covers window switches,
+# client-session-changed above covers session switches, and
+# client-focus-in re-reports when the terminal itself regains OS focus.
+# #{pane_id} expands to the relevant client's active pane at fire time.
+tmux set-hook -g window-pane-changed    "$PANE_FOCUS_CMD"
+tmux set-hook -g session-window-changed "$PANE_FOCUS_CMD"
+tmux set-hook -g client-focus-in        "$PANE_FOCUS_CMD"
 
 # Window-scoped global hooks (-gw): tmux requires this scope for pane-level
 # events. Two hooks fire on pane death: pane-exited (process exits cleanly)

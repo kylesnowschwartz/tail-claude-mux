@@ -21,7 +21,10 @@ for hook in \
   client-resized \
   after-select-window \
   after-new-window \
-  after-kill-pane; do
+  after-kill-pane \
+  window-pane-changed \
+  session-window-changed \
+  client-focus-in; do
   tmux set-hook -gu "$hook" 2>/dev/null || true
 done
 for whook in \
