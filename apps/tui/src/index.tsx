@@ -286,7 +286,7 @@ function ActivityZone(props: {
     <box flexDirection="column" flexShrink={0} paddingLeft={PAD} paddingRight={PAD}>
       <Index each={sparkline()}>
         {(row) => (
-          <text wrapMode="none">
+          <text wrapMode="none" style={sparklineStyle()}>
             <span style={sparklineStyle()}>{row()}</span>
           </text>
         )}
@@ -296,11 +296,11 @@ function ActivityZone(props: {
           <text style={suffixStyle()}>{staleSuffix()}</text>
         </box>
       }>
-        <text wrapMode="none">
-          <span>{" ".repeat(geometry().leftoverCols)}</span>
+        <text wrapMode="none" style={sparklineStyle()}>
+          <span style={sparklineStyle()}>{" ".repeat(geometry().leftoverCols)}</span>
           <Index each={icons()}>
             {(cell, idx) => (
-              <Show when={cell()} fallback={<span>{BLANK_SLOT}</span>}>
+              <Show when={cell()} fallback={<span style={sparklineStyle()}>{BLANK_SLOT}</span>}>
                 <span style={iconStyle(cell()!, idx)}>{iconSlot(cell()!.glyph)}</span>
               </Show>
             )}
