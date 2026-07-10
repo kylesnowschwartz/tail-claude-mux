@@ -61,9 +61,11 @@ func BuildAgentGlyphs(clawdInstalled bool) map[string]string {
 	return map[string]string{
 		"claude-code": claude,
 		"pi":          "π",
-		"codex":       "▲",
-		"amp":         "♦",
-		"generic":     "\U000F167A",
+		// nf-md-hexagon_outline — OpenAI's hexagonal mark. Same \U 8-digit
+		// rule as the Clawd glyph above.
+		"codex":   "\U000F02D9",
+		"amp":     "♦",
+		"generic": "\U000F167A",
 	}
 }
 

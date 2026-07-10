@@ -14,7 +14,8 @@
  *                                                     cross for Error).
  *   nf-fae (Font Awesome Extension, U+E200–U+E2A9)  — used for book-open Read.
  *
- * Plus brand letterforms (π/▲/♦), the vendored Clawd glyph, brail
+ * Plus brand letterforms (π/♦, hexagon for codex), the vendored Clawd
+ * glyph, brail
  * spinners, and Powerline branch (legacy fallback).
  *
  * This module is consumed by render code; never compose glyphs ad-hoc in

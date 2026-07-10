@@ -39,7 +39,7 @@ export function buildAgentGlyphs(opts: { clawdInstalled: boolean }): Record<stri
   return {
     "claude-code": opts.clawdInstalled ? "\u{100CC0}" : "\u2605",
     "pi": "\u03C0",
-    "codex": "\u25B2",
+    "codex": "\u{F02D9}", // nf-md-hexagon_outline, OpenAI's hexagonal mark
     "amp": "\u2666",
     "generic": "\u{F167A}",
   };

@@ -41,7 +41,7 @@ func TestBuildAgentGlyphs(t *testing.T) {
 			if got["claude-code"] != tt.wantClaude {
 				t.Errorf("claude-code glyph = %q, want %q", got["claude-code"], tt.wantClaude)
 			}
-			want := map[string]string{"pi": "π", "codex": "▲", "amp": "♦", "generic": "\U000F167A"}
+			want := map[string]string{"pi": "π", "codex": "\U000F02D9", "amp": "♦", "generic": "\U000F167A"}
 			for agent, glyph := range want {
 				if got[agent] != glyph {
 					t.Errorf("%s glyph = %q, want %q", agent, got[agent], glyph)
