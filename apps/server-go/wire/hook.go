@@ -35,6 +35,7 @@ type HookPayload struct {
 	Cwd              string                     `json:"cwd"`
 	Agent            string                     `json:"agent,omitempty"`
 	ToolName         string                     `json:"tool_name,omitempty"`
+	Prompt           string                     `json:"prompt,omitempty"`
 	ToolInput        map[string]json.RawMessage `json:"tool_input,omitempty"`
 	NotificationType string                     `json:"notification_type,omitempty"`
 	SessionName      string                     `json:"session_name,omitempty"`
@@ -87,6 +88,7 @@ func ParseHookPayload(body []byte) (HookPayload, bool) {
 		Cwd:              cwd,
 		Agent:            optBoundedString(raw["agent"], maxAgentLen),
 		ToolName:         optBoundedString(raw["tool_name"], maxToolNameLen),
+		Prompt:           optBoundedString(raw["prompt"], maxStringLen),
 		ToolInput:        optPlainObject(raw["tool_input"], maxToolInputKeys),
 		NotificationType: optBoundedString(raw["notification_type"], maxNotificationTypeLen),
 		SessionName:      optBoundedString(raw["session_name"], maxSessionNameLen),

@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/config"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/explain"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/metadata"
@@ -45,12 +46,13 @@ import (
 // state mutation runs under mu — commands, hooks, and refresh ticks
 // serialize the same way the bun server's single JS thread does.
 type Server struct {
-	Builder   *state.Builder
-	Tracker   *tracker.Tracker
-	Watcher   *ccwatch.Adapter
-	PiWatcher *piwatch.Adapter
-	Scanner   *panescan.Scanner
-	Metadata  *metadata.Store
+	Builder      *state.Builder
+	Tracker      *tracker.Tracker
+	Watcher      *ccwatch.Adapter
+	PiWatcher    *piwatch.Adapter
+	CodexWatcher *codexwatch.Adapter
+	Scanner      *panescan.Scanner
+	Metadata     *metadata.Store
 
 	// Restart is invoked ~50ms after answering POST /restart (the dev
 	// loop's `restart.sh` ingress). main wires it to a self-exec;
@@ -109,14 +111,14 @@ type client struct {
 
 // New returns a Server around the builder and agent pipeline. Tracker is
 // required; watchers and scanner may be nil (tests).
-func New(b *state.Builder, tr *tracker.Tracker, w *ccwatch.Adapter, pi *piwatch.Adapter, sc *panescan.Scanner) *Server {
+func New(b *state.Builder, tr *tracker.Tracker, w *ccwatch.Adapter, pi *piwatch.Adapter, codex *codexwatch.Adapter, sc *panescan.Scanner) *Server {
 	if tr != nil {
 		b.Agents = tr
 	}
 	md := metadata.NewStore()
 	b.Metadata = md
 	return &Server{
-		Builder: b, Tracker: tr, Watcher: w, PiWatcher: pi, Scanner: sc, Metadata: md,
+		Builder: b, Tracker: tr, Watcher: w, PiWatcher: pi, CodexWatcher: codex, Scanner: sc, Metadata: md,
 		clients:          map[*client]bool{},
 		lastSeenByThread: map[string]lastSeen{},
 	}
@@ -275,6 +277,9 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.PiWatcher != nil {
 			s.PiWatcher.HandleHook(p)
+		}
+		if s.CodexWatcher != nil {
+			s.CodexWatcher.HandleHook(p)
 		}
 		s.mu.Unlock()
 	} else {

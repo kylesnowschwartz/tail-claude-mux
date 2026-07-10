@@ -39,6 +39,7 @@ func TestParseHookPayload_OptionalFieldsDropIndividually(t *testing.T) {
 		"session_id": "s1",
 		"cwd": "/proj",
 		"agent": "claude-code",
+		"prompt": "name this thread",
 		"tool_name": 42,
 		"tool_input": {"file_path": "/a.txt"},
 		"stop_reason": "made-up-reason",
@@ -53,6 +54,9 @@ func TestParseHookPayload_OptionalFieldsDropIndividually(t *testing.T) {
 	}
 	if p.Agent != "claude-code" {
 		t.Errorf("agent = %q", p.Agent)
+	}
+	if p.Prompt != "name this thread" {
+		t.Errorf("prompt = %q", p.Prompt)
 	}
 	if p.ToolName != "" {
 		t.Error("non-string tool_name must be dropped, not fail the event")

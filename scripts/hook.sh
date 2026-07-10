@@ -5,6 +5,7 @@
 set -o pipefail
 
 EVENT="${1:-unknown}"
+AGENT="${2:-}"
 PAYLOAD=$(cat)
 
 # $PPID is the `sh -c` wrapper Claude spawned us in — short-lived. The runtime
@@ -25,6 +26,9 @@ fi
 # Build the request body: merge event name + pid + snapshot into the stdin JSON.
 # If payload is missing or malformed, send just the metadata.
 INJECTED="\"event\":\"$EVENT\",\"pid\":$HOOK_PID,\"process_snapshot\":$PS_SNAPSHOT_JSON"
+if [[ -n "$AGENT" ]]; then
+  INJECTED="$INJECTED,\"agent\":\"$AGENT\""
+fi
 if [[ "$PAYLOAD" == "{"* ]]; then
   BODY="{${INJECTED},${PAYLOAD#\{}"
 else

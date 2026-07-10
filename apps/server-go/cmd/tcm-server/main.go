@@ -29,6 +29,8 @@ import (
 	"github.com/kylesnowschwartz/agent-ouija/claude/claudedir"
 	"github.com/kylesnowschwartz/agent-ouija/claude/settings"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexhooks"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/gitinfo"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
@@ -44,11 +46,11 @@ import (
 func main() {
 	port := flag.Int("port", wire.ServerPort, "listen port (use a non-default port to A/B against a live instance)")
 	refresh := flag.Duration("refresh", 2*time.Second, "state refresh interval")
-	doRegisterHooks := flag.Bool("register-hooks", false, "register tcm's lifecycle hooks in Claude Code's settings.json and exit")
+	doRegisterHooks := flag.Bool("register-hooks", false, "register tcm's Claude Code and Codex lifecycle hooks and exit")
 	flag.Parse()
 
 	if *doRegisterHooks {
-		registerClaudeHooks()
+		registerHooks()
 		return
 	}
 
@@ -73,8 +75,13 @@ func main() {
 		log.Printf("claude root unavailable, hook watcher disabled: %v", err)
 	}
 	piWatcher := piwatch.New(filepath.Join(home, ".pi", "agent", "sessions"))
+	codexHome := os.Getenv("CODEX_HOME")
+	if codexHome == "" {
+		codexHome = filepath.Join(home, ".codex")
+	}
+	codexWatcher := codexwatch.New(filepath.Join(codexHome, "sessions"), filepath.Join(codexHome, "session_index.jsonl"))
 
-	srv := server.New(builder, tracker.New(), watcher, piWatcher, panescan.New())
+	srv := server.New(builder, tracker.New(), watcher, piWatcher, codexWatcher, panescan.New())
 	srv.Restart = restartInPlace
 	srv.Quit = func() {
 		_ = os.Remove(wire.PIDFile)
@@ -205,6 +212,37 @@ func registerClaudeHooks() {
 		return
 	}
 	fmt.Printf("Registered hooks for: %v\n", added)
+}
+
+func registerHooks() {
+	hookScript := resolveHookScript()
+	if hookScript == "" {
+		log.Fatalf("register-hooks: scripts/hook.sh not found (set TCM_DIR or run from a tcm checkout)")
+	}
+	registerClaudeHooks()
+	registerCodexHooks(hookScript)
+}
+
+func registerCodexHooks(hookScript string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("register-hooks: home dir: %v", err)
+	}
+	codexHome := os.Getenv("CODEX_HOME")
+	if codexHome == "" {
+		codexHome = filepath.Join(home, ".codex")
+	}
+	path := filepath.Join(codexHome, "hooks.json")
+	added, err := codexhooks.Register(path, hookScript)
+	if err != nil {
+		log.Fatalf("register-hooks: codex: %v", err)
+	}
+	if len(added) == 0 {
+		fmt.Println("All Codex hooks already registered.")
+	} else {
+		fmt.Printf("Registered Codex hooks for: %v\n", added)
+	}
+	fmt.Println("On the next Codex launch, choose Hooks need review, then Trust all and continue.")
 }
 
 // resolveHookScript locates scripts/hook.sh at the repo root, trying the

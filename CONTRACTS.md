@@ -22,6 +22,7 @@ endpoint. Adapters claim payloads by the optional `agent` discriminator:
 
 - `agent` missing or `"claude-code"` → Claude Code adapter.
 - `agent: "pi"` → pi adapter.
+- `agent: "codex"` → Codex adapter.
 - Other values are ignored.
 
 Every hook POST is fire-and-forget: a failure must never block the
@@ -81,6 +82,41 @@ agent that fired it.
 - No `probeLiveStatus` yet: a stale pi `running` entry rides the
   tracker's 30-minute ceiling. Follow-up: probe against
   `~/.pi/agent/sessions/`.
+
+### Codex (Hook-Based)
+
+- `scripts/hook.sh <Event> codex` is registered additively in
+  `~/.codex/hooks.json` for `SessionStart`, `UserPromptSubmit`,
+  `PreToolUse`, `PostToolUse`, `PermissionRequest`, and `Stop`. Run
+  `tcm-server -register-hooks`, then choose `Hooks need review` and
+  `Trust all and continue` on the next Codex launch. Registration preserves
+  foreign hooks and unknown configuration keys, and repeated runs do not
+  add duplicate TCM groups.
+- Status mapping: `SessionStart` → `idle`;
+  `UserPromptSubmit`/`PreToolUse`/`PostToolUse` → `running`;
+  `PermissionRequest` → `waiting`; `Stop` → `idle`. Stop is a turn
+  boundary, not a session end — the process stays alive at its prompt, so
+  the row rests at `idle`. Consequence: codex rows never reach a terminal
+  status from hooks alone, so the unseen badge (which keys on
+  terminal/waiting) does not fire for a turn finishing in an inactive
+  session; cleanup relies on the liveness sweep marking dead pids exited.
+- Routing is pid-first. The adapter resolves the long-lived `codex` pid
+  from `process_snapshot`, then maps pid → session. cwd is used only while
+  pid remains unresolved. Once pid resolves, a failed pane lookup drops the
+  event instead of silently falling back to cwd.
+- Cold start recursively scans recent
+  `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` files (default
+  `~/.codex/sessions/`). It folds rollout events to the latest status,
+  routes from the first `turn_context.payload.cwd`, and skips idle or
+  terminal seeds. Hooks already known to the adapter take precedence.
+- Thread names resolve once from `$CODEX_HOME/session_index.jsonl`. Until
+  that lookup completes, the first `UserPromptSubmit.prompt` supplies a
+  sanitized, 80-column fallback.
+- Codex has no `SessionEnd` hook. The tracker removes ended processes via
+  terminal pruning and liveness sweeps.
+- No `probeLiveStatus` yet: a stale Codex `running` entry rides the
+  tracker's 30-minute ceiling. Follow-up: add a Codex-specific live-state
+  source without changing the Claude-only probe contract.
 
 ## Agent Model
 

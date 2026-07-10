@@ -11,6 +11,7 @@ import (
 
 	"github.com/kylesnowschwartz/agent-ouija/claude/claudedir"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
@@ -91,6 +92,15 @@ func (s *Server) StartWatchers() {
 			Locked:              locked,
 		})
 		log.Printf("agent watcher started: %s", s.PiWatcher.Name())
+	}
+	if s.CodexWatcher != nil {
+		s.CodexWatcher.Start(&codexwatch.Context{
+			ResolveSession:      s.resolveSessionLocked,
+			ResolveSessionByPid: s.resolveSessionByPidLocked,
+			Emit:                s.emitLocked,
+			Locked:              locked,
+		})
+		log.Printf("agent watcher started: %s", s.CodexWatcher.Name())
 	}
 	s.mu.Unlock()
 
