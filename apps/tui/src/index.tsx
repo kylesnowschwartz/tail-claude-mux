@@ -31,7 +31,7 @@ import {
   BRANCH_GLYPH,
   AGENT_GLYPHS,
 } from "./vocab";
-import { tier } from "./tiers";
+import { tier, type TierStyle } from "./tiers";
 import {
   type ActivityLog,
   type BucketIcon,
@@ -1370,6 +1370,9 @@ function AgentListItem(props: AgentListItemProps) {
   const bgColor = () => {
     if (isFlash()) return P().surface1;
     if (props.isKeyboardFocused) return P().surface0;
+    // Focused-pane rows get the same row-bg treatment: the sky fg tint
+    // alone is too subtle on light/transparent themes.
+    if (props.isPaneFocused) return P().surface0;
     return "transparent";
   };
 
@@ -1391,9 +1394,12 @@ function AgentListItem(props: AgentListItemProps) {
   const supportingStyle = () => props.isSessionSelected
     ? tier("muted", P())
     : { fg: P().surface2 };
-  const identityStyle = () => props.isPaneFocused
+  // Focused-pane marker: the row's whole identity (glyph, subagent, thread
+  // name) tints sky. A colour survives the right-edge clip that used to eat
+  // the trailing "•" on long thread names.
+  const focusTinted = (base: TierStyle) => props.isPaneFocused
     ? { fg: P().sky }
-    : nameStyle();
+    : base;
 
   return (
     <box flexDirection="column" flexShrink={0} onMouseDown={() => {
@@ -1427,17 +1433,14 @@ function AgentListItem(props: AgentListItemProps) {
               `truncate`: it renders a middle-ellipsis; plain end-clip is
               the intended look. */}
           <text flexGrow={1} wrapMode="none" style={nameStyle()}>
-            <span style={identityStyle()}>{AGENT_GLYPHS[props.agent.agent] ?? props.agent.agent}</span>
+            <span style={focusTinted(nameStyle())}>{AGENT_GLYPHS[props.agent.agent] ?? props.agent.agent}</span>
             <Show when={props.agent.subagent}>
-              <span style={tier(props.isSessionSelected ? "dim" : "muted", P())}>{"  "}{props.agent.subagent}</span>
+              <span style={focusTinted(tier(props.isSessionSelected ? "dim" : "muted", P()))}>{"  "}{props.agent.subagent}</span>
             </Show>
             {/* Session name from the agent-ouija registry when known;
                 the 4-char uuid suffix is the fallback identity. */}
             <Show when={props.agent.threadName || props.agent.threadId}>
-              <span style={supportingStyle()}>{"  "}{props.agent.threadName || shortThreadId(props.agent.threadId!)}</span>
-            </Show>
-            <Show when={props.isPaneFocused}>
-              <span style={identityStyle()}>{" •"}</span>
+              <span style={focusTinted(supportingStyle())}>{"  "}{props.agent.threadName || shortThreadId(props.agent.threadId!)}</span>
             </Show>
           </text>
           <text flexShrink={0} style={{ fg: color() }}>
