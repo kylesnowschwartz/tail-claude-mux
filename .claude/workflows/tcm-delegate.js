@@ -106,12 +106,15 @@ const watch = await workflow(
   { scriptPath: cfg.watchScriptPath || DEFAULT_WATCH },
   { session: spawned.session_name, pane: spawned.pane_id, watchMinutes: cfg.watchMinutes || 20, pollSeconds: cfg.pollSeconds || 30 }
 )
-if (!watch || watch.resolution !== 'finished') {
-  return {
-    outcome: watch ? watch.resolution : 'error',
-    detail: watch ? watch.detail : 'nested watch returned nothing',
-    sessionName: spawned.session_name, paneId: spawned.pane_id, dir: cfg.dir, resultSummary: '', watch,
-  }
+if (!watch) {
+  return { outcome: 'error', detail: 'nested watch returned nothing', sessionName: spawned.session_name, paneId: spawned.pane_id, dir: cfg.dir, resultSummary: '', watch }
+}
+// The rollout outlives the pane: attempt the result-read even on
+// session-dead/timeout, so a killed pane still yields the delegate's last
+// words (learned when a trial session was trimmed mid-run).
+const READABLE = watch.resolution === 'finished' || watch.resolution === 'session-dead' || watch.resolution === 'timeout'
+if (!READABLE) {
+  return { outcome: watch.resolution, detail: watch.detail, sessionName: spawned.session_name, paneId: spawned.pane_id, dir: cfg.dir, resultSummary: '', watch }
 }
 
 phase('Result')
@@ -119,7 +122,7 @@ const result = await agent(resultPrompt({ dir: cfg.dir }), {
   label: `result:${spawned.session_name}`, phase: 'Result', model: 'sonnet', effort: 'low', schema: RESULT_SCHEMA,
 })
 return {
-  outcome: 'finished',
+  outcome: watch.resolution,
   detail: result ? result.evidence : 'result leg died; pane capture is the fallback',
   sessionName: spawned.session_name, paneId: spawned.pane_id, dir: cfg.dir,
   resultSummary: result ? result.summary : '', watch,
