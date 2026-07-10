@@ -23,6 +23,50 @@ wait_for_server() {
   return 1
 }
 
+wait_for_server_gone() {
+  for i in {1..30}; do
+    server_alive || return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+# restart_decision figures out whether POST /restart would actually land the
+# binary we just built. restartInPlace (apps/server-go/cmd/tcm-server/main.go)
+# re-execs os.Executable() — the path the LIVE server was originally launched
+# from. If that's a different checkout (e.g. you ran `just restart` from a
+# worktree other than the one that launched the live server), /restart
+# silently re-execs the OLD binary and the new build never goes live.
+#
+# We identify the live server's launch path via lsof (txt = the process's
+# executable mapping) and compare it to $GO_BIN by device+inode via stat —
+# not by comparing to the binary we just rebuilt in isolation, but by
+# resolving the *current* directory entry at that path, which is exactly
+# what a fresh `stat` on the path gives us. Sets DECISION to "restart" or
+# "cold-start", and REASON to a plain-language note (empty when unremarkable).
+restart_decision() {
+  local live_pid live_exe
+  live_pid="$(lsof -ti "tcp:${PORT}" -sTCP:LISTEN 2>/dev/null | head -n1 || true)"
+  if [[ -z "$live_pid" ]]; then
+    DECISION="restart"
+    REASON="couldn't identify the live server's process; assuming it's already this build"
+    return
+  fi
+  live_exe="$(lsof -p "$live_pid" -a -d txt -Fn 2>/dev/null | sed -n 's/^n//p' | grep -F "/tcm-server" | head -n1 || true)"
+  if [[ -z "$live_exe" ]]; then
+    DECISION="restart"
+    REASON="couldn't identify the live server's executable; assuming it's already this build"
+    return
+  fi
+  if [[ "$(stat -f '%d %i' "$live_exe" 2>/dev/null)" == "$(stat -f '%d %i' "$GO_BIN" 2>/dev/null)" ]]; then
+    DECISION="restart"
+    REASON=""
+  else
+    DECISION="cold-start"
+    REASON="live server was running a different build ($live_exe); cold-starting this one"
+  fi
+}
+
 # 1. Build TUI
 echo "==> Building TUI..."
 cd "$ROOT/apps/tui" && "$BUN" run build
@@ -34,8 +78,20 @@ echo "==> Building Go server..."
 
 # 2. Restart or cold-start the server
 if server_alive; then
-  echo "==> Restarting server..."
-  curl -s -o /dev/null -X POST "${BASE}/restart"
+  restart_decision
+  if [[ "$DECISION" == "cold-start" ]]; then
+    echo "==> ${REASON}"
+    "$SCRIPT_DIR/stop.sh"
+    if ! wait_for_server_gone; then
+      echo "error: old server did not stop within 3s" >&2
+      exit 1
+    fi
+    "$GO_BIN" >>/tmp/tcm-server-go.log 2>&1 &
+  else
+    [[ -n "$REASON" ]] && echo "==> ${REASON}"
+    echo "==> Restarting server..."
+    curl -s -o /dev/null -X POST "${BASE}/restart"
+  fi
 else
   echo "==> Server not running, starting fresh..."
   "$GO_BIN" >>/tmp/tcm-server-go.log 2>&1 &
