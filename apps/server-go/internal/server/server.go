@@ -53,6 +53,7 @@ type Server struct {
 	CodexWatcher *codexwatch.Adapter
 	Scanner      *panescan.Scanner
 	Metadata     *metadata.Store
+	BuildInfo    string
 
 	// Restart is invoked ~50ms after answering POST /restart (the dev
 	// loop's `restart.sh` ingress). main wires it to a self-exec;
@@ -204,6 +205,9 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Fprint(w, "tcm server (go)")
+	if s.BuildInfo != "" {
+		fmt.Fprintf(w, " %s", s.BuildInfo)
+	}
 }
 
 func (s *Server) handleState(w http.ResponseWriter, _ *http.Request) {

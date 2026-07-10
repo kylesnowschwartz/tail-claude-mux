@@ -43,11 +43,22 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
+var (
+	version = "dev"
+	commit  = "unknown"
+)
+
 func main() {
 	port := flag.Int("port", wire.ServerPort, "listen port (use a non-default port to A/B against a live instance)")
 	refresh := flag.Duration("refresh", 2*time.Second, "state refresh interval")
 	doRegisterHooks := flag.Bool("register-hooks", false, "register tcm's Claude Code and Codex lifecycle hooks and exit")
+	showVersion := flag.Bool("version", false, "print version and build commit and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("tcm-server %s\n", buildInfo())
+		return
+	}
 
 	if *doRegisterHooks {
 		registerHooks()
@@ -82,6 +93,7 @@ func main() {
 	codexWatcher := codexwatch.New(filepath.Join(codexHome, "sessions"), filepath.Join(codexHome, "session_index.jsonl"))
 
 	srv := server.New(builder, tracker.New(), watcher, piWatcher, codexWatcher, panescan.New())
+	srv.BuildInfo = buildInfo()
 	srv.Restart = restartInPlace
 	srv.Quit = func() {
 		_ = os.Remove(wire.PIDFile)
@@ -126,6 +138,10 @@ func main() {
 	if err := http.Serve(ln, srv.Handler()); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func buildInfo() string {
+	return fmt.Sprintf("%s (commit %s)", version, commit)
 }
 
 // writePidFile records this process for the launcher/stop tooling. Best
