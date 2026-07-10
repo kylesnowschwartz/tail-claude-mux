@@ -29,7 +29,6 @@ import {
   SEV_ERROR,
   BRAND_CLAWD,
   BRANCH_GLYPH,
-  DIR_MISMATCH_GLYPH,
   AGENT_GLYPHS,
 } from "./vocab";
 import { tier } from "./tiers";
@@ -78,17 +77,6 @@ function toneColor(tone: MetadataTone | undefined, palette: ReturnType<() => The
     case "info": return palette.blue;
     default: return palette.overlay0;
   }
-}
-
-function formatDir(dir: string | undefined): { project: string; parent: string } {
-  if (!dir) return { project: "", parent: "" };
-  const home = process.env.HOME ?? "";
-  const display = home && dir.startsWith(home) ? "~" + dir.slice(home.length) : dir;
-  const segments = display.split("/").filter(Boolean);
-  if (segments.length <= 1) return { project: display, parent: "" };
-  const project = segments[segments.length - 1];
-  const parent = segments[segments.length - 2];
-  return { project, parent };
 }
 
 function sanitizeThreadName(raw: string): string {
@@ -1481,8 +1469,6 @@ function SessionCard(props: SessionCardProps) {
     return String(n);
   };
 
-  const dirParts = () => formatDir(props.session.dir);
-  const dirMismatch = () => dirParts().project !== props.session.name;
   const agents = () => props.session.agents ?? [];
   const visibleAgents = () => agents().slice(0, props.visibleAgentCount);
   const hiddenAgentCount = () => Math.max(0, agents().length - visibleAgents().length);
@@ -1516,12 +1502,6 @@ function SessionCard(props: SessionCardProps) {
                   {BRANCH_GLYPH}{" "}{truncBranch()}
                 </span>
               </text>
-              <box flexGrow={1} />
-              <Show when={dirMismatch()}>
-                <text flexShrink={0} style={tier(props.isSelected ? "muted" : "dim", P(), props.paneFocused())}>
-                  <span style={tier(props.isSelected ? "muted" : "dim", P(), props.paneFocused())}>{" "}{DIR_MISMATCH_GLYPH}</span>
-                </text>
-              </Show>
             </box>
           </Show>
         </box>

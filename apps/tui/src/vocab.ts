@@ -47,7 +47,6 @@ export { STATUSLINE_LAST_WINDOW, STATUSLINE_SHELL, AGENT_GLYPHS } from "@tcm/run
 // ── Structural & branding glyphs ──
 export const BRAND_CLAWD = ID_CLAUDE_CODE;   // header product mark
 export const BRANCH_GLYPH = "\u{F062C}";     // nf-md-source-branch
-export const DIR_MISMATCH_GLYPH = "\u{F19CB}"; // nf-md-folder-question-outline
 
 // ── Activity-zone glyphs (sparkline + gutter + verb stripe) ──
 // Verb glyphs come from three nerd-fonts families (see header). The palette
