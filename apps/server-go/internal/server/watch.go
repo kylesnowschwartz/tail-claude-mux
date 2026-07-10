@@ -413,17 +413,34 @@ func (s *Server) focusAgentPane(cmd wire.ClientCommand) {
 	if paneID == "" {
 		return
 	}
+	if !s.selectAgentPane(cmd, paneID) {
+		return
+	}
 	t := s.Builder.Tmux
-	// select-window accepts a pane id directly (resolves to its window);
-	// without it select-pane alone won't work across windows.
-	_, _ = t.Run("select-window", "-t", paneID)
-	_, _ = t.Run("select-pane", "-t", paneID)
 	_, _ = t.Run("set-option", "-p", "-t", paneID, "pane-active-border-style", paneHighlightBorder)
 	_, _ = t.Run("select-pane", "-t", paneID, "-P", paneHighlightBg)
 	time.AfterFunc(paneHighlightFlash, func() {
 		_, _ = t.Run("set-option", "-p", "-t", paneID, "-u", "pane-active-border-style")
 		_, _ = t.Run("select-pane", "-t", paneID, "-P", "")
 	})
+}
+
+func (s *Server) selectAgentPane(cmd wire.ClientCommand, paneID string) bool {
+	t := s.Builder.Tmux
+	if cmd.Session != "" {
+		current, ok := t.CurrentSession(cmd.ClientTTY)
+		if !ok || current != cmd.Session {
+			if err := t.SwitchClient(cmd.Session, cmd.ClientTTY); err != nil {
+				log.Printf("focus-agent-pane switch-client %q: %v", cmd.Session, err)
+				return false
+			}
+		}
+	}
+	// select-window accepts a pane id directly (resolves to its window);
+	// without it select-pane alone won't work across windows.
+	_, _ = t.Run("select-window", "-t", paneID)
+	_, _ = t.Run("select-pane", "-t", paneID)
+	return true
 }
 
 // handleFocusContext is the POST /focus ingress (tmux hook): body is

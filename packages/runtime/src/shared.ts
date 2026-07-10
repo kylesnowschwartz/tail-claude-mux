@@ -146,7 +146,7 @@ export type ClientCommand =
   | { type: "identify"; clientTty: string }
   | { type: "quit" }
   | { type: "identify-pane"; paneId: string; sessionName: string }
-  | { type: "focus-agent-pane"; session: string; agent: string; threadId?: string; threadName?: string; paneId?: string }
+  | { type: "focus-agent-pane"; session: string; agent: string; threadId?: string; threadName?: string; paneId?: string; clientTty?: string }
   | { type: "kill-agent-pane"; session: string; agent: string; threadId?: string; threadName?: string; paneId?: string }
   | { type: "report-width"; width: number }
   | { type: "equalize-width" };
@@ -175,4 +175,3 @@ export const C = {
   mantle: "#181825",
   crust: "#11111b",
 } as const;
-

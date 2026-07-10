@@ -490,6 +490,7 @@ function App() {
       threadId: agent.threadId,
       threadName: agent.threadName,
       paneId: agent.paneId,
+      clientTty: clientTty() || undefined,
     });
   }
 
@@ -984,6 +985,7 @@ function App() {
                       threadId: agent.threadId,
                       threadName: agent.threadName,
                       paneId: agent.paneId,
+                      clientTty: clientTty() || undefined,
                     });
                   }}
                 />

@@ -135,6 +135,8 @@ func TestClientCommand_Decode(t *testing.T) {
 			ClientCommand{Type: CmdReorderSession, Name: "proj", Delta: -1}},
 		{`{"type":"dismiss-agent","session":"proj","agent":"claude-code","threadId":"t1","paneId":"%3","pid":123}`,
 			ClientCommand{Type: CmdDismissAgent, Session: "proj", Agent: "claude-code", ThreadID: "t1", PaneID: "%3", PID: intPtr(123)}},
+		{`{"type":"focus-agent-pane","session":"proj","agent":"claude-code","paneId":"%3","clientTty":"/dev/ttys001"}`,
+			ClientCommand{Type: CmdFocusAgentPane, Session: "proj", Agent: "claude-code", PaneID: "%3", ClientTTY: "/dev/ttys001"}},
 		{`{"type":"equalize-width"}`, ClientCommand{Type: CmdEqualizeWidth}},
 	}
 	for _, c := range cases {

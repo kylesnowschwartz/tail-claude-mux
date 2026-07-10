@@ -468,6 +468,9 @@ func (s *Server) handleCommand(c *client, cmd wire.ClientCommand) {
 
 	case wire.CmdFocusAgentPane:
 		if s.Tracker != nil {
+			if cmd.ClientTTY == "" {
+				cmd.ClientTTY = c.tty
+			}
 			s.focusAgentPane(cmd)
 		}
 

@@ -1,10 +1,44 @@
 package server
 
 import (
+	"slices"
 	"testing"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
+
+func TestSelectAgentPaneSwitchesClientAcrossSessions(t *testing.T) {
+	var calls [][]string
+	runner := func(args ...string) (string, error) {
+		calls = append(calls, slices.Clone(args))
+		if args[0] == "list-clients" {
+			return "client\t/dev/ttys001\t123\tcurrent\t200\t50", nil
+		}
+		return "", nil
+	}
+	s := &Server{Builder: &state.Builder{Tmux: &tmux.Tmux{Run: runner}}}
+	cmd := wire.ClientCommand{Session: "target", ClientTTY: "/dev/ttys001"}
+
+	if ok := s.selectAgentPane(cmd, "%9"); !ok {
+		t.Fatal("selectAgentPane returned false")
+	}
+
+	wantCommands := []string{"list-clients", "switch-client", "select-window", "select-pane"}
+	if len(calls) != len(wantCommands) {
+		t.Fatalf("commands = %v, want %v", calls, wantCommands)
+	}
+	for i, want := range wantCommands {
+		if calls[i][0] != want {
+			t.Fatalf("command %d = %v, want %s", i, calls[i], want)
+		}
+	}
+	wantSwitch := []string{"switch-client", "-c", "/dev/ttys001", "-t", "target"}
+	if !slices.Equal(calls[1], wantSwitch) {
+		t.Fatalf("switch command = %v, want %v", calls[1], wantSwitch)
+	}
+}
 
 // deriveLogEntriesLocked is the seismograph's data source: every entry it
 // returns becomes one activity-log event. The contract under test: tool
