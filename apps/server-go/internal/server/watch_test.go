@@ -42,14 +42,18 @@ func TestSelectAgentPaneSwitchesClientAcrossSessions(t *testing.T) {
 }
 
 type fakeAgentStateSource struct {
-	name    string
-	verdict tracker.ProbeVerdict
-	calls   int
+	name       string
+	threadID   string
+	threadName string
+	verdict    tracker.ProbeVerdict
+	calls      int
 }
 
 func (f *fakeAgentStateSource) Name() string { return f.name }
 
-func (f *fakeAgentStateSource) SessionInfoForPid(int) (string, string) { return "", "" }
+func (f *fakeAgentStateSource) SessionInfoForPid(int) (string, string) {
+	return f.threadID, f.threadName
+}
 
 func (f *fakeAgentStateSource) ProbeLiveStatus(int, string, string) tracker.ProbeVerdict {
 	f.calls++
@@ -75,6 +79,22 @@ func TestProbeLivenessRoutesByAgent(t *testing.T) {
 	}
 	if got := probeLivenessFromSources(wire.AgentEvent{Agent: "pi", PID: 44}, sources...); got != tracker.ProbeNoSignal {
 		t.Fatalf("unknown-agent verdict = %v, want ProbeNoSignal", got)
+	}
+}
+
+func TestScanStateForPaneResolvesIdentityAndWorkingStatus(t *testing.T) {
+	claude := &fakeAgentStateSource{name: "claude-code", threadID: "claude-thread", verdict: tracker.ProbeEnded}
+	codex := &fakeAgentStateSource{name: "codex", threadID: "codex-thread", threadName: "Fix state", verdict: tracker.ProbeWorking}
+
+	pa, verdict := scanStateForPane(tracker.PanePresence{Agent: "codex", PID: 42, PaneTitle: "Codex"}, claude, codex)
+	if pa.ThreadID != "codex-thread" || pa.ThreadName != "Fix state" {
+		t.Fatalf("scan identity = (%q, %q), want codex thread identity", pa.ThreadID, pa.ThreadName)
+	}
+	if verdict != tracker.ProbeWorking {
+		t.Fatalf("scan verdict = %v, want ProbeWorking", verdict)
+	}
+	if codex.calls != 1 || claude.calls != 0 {
+		t.Fatalf("calls = claude %d, codex %d", claude.calls, codex.calls)
 	}
 }
 

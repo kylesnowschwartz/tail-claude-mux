@@ -71,6 +71,21 @@ func (s *Server) agentStateSources() []agentStateSource {
 	return sources
 }
 
+func scanStateForPane(pa tracker.PanePresence, sources ...agentStateSource) (tracker.PanePresence, tracker.ProbeVerdict) {
+	if pa.PID == 0 {
+		return pa, tracker.ProbeNoSignal
+	}
+	source := stateSourceForAgent(pa.Agent, sources...)
+	if source == nil {
+		return pa, tracker.ProbeNoSignal
+	}
+	pa.ThreadID, pa.ThreadName = source.SessionInfoForPid(pa.PID)
+	if pa.ThreadID == "" {
+		return pa, tracker.ProbeNoSignal
+	}
+	return pa, source.ProbeLiveStatus(pa.PID, pa.ThreadID, pa.PaneTitle)
+}
+
 // StartWatchers binds the Claude watcher context, runs its cold-start seed,
 // arms the seed-grace timer, and launches the pane-scan and liveness-sweep
 // loops. Call once, before serving.
@@ -277,16 +292,39 @@ func (s *Server) paneScanLoop() {
 		// from birth instead of waiting for a hook to graduate them. File IO,
 		// so outside the lock.
 		stateSources := s.agentStateSources()
-		for _, paneAgents := range next {
+		var scanWorking []wire.AgentEvent
+		for session, paneAgents := range next {
 			for i, pa := range paneAgents {
-				if source := stateSourceForAgent(pa.Agent, stateSources...); source != nil && pa.PID != 0 {
-					paneAgents[i].ThreadID, paneAgents[i].ThreadName = source.SessionInfoForPid(pa.PID)
+				var verdict tracker.ProbeVerdict
+				paneAgents[i], verdict = scanStateForPane(pa, stateSources...)
+				if verdict == tracker.ProbeWorking {
+					scanWorking = append(scanWorking, wire.AgentEvent{
+						Agent:      paneAgents[i].Agent,
+						Session:    session,
+						Status:     wire.StatusRunning,
+						TS:         time.Now().UnixMilli(),
+						ThreadID:   paneAgents[i].ThreadID,
+						ThreadName: paneAgents[i].ThreadName,
+						PID:        paneAgents[i].PID,
+					})
 				}
 			}
 		}
 
 		s.mu.Lock()
 		changed := false
+		for _, ev := range scanWorking {
+			previous := s.Tracker.GetEvent(ev.Session, ev.Agent, ev.ThreadID, "")
+			// A hook's permission/request state is more specific than a
+			// rollout's generic "working" signal.
+			if previous != nil && previous.Status == wire.StatusWaiting {
+				continue
+			}
+			if previous == nil || previous.Status != wire.StatusRunning {
+				changed = true
+			}
+			s.Tracker.ApplyEvent(ev, false)
+		}
 		for session, paneAgents := range next {
 			if s.Tracker.ApplyPanePresence(session, paneAgents) {
 				changed = true
