@@ -25,17 +25,24 @@ const (
 // at the beginning of comm or after a path separator, and end at the end of
 // comm or before a hyphen (preserving "claude" → "claude-code").
 func CommMatches(comm, pat string) bool {
-	idx := strings.Index(comm, pat)
-	if idx < 0 {
-		return false
+	// Keep looking when an earlier path segment contains pat without the
+	// required boundaries; vendor paths can repeat the agent name before
+	// the executable basename.
+	for offset := 0; offset <= len(comm)-len(pat); {
+		rel := strings.Index(comm[offset:], pat)
+		if rel < 0 {
+			return false
+		}
+		idx := offset + rel
+		startsSegment := idx == 0 || comm[idx-1] == '/'
+		tail := idx + len(pat)
+		endsWord := tail == len(comm) || comm[tail] == '-'
+		if startsSegment && endsWord {
+			return true
+		}
+		offset = idx + 1
 	}
-	if idx > 0 && comm[idx-1] != '/' {
-		return false
-	}
-	if tail := idx + len(pat); tail < len(comm) && comm[tail] != '-' {
-		return false
-	}
-	return true
+	return false
 }
 
 // genericRuntimes are runtimes/shells whose comm is a launcher — the real

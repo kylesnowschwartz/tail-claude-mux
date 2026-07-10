@@ -176,12 +176,19 @@ func TestCommMatchesBoundaryRules(t *testing.T) {
 		check(t, "/usr/bin/pi", "pi", true)
 		check(t, "/usr/local/bin/claude", "claude", true)
 		check(t, "/opt/codex", "codex", true)
+		check(t, "/opt/homebrew/bin/codex", "codex", true)
+	})
+
+	t.Run("later path occurrence can match after an earlier boundary miss", func(t *testing.T) {
+		check(t, "/Users/kyle/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex", "codex", true)
+		check(t, "/Users/x/node_modules/@openai/codex/bin/other", "codex", false)
 	})
 
 	t.Run("hyphen-suffix is part of the same word — preserves intentional prefix matches", func(t *testing.T) {
 		check(t, "claude-code", "claude", true)
 		check(t, "amp-cli", "amp", true)
 		check(t, "pi-mono", "pi", true)
+		check(t, "codex-tui", "codex", true)
 		check(t, "/usr/bin/claude-code", "claude", true)
 	})
 
