@@ -360,38 +360,18 @@ function App() {
   const listBudgetRows = createMemo(() =>
     Math.max(0, termDims().height - HEADER_ROWS - FOOTER_ROWS - ACTIVITY_ZONE_ROWS));
 
+  // Cards show every agent row; the scrolling session window absorbs the
+  // height. "+N more" survives only as a guard when a single card on its own
+  // cannot fit the viewport alongside the scroll indicators.
   const visibleAgentCounts = createMemo(() => {
     const availableRows = listBudgetRows();
-    const counts = sessions.map((session) => session.agents?.length ?? 0);
-    const focused = focusedIdx();
-    const fixedRows = sessions.reduce(
-      (total, session) => total + CARD_CHROME_ROWS + (session.branch ? BRANCH_ROWS : 0),
-      0,
-    );
-    const agentRows = () => counts.reduce((total, visible, index) => {
-      const count = sessions[index]?.agents?.length ?? 0;
-      return total + visible + (visible < count ? 1 : 0);
-    }, 0);
-
-    while (fixedRows + agentRows() > availableRows) {
-      let largest = -1;
-      for (let i = 0; i < counts.length; i++) {
-        if (i === focused) continue; // the focused card keeps its agent rows reachable
-        if (counts[i]! > 1 && (largest < 0 || counts[i]! > counts[largest]!)) largest = i;
-      }
-      if (largest < 0) break;
-      counts[largest] = counts[largest]! - 1;
-    }
-
-    // The focused card is exempt from the shrink loop, but must still fit
-    // the viewport on its own alongside the scroll indicators.
-    if (focused >= 0 && focused < counts.length) {
-      const chrome = CARD_CHROME_ROWS + (sessions[focused]?.branch ? BRANCH_ROWS : 0);
+    return sessions.map((session) => {
+      const total = session.agents?.length ?? 0;
+      const chrome = CARD_CHROME_ROWS + (session.branch ? BRANCH_ROWS : 0);
       const indicatorAllowance = sessions.length > 1 ? 2 * OVERFLOW_INDICATOR_ROWS : 0;
       const maxAgents = Math.max(1, availableRows - chrome - HIDDEN_AGENTS_ROWS - indicatorAllowance);
-      if (counts[focused]! > maxAgents) counts[focused] = maxAgents;
-    }
-    return counts;
+      return Math.min(total, maxAgents);
+    });
   });
 
   // Session-list viewport: when the stack is taller than the pane, render a
