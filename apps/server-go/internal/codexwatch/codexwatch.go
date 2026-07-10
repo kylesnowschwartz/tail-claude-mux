@@ -13,6 +13,7 @@ package codexwatch
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"os/exec"
@@ -22,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kylesnowschwartz/agent-ouija/codex/discover"
+	"github.com/kylesnowschwartz/agent-ouija/codex/rollout"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/textutil"
@@ -92,73 +95,47 @@ func (a *Adapter) Name() string { return "codex" }
 // RolloutForFollowup resolves a tracked thread directly. Older tracker entries
 // without a thread ID fall back to the newest rollout for cwd.
 func (a *Adapter) RolloutForFollowup(cwd, trackedThreadID string) (path, threadID string, err error) {
-	var newest time.Time
-	err = filepath.WalkDir(a.SessionsDir, func(candidate string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		candidateThreadID := threadIDFromPath(candidate)
-		if candidateThreadID == "" {
-			return nil
-		}
+	rollouts, err := discover.DiscoverRollouts(a.SessionsDir)
+	if err != nil {
+		return "", "", err
+	}
+	for _, candidate := range rollouts {
 		if trackedThreadID != "" {
-			if candidateThreadID == trackedThreadID {
-				path, threadID = candidate, candidateThreadID
-				return filepath.SkipAll
+			if candidate.SessionID == trackedThreadID {
+				return candidate.Path, candidate.SessionID, nil
 			}
-			return nil
+			continue
 		}
-		file, err := os.Open(candidate)
+		rolloutDir, err := followupRolloutCwd(candidate.Path)
 		if err != nil {
-			return err
+			return "", "", err
 		}
-		scanner := bufio.NewScanner(file)
-		matches := false
-		if scanner.Scan() {
-			rolloutDir, parseErr := rolloutCwd(scanner.Bytes())
-			if parseErr != nil {
-				_ = file.Close()
-				return parseErr
-			}
-			matches = rolloutDir == cwd
+		if rolloutDir == cwd {
+			return candidate.Path, candidate.SessionID, nil
 		}
-		if scanErr := scanner.Err(); scanErr != nil {
-			_ = file.Close()
-			return scanErr
-		}
-		if err := file.Close(); err != nil {
-			return err
-		}
-		if !matches {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if path == "" || info.ModTime().After(newest) {
-			path, threadID, newest = candidate, candidateThreadID, info.ModTime()
-		}
-		return nil
-	})
-	return path, threadID, err
+	}
+	return "", "", nil
 }
 
-func rolloutCwd(line []byte) (string, error) {
-	var entry struct {
-		Cwd     string `json:"cwd"`
-		Payload struct {
-			Cwd string `json:"cwd"`
-		} `json:"payload"`
-	}
-	if err := json.Unmarshal(line, &entry); err != nil {
+// TODO: move into agent-ouija: follow-up fallback needs the cwd from Codex's
+// first session_meta line, while rollout.TrailingState intentionally reads cwd
+// only from turn_context entries.
+func followupRolloutCwd(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
 		return "", err
 	}
-	if entry.Cwd != "" {
-		return entry.Cwd, nil
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
+	entry, ok := rollout.ParseEntry(scanner.Bytes())
+	if !ok {
+		return "", errors.New("invalid first rollout entry")
 	}
 	return entry.Payload.Cwd, nil
 }
@@ -334,21 +311,11 @@ func (a *Adapter) resolveThreadNameAsync(threadID string, state *threadState) {
 }
 
 func lookupThreadName(path, threadID string) string {
-	raw, err := os.ReadFile(path)
+	names, err := discover.ThreadNames(path)
 	if err != nil {
 		return ""
 	}
-	name := ""
-	for line := range strings.SplitSeq(string(raw), "\n") {
-		var entry struct {
-			ID         string `json:"id"`
-			ThreadName string `json:"thread_name"`
-		}
-		if json.Unmarshal([]byte(line), &entry) == nil && entry.ID == threadID && entry.ThreadName != "" {
-			name = textutil.SanitizeSessionName(entry.ThreadName)
-		}
-	}
-	return name
+	return textutil.SanitizeSessionName(names[threadID])
 }
 
 // SessionInfoForPid resolves a live Codex process to its primary rollout.
@@ -425,15 +392,11 @@ func (a *Adapter) rolloutStatusForThread(pid int, threadID string) string {
 }
 
 func rolloutStatusForPath(path string) string {
-	if path == "" {
-		return ""
-	}
-	raw, err := os.ReadFile(path)
+	state, err := trailingRolloutState(path)
 	if err != nil {
 		return ""
 	}
-	status, _ := parseRollout(string(raw))
-	return status
+	return wireStatus(state.Status)
 }
 
 func (a *Adapter) rolloutPathForPID(pid int, threadID string) string {
@@ -460,15 +423,13 @@ func (a *Adapter) rolloutPathForPID(pid int, threadID string) string {
 }
 
 func (a *Adapter) rolloutPathForThread(threadID string) string {
-	var found string
-	_ = filepath.WalkDir(a.SessionsDir, func(path string, entry os.DirEntry, err error) error {
-		if err == nil && !entry.IsDir() && threadIDFromPath(path) == threadID {
-			found = path
-			return filepath.SkipAll
+	rollouts, _ := discover.DiscoverRollouts(a.SessionsDir)
+	for _, candidate := range rollouts {
+		if candidate.SessionID == threadID {
+			return candidate.Path
 		}
-		return nil
-	})
-	return found
+	}
+	return ""
 }
 
 func (a *Adapter) isRolloutPath(path string) bool {
@@ -476,6 +437,8 @@ func (a *Adapter) isRolloutPath(path string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && filepath.Ext(path) == ".jsonl"
 }
 
+// TODO: move into agent-ouija: primary-vs-subagent selection needs the
+// session_meta source, which rollout.Entry does not model.
 func isPrimaryRollout(path string) bool {
 	file, err := os.Open(path)
 	if err != nil {
@@ -517,107 +480,66 @@ func (a *Adapter) seedFromJSONL() {
 		return
 	}
 	nowMS := a.now()
-	_ = filepath.WalkDir(a.SessionsDir, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || entry.IsDir() || filepath.Ext(path) != ".jsonl" {
-			return nil
+	rollouts, _ := discover.DiscoverRollouts(a.SessionsDir)
+	for _, candidate := range rollouts {
+		if nowMS-candidate.ModTime.UnixMilli() > staleMS {
+			continue
 		}
-		threadID := threadIDFromPath(path)
-		if threadID == "" {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil || nowMS-info.ModTime().UnixMilli() > staleMS {
-			return nil
-		}
+		threadID := candidate.SessionID
 		if _, known := a.threads[threadID]; known {
-			return nil
+			continue
 		}
-		raw, err := os.ReadFile(path)
+		rolloutState, err := trailingRolloutState(candidate.Path)
 		if err != nil {
-			return nil
+			continue
 		}
-		status, cwd := parseRollout(string(raw))
+		status, cwd := wireStatus(rolloutState.Status), rolloutState.Cwd
 		if status == wire.StatusIdle || wire.IsTerminalStatus(status) || cwd == "" {
-			return nil
+			continue
 		}
 		session := a.ctx.ResolveSession(cwd)
 		if session == "" {
-			return nil
+			continue
 		}
 		name := lookupThreadName(a.SessionIndexPath, threadID)
 		state := &threadState{status: status, threadName: name, projectDir: cwd, nameFromIndex: name != ""}
 		a.threads[threadID] = state
-		a.ctx.Emit(wire.AgentEvent{Agent: "codex", Session: session, Status: status, TS: info.ModTime().UnixMilli(), ThreadID: threadID, ThreadName: name})
-		return nil
-	})
+		a.ctx.Emit(wire.AgentEvent{Agent: "codex", Session: session, Status: status, TS: candidate.ModTime.UnixMilli(), ThreadID: threadID, ThreadName: name})
+	}
 }
 
+// TODO: move into agent-ouija: discover exposes IDs for a full tree walk but
+// not UUID extraction for rollout paths already supplied by lsof.
 func threadIDFromPath(path string) string {
 	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	return rolloutIDRE.FindString(base)
 }
 
-type rolloutEntry struct {
-	Type    string `json:"type"`
-	Payload struct {
-		Type  string `json:"type"`
-		Role  string `json:"role"`
-		Phase string `json:"phase"`
-		Cwd   string `json:"cwd"`
-	} `json:"payload"`
+func trailingRolloutState(path string) (rollout.State, error) {
+	if path == "" {
+		return rollout.State{}, errors.New("rollout path is empty")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return rollout.State{}, err
+	}
+	defer file.Close()
+	return rollout.TrailingState(file)
 }
 
-func parseRollout(text string) (status, cwd string) {
-	status = wire.StatusIdle
-	for line := range strings.SplitSeq(text, "\n") {
-		var entry rolloutEntry
-		if json.Unmarshal([]byte(line), &entry) != nil {
-			continue
-		}
-		if cwd == "" && entry.Type == "turn_context" {
-			cwd = entry.Payload.Cwd
-		}
-		if next := rolloutStatus(entry); next != "" {
-			status = next
-		}
-	}
-	return status, cwd
-}
-
-func rolloutStatus(entry rolloutEntry) string {
-	if entry.Type == "event_msg" {
-		switch entry.Payload.Type {
-		case "task_complete":
-			return wire.StatusDone
-		case "turn_aborted":
-			return wire.StatusInterrupted
-		case "user_message":
-			return wire.StatusRunning
-		case "agent_message":
-			return assistantStatus(entry.Payload.Phase)
-		case "error":
-			return wire.StatusError
-		}
-	}
-	if entry.Type == "response_item" {
-		switch entry.Payload.Type {
-		case "message":
-			if entry.Payload.Role == "user" {
-				return wire.StatusRunning
-			}
-			if entry.Payload.Role == "assistant" {
-				return assistantStatus(entry.Payload.Phase)
-			}
-		case "function_call", "function_call_output", "reasoning":
-			return wire.StatusRunning
-		}
-	}
-	return ""
-}
-
-func assistantStatus(phase string) string {
-	if phase == "commentary" {
+func wireStatus(status rollout.Status) string {
+	switch status {
+	case rollout.Idle:
+		return wire.StatusIdle
+	case rollout.Running:
 		return wire.StatusRunning
+	case rollout.Done:
+		return wire.StatusDone
+	case rollout.Interrupted:
+		return wire.StatusInterrupted
+	case rollout.Error:
+		return wire.StatusError
+	default:
+		return ""
 	}
-	return wire.StatusDone
 }

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kylesnowschwartz/agent-ouija/codex/rollout"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
@@ -524,11 +525,11 @@ func TestRolloutStatusMapping(t *testing.T) {
 		{"response_item", `{"type":"reasoning"}`, wire.StatusRunning},
 	}
 	for _, tc := range cases {
-		var entry rolloutEntry
-		if err := json.Unmarshal([]byte(`{"type":"`+tc.typ+`","payload":`+tc.payload+`}`), &entry); err != nil {
+		state, err := rollout.TrailingState(strings.NewReader(`{"type":"` + tc.typ + `","payload":` + tc.payload + "}\n"))
+		if err != nil {
 			t.Fatal(err)
 		}
-		if got := rolloutStatus(entry); got != tc.want {
+		if got := wireStatus(state.Status); got != tc.want {
 			t.Errorf("%s %s = %q, want %q", tc.typ, tc.payload, got, tc.want)
 		}
 	}

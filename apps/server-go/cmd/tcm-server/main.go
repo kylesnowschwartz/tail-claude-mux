@@ -29,6 +29,7 @@ import (
 
 	"github.com/kylesnowschwartz/agent-ouija/claude/claudedir"
 	"github.com/kylesnowschwartz/agent-ouija/claude/settings"
+	"github.com/kylesnowschwartz/agent-ouija/codex/codexdir"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexhooks"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
@@ -87,11 +88,12 @@ func main() {
 		log.Printf("claude root unavailable, hook watcher disabled: %v", err)
 	}
 	piWatcher := piwatch.New(filepath.Join(home, ".pi", "agent", "sessions"))
-	codexHome := os.Getenv("CODEX_HOME")
-	if codexHome == "" {
-		codexHome = filepath.Join(home, ".codex")
+	var codexWatcher *codexwatch.Adapter
+	if root, err := codexdir.DefaultRoot(); err == nil {
+		codexWatcher = codexwatch.New(root.SessionsDir(), root.SessionIndexPath())
+	} else {
+		log.Printf("codex root unavailable, hook watcher disabled: %v", err)
 	}
-	codexWatcher := codexwatch.New(filepath.Join(codexHome, "sessions"), filepath.Join(codexHome, "session_index.jsonl"))
 
 	srv := server.New(builder, tracker.New(), watcher, piWatcher, codexWatcher, panescan.New())
 	srv.BuildInfo = buildInfo()
@@ -241,15 +243,11 @@ func registerHooks() {
 }
 
 func registerCodexHooks(hookScript string) {
-	home, err := os.UserHomeDir()
+	root, err := codexdir.DefaultRoot()
 	if err != nil {
-		log.Fatalf("register-hooks: home dir: %v", err)
+		log.Fatalf("register-hooks: codex root: %v", err)
 	}
-	codexHome := os.Getenv("CODEX_HOME")
-	if codexHome == "" {
-		codexHome = filepath.Join(home, ".codex")
-	}
-	path := filepath.Join(codexHome, "hooks.json")
+	path := filepath.Join(root.String(), "hooks.json")
 	added, err := codexhooks.Register(path, hookScript)
 	if err != nil {
 		log.Fatalf("register-hooks: codex: %v", err)
