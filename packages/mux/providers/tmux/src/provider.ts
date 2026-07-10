@@ -198,15 +198,11 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
       if (stashedPane) {
         plog("spawnSidebar: restoring from stash", { paneId: stashedPane.id, target: targetPane.id });
         const joinFlag = position === "left" ? "-hb" : "-h";
-        rawTmux(["join-pane", joinFlag, "-f", "-l", String(width), "-s", stashedPane.id, "-t", targetPane.id]);
+        rawTmux(["join-pane", "-d", joinFlag, "-f", "-l", String(width), "-s", stashedPane.id, "-t", targetPane.id]);
         tmux.setPaneTitle(stashedPane.id, SIDEBAR_PANE_TITLE);
         // Re-stamp the marker — opportunistic migration for old stashed
         // panes that pre-date the @tcm-sidebar option.
         tmux.setPaneOption(stashedPane.id, SIDEBAR_MARKER_OPTION, SIDEBAR_MARKER_VALUE);
-        // Do NOT selectPane here — same as fresh spawns. The TUI's
-        // restoreTerminalModes fires on focus-in after join-pane, generating
-        // capability query responses. Refocusing the main pane immediately
-        // causes those responses to leak as garbage escape sequences.
         return stashedPane.id;
       }
     } catch { /* stash session doesn't exist yet — spawn fresh */ }
@@ -219,7 +215,7 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
       before: position === "left",
       fullWindow: true,
       size: width,
-      command: `REFOCUS_WINDOW=${windowId} exec ${scriptsDir}/start.sh`,
+      command: `exec ${scriptsDir}/start.sh`,
     });
 
     if (!newPane) {
@@ -231,10 +227,6 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     // Stable identification marker — survives pane_title rewriting by
     // any escape sequences the TUI process emits while running.
     tmux.setPaneOption(newPane.id, SIDEBAR_MARKER_OPTION, SIDEBAR_MARKER_VALUE);
-    // Do NOT selectPane here for fresh spawns — the TUI's refocusMainPane()
-    // handles it after terminal capability detection finishes. Refocusing
-    // immediately causes capability query responses (DECRPM, DA1, Kitty
-    // graphics) to be routed to the main pane as garbage escape sequences.
     return newPane.id;
   }
 

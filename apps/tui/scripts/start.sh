@@ -11,6 +11,5 @@ TUI_DIR="$TCM_DIR/apps/tui"
 BUN_PATH="${BUN_PATH:-$(command -v bun 2>/dev/null || echo "$HOME/.bun/bin/bun")}"
 
 cd "$TUI_DIR"
-export REFOCUS_WINDOW
 export TCM_DIR
 exec "$BUN_PATH" run src/index.tsx 2>/tmp/tcm-err.log

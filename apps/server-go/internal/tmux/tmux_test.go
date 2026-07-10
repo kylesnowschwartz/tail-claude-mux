@@ -174,7 +174,7 @@ func TestSpawnSidebar_CommandSequenceFrozen(t *testing.T) {
 			position: "right",
 			listing:  mainPane,
 			want: [][]string{
-				{"split-window", "-d", "-h", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "REFOCUS_WINDOW=@1 exec /scripts/start.sh"},
+				{"split-window", "-d", "-h", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "exec /scripts/start.sh"},
 				{"select-pane", "-t", "%9", "-T", "tcm-sidebar"},
 				{"set-option", "-p", "-t", "%9", "@tcm-sidebar", "1"},
 			},
@@ -184,7 +184,7 @@ func TestSpawnSidebar_CommandSequenceFrozen(t *testing.T) {
 			position: "left",
 			listing:  mainPane,
 			want: [][]string{
-				{"split-window", "-d", "-h", "-b", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "REFOCUS_WINDOW=@1 exec /scripts/start.sh"},
+				{"split-window", "-d", "-h", "-b", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "exec /scripts/start.sh"},
 				{"select-pane", "-t", "%9", "-T", "tcm-sidebar"},
 				{"set-option", "-p", "-t", "%9", "@tcm-sidebar", "1"},
 			},

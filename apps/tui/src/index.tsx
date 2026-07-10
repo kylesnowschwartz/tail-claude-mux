@@ -48,7 +48,6 @@ import {
   formatRelTime,
 } from "./activity";
 import { getScenario, listScenarios } from "./mocks/scenarios";
-import { createRefocusGate } from "./refocus-gate";
 
 // Detect which mux we're running inside
 type MuxContext =
@@ -130,42 +129,6 @@ function paletteToFzfColors(p: ThemePalette): string {
     `--color=border:${c(p.surface2)},gutter:${c(p.base)}`,
     `--color=query:${c(p.text)},disabled:${c(p.overlay0)}`,
   ].join(" ");
-}
-
-/** Refocus the main (non-sidebar) pane after TUI capability detection finishes.
- *  This must happen from the TUI process — doing it from start.sh races with
- *  capability query responses and leaks escape sequences to the main pane. */
-function refocusMainPane() {
-  if (muxCtx.type === "tmux") {
-    try {
-      // Use the TUI's own pane ID to find its current window (handles stash restore
-      // where the pane may have moved to a different window than the original).
-      const windowId = process.env.REFOCUS_WINDOW
-        || Bun.spawnSync(
-            ["tmux", "display-message", "-t", muxCtx.paneId, "-p", "#{window_id}"],
-            { stdout: "pipe", stderr: "pipe" },
-          ).stdout.toString().trim();
-      if (!windowId) return;
-      const r = Bun.spawnSync(
-        ["tmux", "list-panes", "-t", windowId, "-F", "#{pane_id} #{@tcm-sidebar} #{@tcm-companion} #{pane_title}"],
-        { stdout: "pipe", stderr: "pipe" },
-      );
-      const lines = r.stdout.toString().trim().split("\n");
-      // A "main" pane is anything that's NOT tcm-managed (sidebar or
-      // companion) — neither marker nor legacy title. Marker == "1"
-      // primary, pane_title fallback.
-      const main = lines.find((l) => {
-        const parts = l.split(" ");
-        const title = parts.slice(3).join(" ");
-        return parts[1] !== "1" && parts[2] !== "1"
-          && title !== "tcm-sidebar" && title !== "tcm-companion";
-      });
-      if (main) {
-        const paneId = main.split(" ")[0];
-        Bun.spawnSync(["tmux", "select-pane", "-t", paneId], { stdout: "pipe", stderr: "pipe" });
-      }
-    } catch {}
-  }
 }
 
 function getClientTty(): string {
@@ -574,21 +537,6 @@ function App() {
       }
       return;
     }
-
-    // Refocus the main pane once terminal capability detection settles.
-    // opentui fires "capabilities" PER response sequence, not once when all
-    // probes complete; refocusing on the first event leaks later responses
-    // (kitty graphics OK, DA1, etc.) into the main pane as garbage typed at
-    // the shell prompt. The gate waits for a quiescent window after the
-    // last event — see ./refocus-gate.ts for the design.
-    const refocusGate = createRefocusGate(refocusMainPane, { quietMs: 250, fallbackMs: 2000 });
-    const onCapability = () => refocusGate.onCapability();
-    renderer.on("capabilities", onCapability);
-
-    onCleanup(() => {
-      refocusGate.cleanup();
-      renderer.removeListener("capabilities", onCapability);
-    });
 
     let intentionalQuit = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;

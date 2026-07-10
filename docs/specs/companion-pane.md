@@ -127,10 +127,10 @@ also carries `Height` (`pane_height`) and `WindowHeight`
 (`window_height`) for the clamp and drift detection.
 
 `Pane.Managed()` (`Sidebar || Companion`) is the single "this pane is
-tcm's, not the user's" predicate; every skip-tcm filter must use it —
+tcm's, not the user's" predicate; every skip-tcm filter must use it:
 `ActiveDirs`, the agent pane scanner, agent-pane kill resolution, orphan
-cleanup, stash pruning, the TUI's refocus target selection, and
-`uninstall.sh`'s pane sweep all do. `ManagedPanes` is the matching
+cleanup, stash pruning, and `uninstall.sh`'s pane sweep all do.
+`ManagedPanes` is the matching
 non-stash filter used by toggle and quit.
 
 ### 4.2 Lifecycle
@@ -139,9 +139,8 @@ non-stash filter used by toggle and quit.
   pane** (which must exist first) with `split-window -d -v -l <rows>` —
   no `-f`, so the pane stays inside the column. A stashed companion is
   restored via `join-pane -d -v` instead, preserving the running guest.
-  Both paths pass `-d`: the sidebar spawns focused and its TUI refocuses
-  the main pane itself, but an arbitrary guest never gives focus back,
-  so the companion must never take it.
+  Both paths pass `-d`, so restoring or spawning a companion preserves
+  the user's current focus and matches the detached sidebar invariant.
 - **Ensure** (`server.ensureCompanionInWindow`): hook-driven and
   debounced (150 ms) exactly like the sidebar ensure; no-op when the
   feature is off, the window has no sidebar, or a companion already

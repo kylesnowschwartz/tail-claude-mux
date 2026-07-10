@@ -355,7 +355,7 @@ export class TmuxClient {
   }
 
   splitWindow(options: SplitWindowOptions): PaneInfo | null {
-    const args = ["split-window"];
+    const args = ["split-window", "-d"];
     if (options.direction === "horizontal" || !options.direction) {
       args.push(options.before ? "-hb" : "-h");
     } else {

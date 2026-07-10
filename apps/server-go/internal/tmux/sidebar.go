@@ -118,7 +118,7 @@ func (t *Tmux) SpawnSidebar(windowID string, width int, position, scriptsDir str
 		splitFlags = []string{"-h", "-b", "-f"}
 	}
 	return t.SpawnManagedPane(target.ID, splitFlags, width,
-		"REFOCUS_WINDOW="+windowID+" exec "+scriptsDir+"/start.sh",
+		"exec "+scriptsDir+"/start.sh",
 		sidebarMarkerOption, SidebarPaneTitle)
 }
 

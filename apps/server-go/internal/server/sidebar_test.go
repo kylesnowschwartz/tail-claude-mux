@@ -231,7 +231,7 @@ func TestEnsureSidebarInWindow_KillsStrandedCompanion(t *testing.T) {
 		t.Errorf("kill-pane = %v\nwant %v", got, wantKills)
 	}
 	wantSpawns := [][]string{
-		{"split-window", "-d", "-h", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "REFOCUS_WINDOW=@1 exec /scripts/start.sh"},
+		{"split-window", "-d", "-h", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "exec /scripts/start.sh"},
 		{"split-window", "-d", "-v", "-l", "8", "-t", "%2", "-P", "-F", "#{pane_id}", "watch date"},
 	}
 	if got := only(cmds, "split-window"); !reflect.DeepEqual(got, wantSpawns) {
