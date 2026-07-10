@@ -23,9 +23,9 @@ export const meta = {
   ],
 }
 
-// Experiment-branch default; override via args.watchScriptPath when the
-// checkout lives elsewhere (distribution is a deferred decision).
-const DEFAULT_WATCH = '/Users/kyle/Code/my-projects/tail-claude-mux/.claude/worktrees/delegation-workflows/.claude/workflows/tcm-watch.js'
+// Main-checkout default (workflows ship in the TCM repo); override via
+// args.watchScriptPath when running from another checkout.
+const DEFAULT_WATCH = '/Users/kyle/Code/my-projects/tail-claude-mux/.claude/workflows/tcm-watch.js'
 
 const SPAWN_SCHEMA = {
   type: 'object', additionalProperties: false,
