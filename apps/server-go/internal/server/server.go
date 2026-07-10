@@ -129,6 +129,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /explain", s.handleExplain)
 	mux.HandleFunc("POST /hook", s.handleHook)
 	mux.HandleFunc("POST /focus", s.handleFocus)
+	mux.HandleFunc("POST /spawn-agent", s.handleSpawnAgent)
 	mux.HandleFunc("POST /set-status", s.handleSetStatus)
 	mux.HandleFunc("POST /set-progress", s.handleSetProgress)
 	mux.HandleFunc("POST /log", s.handleLog)
