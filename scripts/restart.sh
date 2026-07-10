@@ -44,18 +44,23 @@ wait_for_server_gone() {
 # resolving the *current* directory entry at that path, which is exactly
 # what a fresh `stat` on the path gives us. Sets DECISION to "restart" or
 # "cold-start", and REASON to a plain-language note (empty when unremarkable).
+#
+# Inconclusive discovery (lsof missing or unable to inspect the listener)
+# falls back to COLD-START: POST /restart against an unidentified build is
+# exactly the silent stale-binary bug this function guards against, while
+# an unnecessary cold-start merely costs a stop/start.
 restart_decision() {
   local live_pid live_exe
   live_pid="$(lsof -ti "tcp:${PORT}" -sTCP:LISTEN 2>/dev/null | head -n1 || true)"
   if [[ -z "$live_pid" ]]; then
-    DECISION="restart"
-    REASON="couldn't identify the live server's process; assuming it's already this build"
+    DECISION="cold-start"
+    REASON="couldn't identify the live server's build; cold-starting to be safe"
     return
   fi
   live_exe="$(lsof -p "$live_pid" -a -d txt -Fn 2>/dev/null | sed -n 's/^n//p' | grep -F "/tcm-server" | head -n1 || true)"
   if [[ -z "$live_exe" ]]; then
-    DECISION="restart"
-    REASON="couldn't identify the live server's executable; assuming it's already this build"
+    DECISION="cold-start"
+    REASON="couldn't identify the live server's build; cold-starting to be safe"
     return
   fi
   if [[ "$(stat -f '%d %i' "$live_exe" 2>/dev/null)" == "$(stat -f '%d %i' "$GO_BIN" 2>/dev/null)" ]]; then
