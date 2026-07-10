@@ -20,6 +20,7 @@ const (
 	defaultCodexCommand    = "codex"
 	defaultClaudeCommand   = "claude"
 	defaultPiCommand       = "pi"
+	agentEndOfOptions      = "--"
 	tmuxExactTargetPrefix  = "="
 	tmuxSessionSeparator   = ":"
 	tmuxWindowSeparator    = "."
@@ -28,10 +29,12 @@ const (
 
 // SpawnAgentRequest is the POST /spawn-agent request.
 type SpawnAgentRequest struct {
-	Dir     string   `json:"dir"`
-	Agent   string   `json:"agent"`
-	Prompt  string   `json:"prompt"`
-	Name    string   `json:"name,omitempty"`
+	Dir    string `json:"dir"`
+	Agent  string `json:"agent"`
+	Prompt string `json:"prompt"`
+	Name   string `json:"name,omitempty"`
+	// Command replaces the default agent argv. Its prompt is appended bare;
+	// callers supplying an override own any end-of-options handling it needs.
 	Command []string `json:"command,omitempty"`
 }
 
@@ -109,6 +112,7 @@ func (t *Tmux) resolveSpawnAgentName(req SpawnAgentRequest) (string, error) {
 	if name == "" {
 		name = filepath.Base(req.Dir)
 	}
+	name = strings.Join(strings.Fields(name), tmuxSafeNameSeparator)
 	name = textutil.TruncateToWidth(textutil.SanitizeForDisplay(name), spawnAgentNameMaxWidth)
 	name = strings.NewReplacer(
 		tmuxSessionSeparator, tmuxSafeNameSeparator,
@@ -116,6 +120,9 @@ func (t *Tmux) resolveSpawnAgentName(req SpawnAgentRequest) (string, error) {
 	).Replace(name)
 	if name == "" {
 		return "", &SpawnAgentValidationError{message: "name must contain printable characters"}
+	}
+	if name == StashSession {
+		return "", &SpawnAgentValidationError{message: "name is reserved by tcm"}
 	}
 	for suffix := 1; suffix <= spawnAgentDedupeLimit; suffix++ {
 		candidate := name
@@ -134,6 +141,9 @@ func buildSpawnAgentCommand(req SpawnAgentRequest) string {
 	if len(argv) == 0 {
 		command, _ := defaultSpawnAgentCommand(req.Agent)
 		argv = []string{command}
+		if req.Agent == defaultCodexCommand || req.Agent == defaultClaudeCommand {
+			argv = append(argv, agentEndOfOptions)
+		}
 	}
 	argv = append(append([]string(nil), argv...), req.Prompt)
 	quoted := make([]string, len(argv))

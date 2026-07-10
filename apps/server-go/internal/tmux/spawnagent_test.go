@@ -16,6 +16,10 @@ func TestSpawnAgentValidation(t *testing.T) {
 	if err := os.WriteFile(file, []byte("test"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	reservedDir := filepath.Join(dir, StashSession)
+	if err := os.Mkdir(reservedDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 
 	tests := []struct {
 		name string
@@ -30,6 +34,8 @@ func TestSpawnAgentValidation(t *testing.T) {
 		{name: "empty prompt", req: SpawnAgentRequest{Dir: dir, Agent: "codex"}, want: "prompt is required"},
 		{name: "blank prompt", req: SpawnAgentRequest{Dir: dir, Agent: "codex", Prompt: " \n\t"}, want: "prompt is required"},
 		{name: "empty sanitized name", req: SpawnAgentRequest{Dir: dir, Agent: "codex", Prompt: "task", Name: "\x00\n"}, want: "name must contain printable characters"},
+		{name: "reserved requested name", req: SpawnAgentRequest{Dir: dir, Agent: "codex", Prompt: "task", Name: "\x1b[31m_tcm_stash\x1b[0m"}, want: "name is reserved by tcm"},
+		{name: "reserved derived name", req: SpawnAgentRequest{Dir: reservedDir, Agent: "codex", Prompt: "task"}, want: "name is reserved by tcm"},
 	}
 
 	for _, tt := range tests {
@@ -65,6 +71,9 @@ func TestSpawnAgentNameResolution(t *testing.T) {
 		{name: "derived from directory", want: "project", wantProbes: []string{"=project"}},
 		{name: "sanitizes explicit name", requestName: "\x1b[31mfix-auth\x1b[0m\x00", want: "fix-auth", wantProbes: []string{"=fix-auth"}},
 		{name: "replaces tmux target separators", requestName: "a.b:c", want: "a-b-c", wantProbes: []string{"=a-b-c"}},
+		{name: "replaces one space", requestName: "a b", want: "a-b", wantProbes: []string{"=a-b"}},
+		{name: "collapses and trims spaces", requestName: " a  b ", want: "a-b", wantProbes: []string{"=a-b"}},
+		{name: "replaces tab", requestName: "a\tb", want: "a-b", wantProbes: []string{"=a-b"}},
 		{
 			name: "deduplicates", requestName: "fix-auth",
 			existing: map[string]bool{"fix-auth": true, "fix-auth-2": true},
@@ -121,7 +130,7 @@ func TestSpawnAgentCommandQuoting(t *testing.T) {
 		{
 			name:  "nested prompt quoting",
 			agent: "codex",
-			want:  "sh -c ''\\''codex'\\'' '\\''fix '\\''\\'\\'''\\''single'\\''\\'\\'''\\'' and \"double\"\nthen print $HOME'\\''; status=$?; printf \"\\n[tcm] agent exited with status %d\\n\" \"$status\"; exec \"${SHELL:-sh}\"'",
+			want:  "sh -c ''\\''codex'\\'' '\\''--'\\'' '\\''fix '\\''\\'\\'''\\''single'\\''\\'\\'''\\'' and \"double\"\nthen print $HOME'\\''; status=$?; printf \"\\n[tcm] agent exited with status %d\\n\" \"$status\"; exec \"${SHELL:-sh}\"'",
 		},
 		{
 			name:    "command override",
@@ -140,6 +149,44 @@ func TestSpawnAgentCommandQuoting(t *testing.T) {
 			if !strings.HasSuffix(got, `exec "${SHELL:-sh}"'`) {
 				t.Errorf("command suffix = %q, want interactive shell fallback", got)
 			}
+			if got != tt.want {
+				t.Errorf("command:\n%q\nwant:\n%q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSpawnAgentCommandEndOfOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		agent   string
+		prompt  string
+		command []string
+		want    string
+	}{
+		{
+			name: "codex protects flag-like prompt", agent: "codex", prompt: "--help",
+			want: "sh -c ''\\''codex'\\'' '\\''--'\\'' '\\''--help'\\''; status=$?; printf \"\\n[tcm] agent exited with status %d\\n\" \"$status\"; exec \"${SHELL:-sh}\"'",
+		},
+		{
+			name: "claude protects subcommand-like prompt", agent: "claude", prompt: "resume",
+			want: "sh -c ''\\''claude'\\'' '\\''--'\\'' '\\''resume'\\''; status=$?; printf \"\\n[tcm] agent exited with status %d\\n\" \"$status\"; exec \"${SHELL:-sh}\"'",
+		},
+		{
+			name: "pi keeps bare prompt", agent: "pi", prompt: "--help",
+			want: "sh -c ''\\''pi'\\'' '\\''--help'\\''; status=$?; printf \"\\n[tcm] agent exited with status %d\\n\" \"$status\"; exec \"${SHELL:-sh}\"'",
+		},
+		{
+			name: "override keeps bare prompt", agent: "codex", prompt: "--help", command: []string{"custom"},
+			want: "sh -c ''\\''custom'\\'' '\\''--help'\\''; status=$?; printf \"\\n[tcm] agent exited with status %d\\n\" \"$status\"; exec \"${SHELL:-sh}\"'",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildSpawnAgentCommand(SpawnAgentRequest{
+				Agent: tt.agent, Prompt: tt.prompt, Command: tt.command,
+			})
 			if got != tt.want {
 				t.Errorf("command:\n%q\nwant:\n%q", got, tt.want)
 			}
