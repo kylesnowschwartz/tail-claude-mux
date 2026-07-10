@@ -42,11 +42,12 @@ func TestSelectAgentPaneSwitchesClientAcrossSessions(t *testing.T) {
 }
 
 type fakeAgentStateSource struct {
-	name       string
-	threadID   string
-	threadName string
-	verdict    tracker.ProbeVerdict
-	calls      int
+	name        string
+	threadID    string
+	threadName  string
+	verdict     tracker.ProbeVerdict
+	probeOnScan bool
+	calls       int
 }
 
 func (f *fakeAgentStateSource) Name() string { return f.name }
@@ -59,6 +60,8 @@ func (f *fakeAgentStateSource) ProbeLiveStatus(int, string, string) tracker.Prob
 	f.calls++
 	return f.verdict
 }
+
+func (f *fakeAgentStateSource) ProbeOnScan() bool { return f.probeOnScan }
 
 func TestProbeLivenessRoutesByAgent(t *testing.T) {
 	claude := &fakeAgentStateSource{name: "claude-code", verdict: tracker.ProbeEnded}
@@ -84,7 +87,7 @@ func TestProbeLivenessRoutesByAgent(t *testing.T) {
 
 func TestScanStateForPaneResolvesIdentityAndWorkingStatus(t *testing.T) {
 	claude := &fakeAgentStateSource{name: "claude-code", threadID: "claude-thread", verdict: tracker.ProbeEnded}
-	codex := &fakeAgentStateSource{name: "codex", threadID: "codex-thread", threadName: "Fix state", verdict: tracker.ProbeWorking}
+	codex := &fakeAgentStateSource{name: "codex", threadID: "codex-thread", threadName: "Fix state", verdict: tracker.ProbeWorking, probeOnScan: true}
 
 	pa, verdict := scanStateForPane(tracker.PanePresence{Agent: "codex", PID: 42, PaneTitle: "Codex"}, claude, codex)
 	if pa.ThreadID != "codex-thread" || pa.ThreadName != "Fix state" {
@@ -95,6 +98,14 @@ func TestScanStateForPaneResolvesIdentityAndWorkingStatus(t *testing.T) {
 	}
 	if codex.calls != 1 || claude.calls != 0 {
 		t.Fatalf("calls = claude %d, codex %d", claude.calls, codex.calls)
+	}
+
+	pa, verdict = scanStateForPane(tracker.PanePresence{Agent: "claude-code", PID: 43}, claude, codex)
+	if pa.ThreadID != "claude-thread" || verdict != tracker.ProbeNoSignal {
+		t.Fatalf("claude scan = thread %q, verdict %v; want identity without a scan probe", pa.ThreadID, verdict)
+	}
+	if claude.calls != 0 {
+		t.Fatalf("claude scan probe calls = %d, want 0", claude.calls)
 	}
 }
 

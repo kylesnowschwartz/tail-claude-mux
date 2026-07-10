@@ -89,6 +89,8 @@ func New(sessionsDir, sessionIndexPath string) *Adapter {
 
 func (a *Adapter) Name() string { return "codex" }
 
+func (a *Adapter) ProbeOnScan() bool { return true }
+
 func (a *Adapter) Start(ctx *Context) {
 	a.ctx = ctx
 	a.seedFromJSONL()

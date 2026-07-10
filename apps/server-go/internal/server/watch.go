@@ -49,6 +49,7 @@ type agentStateSource interface {
 	Name() string
 	SessionInfoForPid(pid int) (threadID, name string)
 	ProbeLiveStatus(pid int, threadID, paneTitle string) tracker.ProbeVerdict
+	ProbeOnScan() bool
 }
 
 func stateSourceForAgent(agent string, sources ...agentStateSource) agentStateSource {
@@ -80,7 +81,7 @@ func scanStateForPane(pa tracker.PanePresence, sources ...agentStateSource) (tra
 		return pa, tracker.ProbeNoSignal
 	}
 	pa.ThreadID, pa.ThreadName = source.SessionInfoForPid(pa.PID)
-	if pa.ThreadID == "" {
+	if pa.ThreadID == "" || !source.ProbeOnScan() {
 		return pa, tracker.ProbeNoSignal
 	}
 	return pa, source.ProbeLiveStatus(pa.PID, pa.ThreadID, pa.PaneTitle)

@@ -131,6 +131,8 @@ func New(projectsDir, sessionsDir string) *Adapter {
 // Name is the watcher/agent discriminator.
 func (a *Adapter) Name() string { return "claude-code" }
 
+func (a *Adapter) ProbeOnScan() bool { return false }
+
 // shortThread is the last-4 thread id used across tcm's log surfaces.
 func shortThread(id string) string {
 	if len(id) <= 4 {
