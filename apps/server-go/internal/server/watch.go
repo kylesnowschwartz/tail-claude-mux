@@ -290,16 +290,16 @@ func (s *Server) paneScanLoop() {
 		// from birth instead of waiting for a hook to graduate them. File IO,
 		// so outside the lock.
 		stateSources := s.agentStateSources()
-		var scanWorking []wire.AgentEvent
+		var scanUpdates []wire.AgentEvent
 		for session, paneAgents := range next {
 			for i, pa := range paneAgents {
 				var verdict tracker.ProbeVerdict
 				paneAgents[i], verdict = scanStateForPane(pa, stateSources...)
-				if verdict == tracker.ProbeWorking {
-					scanWorking = append(scanWorking, wire.AgentEvent{
+				if status := scanStatus(verdict); status != "" {
+					scanUpdates = append(scanUpdates, wire.AgentEvent{
 						Agent:      paneAgents[i].Agent,
 						Session:    session,
-						Status:     wire.StatusRunning,
+						Status:     status,
 						TS:         time.Now().UnixMilli(),
 						ThreadID:   paneAgents[i].ThreadID,
 						ThreadName: paneAgents[i].ThreadName,
@@ -311,14 +311,14 @@ func (s *Server) paneScanLoop() {
 
 		s.mu.Lock()
 		changed := false
-		for _, ev := range scanWorking {
+		for _, ev := range scanUpdates {
 			previous := s.Tracker.GetEvent(ev.Session, ev.Agent, ev.ThreadID, "")
 			// A hook's permission/request state is more specific than a
 			// rollout's generic "working" signal.
 			if previous != nil && previous.Status == wire.StatusWaiting {
 				continue
 			}
-			if previous == nil || previous.Status != wire.StatusRunning {
+			if previous == nil || previous.Status != ev.Status {
 				changed = true
 			}
 			s.Tracker.ApplyEvent(ev, false)
@@ -341,6 +341,21 @@ func (s *Server) paneScanLoop() {
 			s.broadcastLocked()
 		}
 		s.mu.Unlock()
+	}
+}
+
+func scanStatus(verdict tracker.ProbeVerdict) string {
+	switch verdict {
+	case tracker.ProbeWorking:
+		return wire.StatusRunning
+	case tracker.ProbeDone:
+		return wire.StatusDone
+	case tracker.ProbeInterrupted:
+		return wire.StatusInterrupted
+	case tracker.ProbeError:
+		return wire.StatusError
+	default:
+		return ""
 	}
 }
 

@@ -80,6 +80,9 @@ const (
 	ProbeNoSignal ProbeVerdict = iota // file absent / sdk-cli / no probe
 	ProbeWorking
 	ProbeEnded
+	ProbeDone
+	ProbeInterrupted
+	ProbeError
 )
 
 // Tracker is the AgentTracker port.

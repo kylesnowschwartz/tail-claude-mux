@@ -368,7 +368,7 @@ func (a *Adapter) ScanStateForPid(pid int, _ string) (threadID, name string, ver
 	if threadID == "" {
 		return "", "", tracker.ProbeNoSignal
 	}
-	return threadID, name, probeRolloutPath(path)
+	return threadID, name, scanRolloutPath(path)
 }
 
 func (a *Adapter) sessionInfoForRollout(path string) (threadID, name string) {
@@ -399,6 +399,21 @@ func probeRolloutPath(path string) tracker.ProbeVerdict {
 		return tracker.ProbeEnded
 	}
 	return tracker.ProbeNoSignal
+}
+
+func scanRolloutPath(path string) tracker.ProbeVerdict {
+	switch rolloutStatusForPath(path) {
+	case wire.StatusRunning:
+		return tracker.ProbeWorking
+	case wire.StatusDone:
+		return tracker.ProbeDone
+	case wire.StatusInterrupted:
+		return tracker.ProbeInterrupted
+	case wire.StatusError:
+		return tracker.ProbeError
+	default:
+		return tracker.ProbeNoSignal
+	}
 }
 
 func (a *Adapter) rolloutStatusForThread(pid int, threadID string) string {

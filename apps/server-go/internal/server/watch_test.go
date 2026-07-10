@@ -108,6 +108,25 @@ func TestScanStateForPaneResolvesIdentityAndWorkingStatus(t *testing.T) {
 	}
 }
 
+func TestColdScanCompletedCodexPaneStartsDone(t *testing.T) {
+	codex := &fakeAgentStateSource{name: "codex", threadID: "codex-thread", verdict: tracker.ProbeDone}
+	pa, verdict := scanStateForPane(tracker.PanePresence{Agent: "codex", PaneID: "%7", PID: 42}, codex)
+	status := scanStatus(verdict)
+	if status != wire.StatusDone {
+		t.Fatalf("scan status = %q, want done", status)
+	}
+
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{
+		Agent: pa.Agent, Session: "work", Status: status, ThreadID: pa.ThreadID, PID: pa.PID,
+	}, false)
+	tr.ApplyPanePresence("work", []tracker.PanePresence{pa})
+	got := tr.GetState("work")
+	if got == nil || got.Status != wire.StatusDone || got.Liveness != wire.LivenessAlive || got.PaneID != "%7" {
+		t.Fatalf("cold-scan state = %#v, want alive done state on pane %%7", got)
+	}
+}
+
 // deriveLogEntriesLocked is the seismograph's data source: every entry it
 // returns becomes one activity-log event. The contract under test: tool
 // entries are keyed on ToolInvoked (each fresh call counts, even identical

@@ -403,6 +403,20 @@ func TestScanStateForPidReusesRolloutLookup(t *testing.T) {
 	}
 }
 
+func TestScanStateForPidClassifiesCompletedRollout(t *testing.T) {
+	dir := t.TempDir()
+	threadID := "12345678-1234-1234-1234-123456789abc"
+	path := writeRollout(t, filepath.Join(dir, "sessions"), threadID, `"cli"`,
+		`{"type":"event_msg","payload":{"type":"task_complete"}}`+"\n")
+	a := New(filepath.Join(dir, "sessions"), filepath.Join(dir, "index.jsonl"))
+	a.openFilesForPID = func(int) []string { return []string{path} }
+
+	gotID, _, verdict := a.ScanStateForPid(4242, "")
+	if gotID != threadID || verdict != tracker.ProbeDone {
+		t.Fatalf("ScanStateForPid = (%q, %v), want (%q, ProbeDone)", gotID, verdict, threadID)
+	}
+}
+
 func TestProbeLiveStatusFromRollout(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
