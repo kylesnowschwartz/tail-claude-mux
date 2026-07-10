@@ -198,6 +198,11 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 			log.Printf("codex-hook %s: pid unresolved (reported=%d, snapshot=%dB)", shortThread(threadID), payload.PID, len(payload.ProcessSnapshot))
 		}
 	}
+	if payload.Event == "Stop" {
+		if status := a.rolloutStatusForThread(state.pid, threadID); wire.IsTerminalStatus(status) {
+			newStatus = status
+		}
+	}
 
 	session := a.resolveStateSession(state, payload.Cwd)
 	if session == "" {
@@ -386,18 +391,34 @@ func (a *Adapter) ProbeLiveStatus(pid int, threadID, _ string) tracker.ProbeVerd
 }
 
 func probeRolloutPath(path string) tracker.ProbeVerdict {
-	if path == "" {
-		return tracker.ProbeNoSignal
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return tracker.ProbeNoSignal
-	}
-	status, _ := parseRollout(string(raw))
+	status := rolloutStatusForPath(path)
 	if status == wire.StatusRunning {
 		return tracker.ProbeWorking
 	}
-	return tracker.ProbeEnded
+	if wire.IsTerminalStatus(status) {
+		return tracker.ProbeEnded
+	}
+	return tracker.ProbeNoSignal
+}
+
+func (a *Adapter) rolloutStatusForThread(pid int, threadID string) string {
+	path := a.rolloutPathForPID(pid, threadID)
+	if path == "" && threadID != "" {
+		path = a.rolloutPathForThread(threadID)
+	}
+	return rolloutStatusForPath(path)
+}
+
+func rolloutStatusForPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	status, _ := parseRollout(string(raw))
+	return status
 }
 
 func (a *Adapter) rolloutPathForPID(pid int, threadID string) string {

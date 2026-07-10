@@ -417,7 +417,7 @@ func TestProbeLiveStatusFromRollout(t *testing.T) {
 		{
 			name:    "idle",
 			entries: `{"type":"turn_context","payload":{"cwd":"/project"}}` + "\n",
-			want:    tracker.ProbeEnded,
+			want:    tracker.ProbeNoSignal,
 		},
 		{
 			name:    "completed",
@@ -435,6 +435,64 @@ func TestProbeLiveStatusFromRollout(t *testing.T) {
 				t.Fatalf("ProbeLiveStatus = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestStopUsesDurableTurnStatusAndNewPromptRestarts(t *testing.T) {
+	tests := []struct {
+		name, entries, want string
+	}{
+		{name: "completed", entries: `{"type":"event_msg","payload":{"type":"task_complete"}}` + "\n", want: wire.StatusDone},
+		{name: "interrupted", entries: `{"type":"event_msg","payload":{"type":"turn_aborted"}}` + "\n", want: wire.StatusInterrupted},
+		{name: "error", entries: `{"type":"event_msg","payload":{"type":"error"}}` + "\n", want: wire.StatusError},
+		{name: "idle without completion evidence", entries: `{"type":"turn_context","payload":{"cwd":"/project"}}` + "\n", want: wire.StatusIdle},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			threadID := "12345678-1234-1234-1234-123456789abc"
+			writeRollout(t, h.adapter.SessionsDir, threadID, `"cli"`, tc.entries)
+
+			h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: threadID, Cwd: "/project"})
+			got := h.snapshot()
+			if len(got) != 1 || got[0].Status != tc.want {
+				t.Fatalf("Stop events = %#v, want status %q", got, tc.want)
+			}
+
+			h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project", Prompt: "continue"})
+			got = h.snapshot()
+			if got[len(got)-1].Status != wire.StatusRunning {
+				t.Fatalf("new prompt status = %q, want running", got[len(got)-1].Status)
+			}
+		})
+	}
+}
+
+func TestCompletedStopPreservesAlivePaneState(t *testing.T) {
+	dir := t.TempDir()
+	threadID := "12345678-1234-1234-1234-123456789abc"
+	adapter := New(dir, filepath.Join(dir, "index.jsonl"))
+	writeRollout(t, dir, threadID, `"cli"`, `{"type":"event_msg","payload":{"type":"task_complete"}}`+"\n")
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{
+		Agent: "codex", Session: "work", ThreadID: threadID, Status: wire.StatusRunning,
+		PaneID: "%7", PID: 200, Liveness: wire.LivenessAlive,
+	}, false)
+	adapter.ctx = &Context{
+		ResolveSession: func(string) string { return "work" },
+		Emit:           func(ev wire.AgentEvent) { tr.ApplyEvent(ev, false) },
+		Locked:         func(fn func()) { fn() },
+	}
+
+	adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: threadID, Cwd: "/project"})
+	got := tr.GetState("work")
+	if got == nil || got.Status != wire.StatusDone || got.Liveness != wire.LivenessAlive || got.PaneID != "%7" {
+		t.Fatalf("tracked state = %#v, want alive done state on pane %%7", got)
+	}
+
+	adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project"})
+	if got := tr.GetState("work"); got == nil || got.Status != wire.StatusRunning || got.Liveness != wire.LivenessAlive {
+		t.Fatalf("tracked state after new turn = %#v, want alive running", got)
 	}
 }
 
