@@ -4,7 +4,9 @@
 package ccwatch
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -964,6 +966,128 @@ func TestClaudeCodeHookAdapterPidFirstSessionRouting(t *testing.T) {
 		wantLen(t, tc.events, 1)
 		if tc.events[0].Session != "cwd-session" {
 			t.Errorf("session = %q, want cwd-session", tc.events[0].Session)
+		}
+	})
+}
+
+// describe("ClaudeCodeHookAdapter — non-tmux drop logging")
+//
+// Claude processes that legitimately live outside any tmux pane (claude
+// bg-spare, headless runs, IDE instances) resolve a pid but never a pane, so
+// every hook they send hits the drop branch forever. These tests cover the
+// suppression: classified non-tmux agents (registry Kind != "interactive")
+// log once per thread; unclassified drops (interactive kind, or no session
+// file at all) stay loud on every hook — that remains a real routing signal.
+func TestClaudeCodeHookAdapterNonTmuxDropLogging(t *testing.T) {
+	snapshotClaudeAt200 := func() string {
+		return strings.Join([]string{
+			"  100     1 /sbin/launchd",
+			"  200   100 node /path/@anthropic-ai/claude-code/cli.js",
+			"  400   200 /bin/sh -c hook.sh PreToolUse",
+		}, "\n")
+	}
+
+	// captureLog redirects the package logger's output for the duration of
+	// the test and returns a reader for what was written.
+	captureLog := func(t *testing.T) *bytes.Buffer {
+		t.Helper()
+		var buf bytes.Buffer
+		orig := log.Writer()
+		log.SetOutput(&buf)
+		t.Cleanup(func() { log.SetOutput(orig) })
+		return &buf
+	}
+
+	sendFromPane200 := func(a *Adapter, sessionID string) {
+		p := hook("SessionStart", sessionID, "/tmp/myproject")
+		p.PID = 400
+		p.ProcessSnapshot = snapshotClaudeAt200()
+		a.HandleHook(p)
+	}
+
+	t.Run("bg-kind session file: logs the classification once, then stays silent, event always dropped", func(t *testing.T) {
+		sessionsDir := t.TempDir()
+		a := New(t.TempDir(), sessionsDir)
+		tc := makeCtx(map[string]string{"/tmp/myproject": "cwd-session"}, nil) // empty pidMap: pane lookup always fails
+		a.Start(&tc.ctx)
+		writeSessionFile(t, sessionsDir, 200, map[string]any{
+			"pid": 200, "sessionId": "sess-1", "kind": "bg",
+		})
+		buf := captureLog(t)
+
+		sendFromPane200(a, "sess-1")
+		sendFromPane200(a, "sess-1")
+		sendFromPane200(a, "sess-1")
+
+		wantLen(t, tc.events, 0) // never routes — no pane owns the classified bg pid
+		logged := strings.Count(buf.String(), "non-tmux claude")
+		if logged != 1 {
+			t.Errorf("non-tmux claude log lines = %d, want 1 (log once per thread): %s", logged, buf.String())
+		}
+		if strings.Contains(buf.String(), "resolved but no pane owns it") {
+			t.Errorf("loud drop message should be suppressed for classified non-tmux agent: %s", buf.String())
+		}
+	})
+
+	t.Run("interactive-kind session file: stays loud on every hook", func(t *testing.T) {
+		sessionsDir := t.TempDir()
+		a := New(t.TempDir(), sessionsDir)
+		tc := makeCtx(map[string]string{"/tmp/myproject": "cwd-session"}, nil)
+		a.Start(&tc.ctx)
+		writeSessionFile(t, sessionsDir, 200, map[string]any{
+			"pid": 200, "sessionId": "sess-1", "kind": "interactive",
+		})
+		buf := captureLog(t)
+
+		sendFromPane200(a, "sess-1")
+		sendFromPane200(a, "sess-1")
+
+		wantLen(t, tc.events, 0)
+		logged := strings.Count(buf.String(), "resolved but no pane owns it")
+		if logged != 2 {
+			t.Errorf("loud drop log lines = %d, want 2 (unsuppressed for interactive kind): %s", logged, buf.String())
+		}
+	})
+
+	t.Run("bg-kind file for a DIFFERENT session id (pid reuse): stays loud on every hook", func(t *testing.T) {
+		sessionsDir := t.TempDir()
+		a := New(t.TempDir(), sessionsDir)
+		tc := makeCtx(map[string]string{"/tmp/myproject": "cwd-session"}, nil)
+		a.Start(&tc.ctx)
+		// Stale registry file from a previous bg process that had pid 200;
+		// the current thread is sess-1, so the bg kind must not suppress.
+		writeSessionFile(t, sessionsDir, 200, map[string]any{
+			"pid": 200, "sessionId": "sess-stale-bg", "kind": "bg",
+		})
+		buf := captureLog(t)
+
+		sendFromPane200(a, "sess-1")
+		sendFromPane200(a, "sess-1")
+
+		wantLen(t, tc.events, 0)
+		logged := strings.Count(buf.String(), "resolved but no pane owns it")
+		if logged != 2 {
+			t.Errorf("loud drop log lines = %d, want 2 (stale file for another session must not suppress): %s", logged, buf.String())
+		}
+		if strings.Contains(buf.String(), "non-tmux claude") {
+			t.Errorf("suppression classification must not fire on a sessionId mismatch: %s", buf.String())
+		}
+	})
+
+	t.Run("missing session file: stays loud on every hook", func(t *testing.T) {
+		sessionsDir := t.TempDir() // no session file written for pid 200
+		a := New(t.TempDir(), sessionsDir)
+		tc := makeCtx(map[string]string{"/tmp/myproject": "cwd-session"}, nil)
+		a.Start(&tc.ctx)
+		buf := captureLog(t)
+
+		sendFromPane200(a, "sess-1")
+		sendFromPane200(a, "sess-1")
+
+		wantLen(t, tc.events, 0)
+		logged := strings.Count(buf.String(), "resolved but no pane owns it")
+		if logged != 2 {
+			t.Errorf("loud drop log lines = %d, want 2 (unsuppressed with no session file): %s", logged, buf.String())
 		}
 	})
 }

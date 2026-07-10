@@ -100,6 +100,11 @@ type threadState struct {
 	// subagent from sessions/<pid>.json `agent`, "" when the parent thread
 	// is in control.
 	subagent string
+	// nonTmuxLogged fires once per thread: after the first "dropped" hook
+	// from a classified non-tmux agent (registry Kind != "interactive", e.g.
+	// claude bg-spare), further drops for the same thread stay silent
+	// instead of re-logging on every hook.
+	nonTmuxLogged bool
 }
 
 // Adapter is the ClaudeCodeHookAdapter port.
@@ -199,9 +204,24 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		session = a.ctx.ResolveSession(payload.Cwd)
 	}
 	if session == "" {
-		// Silent drops cost real debugging time; say which channel failed.
+		// Silent drops cost real debugging time; say which channel failed —
+		// unless the registry says this pid is a known non-tmux agent (bg
+		// spare pool, headless run, IDE instance): those hooks fire on every
+		// event forever since no pane will ever claim them, so log once per
+		// thread rather than flooding on every hook. The file must identify
+		// THIS thread (sessionId match) — after pid reuse a stale bg-kind
+		// file would otherwise mute a real routing failure for the new
+		// process. A missing/unreadable file, a sessionId mismatch, or an
+		// "interactive" kind stays loud — still a real routing signal.
 		if state.pid != 0 {
-			log.Printf("cc-hook %s: dropped — pid %d resolved but no pane owns it", shortThread(threadID), state.pid)
+			if file := a.readSessionFile(state.pid); file != nil && file.SessionID == threadID && file.Kind != "interactive" {
+				if !state.nonTmuxLogged {
+					state.nonTmuxLogged = true
+					log.Printf("cc-hook %s: non-tmux claude (kind=%s), ignoring", shortThread(threadID), file.Kind)
+				}
+			} else {
+				log.Printf("cc-hook %s: dropped — pid %d resolved but no pane owns it", shortThread(threadID), state.pid)
+			}
 		} else {
 			log.Printf("cc-hook %s: dropped — no pid, cwd %q matches no session", shortThread(threadID), payload.Cwd)
 		}
