@@ -2,10 +2,12 @@ package tmux
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -33,6 +35,7 @@ func TestSpawnAgentValidation(t *testing.T) {
 		{name: "unknown agent", req: SpawnAgentRequest{Dir: dir, Agent: "other", Prompt: "task"}, want: "agent must be codex, claude, or pi"},
 		{name: "empty prompt", req: SpawnAgentRequest{Dir: dir, Agent: "codex"}, want: "prompt is required"},
 		{name: "blank prompt", req: SpawnAgentRequest{Dir: dir, Agent: "codex", Prompt: " \n\t"}, want: "prompt is required"},
+		{name: "pi flag-like prompt", req: SpawnAgentRequest{Dir: dir, Agent: "pi", Prompt: "--help"}, want: "this agent cannot accept a prompt that begins with '-'"},
 		{name: "empty sanitized name", req: SpawnAgentRequest{Dir: dir, Agent: "codex", Prompt: "task", Name: "\x00\n"}, want: "name must contain printable characters"},
 		{name: "reserved requested name", req: SpawnAgentRequest{Dir: dir, Agent: "codex", Prompt: "task", Name: "\x1b[31m_tcm_stash\x1b[0m"}, want: "name is reserved by tcm"},
 		{name: "reserved derived name", req: SpawnAgentRequest{Dir: reservedDir, Agent: "codex", Prompt: "task"}, want: "name is reserved by tcm"},
@@ -66,18 +69,18 @@ func TestSpawnAgentNameResolution(t *testing.T) {
 		requestName string
 		existing    map[string]bool
 		want        string
-		wantProbes  []string
 	}{
-		{name: "derived from directory", want: "project", wantProbes: []string{"=project"}},
-		{name: "sanitizes explicit name", requestName: "\x1b[31mfix-auth\x1b[0m\x00", want: "fix-auth", wantProbes: []string{"=fix-auth"}},
-		{name: "replaces tmux target separators", requestName: "a.b:c", want: "a-b-c", wantProbes: []string{"=a-b-c"}},
-		{name: "replaces one space", requestName: "a b", want: "a-b", wantProbes: []string{"=a-b"}},
-		{name: "collapses and trims spaces", requestName: " a  b ", want: "a-b", wantProbes: []string{"=a-b"}},
-		{name: "replaces tab", requestName: "a\tb", want: "a-b", wantProbes: []string{"=a-b"}},
+		{name: "derived from directory", want: "project"},
+		{name: "sanitizes explicit name", requestName: "\x1b[31mfix-auth\x1b[0m\x00", want: "fix-auth"},
+		{name: "replaces tmux target separators", requestName: "a.b:c", want: "a-b-c"},
+		{name: "replaces one space", requestName: "a b", want: "a-b"},
+		{name: "collapses and trims spaces", requestName: " a  b ", want: "a-b"},
+		{name: "replaces tab", requestName: "a\tb", want: "a-b"},
+		{name: "uses exact matches", requestName: "fix-auth", existing: map[string]bool{"fix-auth-extra": true}, want: "fix-auth"},
 		{
 			name: "deduplicates", requestName: "fix-auth",
 			existing: map[string]bool{"fix-auth": true, "fix-auth-2": true},
-			want:     "fix-auth-3", wantProbes: []string{"=fix-auth", "=fix-auth-2", "=fix-auth-3"},
+			want:     "fix-auth-3",
 		},
 	}
 
@@ -89,15 +92,21 @@ func TestSpawnAgentNameResolution(t *testing.T) {
 				t.Fatal(err)
 			}
 			var calls [][]string
-			var probes []string
+			listCalls := 0
 			tm := &Tmux{Run: func(args ...string) (string, error) {
 				calls = append(calls, append([]string(nil), args...))
-				if args[0] == "has-session" {
-					probes = append(probes, args[2])
-					if tt.existing[strings.TrimPrefix(args[2], "=")] {
-						return "", nil
+				if args[0] == "list-sessions" {
+					listCalls++
+					names := make([]string, 0, len(tt.existing))
+					for name := range tt.existing {
+						names = append(names, name)
 					}
-					return "", errors.New("session not found")
+					sort.Strings(names)
+					rows := make([]string, 0, len(names))
+					for i, name := range names {
+						rows = append(rows, fmt.Sprintf("$%d\t%s\t0\t0\t1\t/tmp", i, name))
+					}
+					return strings.Join(rows, "\n"), nil
 				}
 				return tt.want + " %42 @7", nil
 			}}
@@ -112,8 +121,8 @@ func TestSpawnAgentNameResolution(t *testing.T) {
 			if newSession[3] != tt.want {
 				t.Errorf("new-session name = %q, want %q", newSession[3], tt.want)
 			}
-			if !reflect.DeepEqual(probes, tt.wantProbes) {
-				t.Errorf("has-session targets = %#v, want %#v", probes, tt.wantProbes)
+			if listCalls != 1 {
+				t.Errorf("list-sessions calls = %d, want 1", listCalls)
 			}
 		})
 	}
@@ -162,33 +171,33 @@ func TestSpawnAgentCommandEndOfOptions(t *testing.T) {
 		agent   string
 		prompt  string
 		command []string
-		want    string
+		want    []string
 	}{
 		{
 			name: "codex protects flag-like prompt", agent: "codex", prompt: "--help",
-			want: "sh -c ''\\''codex'\\'' '\\''--'\\'' '\\''--help'\\''; status=$?; printf \"\\n[tcm] agent exited with status %d\\n\" \"$status\"; exec \"${SHELL:-sh}\"'",
+			want: []string{"codex", "--", "--help"},
 		},
 		{
-			name: "claude protects subcommand-like prompt", agent: "claude", prompt: "resume",
-			want: "sh -c ''\\''claude'\\'' '\\''--'\\'' '\\''resume'\\''; status=$?; printf \"\\n[tcm] agent exited with status %d\\n\" \"$status\"; exec \"${SHELL:-sh}\"'",
+			name: "claude protects flag-like prompt", agent: "claude", prompt: "--help",
+			want: []string{"claude", "--", "--help"},
 		},
 		{
-			name: "pi keeps bare prompt", agent: "pi", prompt: "--help",
-			want: "sh -c ''\\''pi'\\'' '\\''--help'\\''; status=$?; printf \"\\n[tcm] agent exited with status %d\\n\" \"$status\"; exec \"${SHELL:-sh}\"'",
+			name: "pi keeps normal prompt bare", agent: "pi", prompt: "task",
+			want: []string{"pi", "task"},
 		},
 		{
 			name: "override keeps bare prompt", agent: "codex", prompt: "--help", command: []string{"custom"},
-			want: "sh -c ''\\''custom'\\'' '\\''--help'\\''; status=$?; printf \"\\n[tcm] agent exited with status %d\\n\" \"$status\"; exec \"${SHELL:-sh}\"'",
+			want: []string{"custom", "--help"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildSpawnAgentCommand(SpawnAgentRequest{
+			got := buildSpawnAgentArgv(SpawnAgentRequest{
 				Agent: tt.agent, Prompt: tt.prompt, Command: tt.command,
 			})
-			if got != tt.want {
-				t.Errorf("command:\n%q\nwant:\n%q", got, tt.want)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("argv = %#v, want %#v", got, tt.want)
 			}
 		})
 	}
@@ -198,8 +207,8 @@ func TestSpawnAgentTmuxArguments(t *testing.T) {
 	dir := t.TempDir()
 	var got []string
 	tm := &Tmux{Run: func(args ...string) (string, error) {
-		if args[0] == "has-session" {
-			return "", errors.New("session not found")
+		if args[0] == "list-sessions" {
+			return "", nil
 		}
 		got = append([]string(nil), args...)
 		return "agent %42 @7", nil
@@ -239,8 +248,8 @@ func TestSpawnAgentTmuxErrorIncludesOutput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			tm := &Tmux{Run: func(args ...string) (string, error) {
-				if args[0] == "has-session" {
-					return "", errors.New("session not found")
+				if args[0] == "list-sessions" {
+					return "", nil
 				}
 				return tt.out, tt.err
 			}}
@@ -248,6 +257,41 @@ func TestSpawnAgentTmuxErrorIncludesOutput(t *testing.T) {
 			_, err := tm.SpawnAgent(SpawnAgentRequest{Dir: dir, Agent: "codex", Prompt: "task", Name: "agent"})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestSpawnAgentListSessionsError(t *testing.T) {
+	dir := t.TempDir()
+	tm := &Tmux{Run: func(args ...string) (string, error) {
+		return "", errors.New("tmux unavailable")
+	}}
+
+	_, err := tm.SpawnAgent(SpawnAgentRequest{
+		Dir: dir, Agent: "codex", Prompt: "task", Name: "agent",
+	})
+	if err == nil || !strings.Contains(err.Error(), "tmux could not list sessions: tmux unavailable") {
+		t.Fatalf("error = %v, want list-sessions failure", err)
+	}
+}
+
+func TestSpawnAgentRejectsUnexpectedTmuxResult(t *testing.T) {
+	for _, output := range []string{"agent %42", "agent extra %42 @7"} {
+		t.Run(output, func(t *testing.T) {
+			dir := t.TempDir()
+			tm := &Tmux{Run: func(args ...string) (string, error) {
+				if args[0] == "list-sessions" {
+					return "", nil
+				}
+				return output, nil
+			}}
+
+			_, err := tm.SpawnAgent(SpawnAgentRequest{
+				Dir: dir, Agent: "codex", Prompt: "task", Name: "agent",
+			})
+			if err == nil || err.Error() != "tmux returned an unexpected result" {
+				t.Fatalf("error = %v, want unexpected result", err)
 			}
 		})
 	}

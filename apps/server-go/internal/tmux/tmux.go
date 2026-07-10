@@ -60,11 +60,21 @@ func New() *Tmux { return &Tmux{Run: ExecRunner} }
 // order. An unreachable tmux server yields an empty list, not an error —
 // the sidebar renders empty, same as the TS provider.
 func (t *Tmux) ListSessions() []Session {
+	sessions, _ := t.listSessions()
+	return sessions
+}
+
+// listSessions is the error-reporting form used by operations that cannot
+// safely treat an unreachable tmux server as an empty listing.
+func (t *Tmux) listSessions() ([]Session, error) {
 	out, err := t.Run("list-sessions", "-F",
 		"#{session_id}"+sep+"#{session_name}"+sep+"#{session_created}"+sep+
 			"#{session_attached}"+sep+"#{session_windows}"+sep+"#{session_path}")
-	if err != nil || out == "" {
-		return nil
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return nil, nil
 	}
 	var sessions []Session
 	for line := range strings.SplitSeq(out, "\n") {
@@ -81,7 +91,7 @@ func (t *Tmux) ListSessions() []Session {
 			Dir:       f[5],
 		})
 	}
-	return sessions
+	return sessions, nil
 }
 
 // ListClients returns all attached clients (client.ts listClients).

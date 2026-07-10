@@ -17,6 +17,8 @@ const (
 	belCode     = 0x07
 	csiOpenCode = '['
 	oscOpenCode = ']'
+	// SessionNameMaxWidth caps agent session/thread display names.
+	SessionNameMaxWidth = 80
 )
 
 // charWidth is the terminal display width of a single code point: 2 for
@@ -164,4 +166,10 @@ func StripAnsiEscapes(text string) string {
 // remaining C0/C1 control bytes.
 func SanitizeForDisplay(text string) string {
 	return StripNonPrintingControlChars(StripAnsiEscapes(text))
+}
+
+// SanitizeSessionName applies the shared sanitizer and width cap used for
+// agent session/thread display names.
+func SanitizeSessionName(text string) string {
+	return TruncateToWidth(SanitizeForDisplay(text), SessionNameMaxWidth)
 }

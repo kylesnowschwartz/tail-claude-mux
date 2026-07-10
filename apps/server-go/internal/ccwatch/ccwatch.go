@@ -325,7 +325,7 @@ func (a *Adapter) SessionIDForPid(pid int) string {
 // otherwise run hundreds of columns into the sidebar.
 func (a *Adapter) SessionInfoForPid(pid int) (sessionID, name string) {
 	if l := a.readSessionFile(pid); l != nil {
-		return l.SessionID, textutil.TruncateToWidth(textutil.SanitizeForDisplay(l.Name), threadNameMaxWidth)
+		return l.SessionID, textutil.SanitizeSessionName(l.Name)
 	}
 	return "", ""
 }
@@ -717,11 +717,6 @@ func firstText(items []contentItem) string {
 	return ""
 }
 
-// threadNameMaxWidth caps thread display names — both transcript-derived
-// (extractThreadName) and registry-derived (SessionInfoForPid) — so a
-// prompt-sized name never floods the sidebar.
-const threadNameMaxWidth = 80
-
 // extractThreadName pulls a display name from a user entry, rejecting
 // markup/JSON/interrupt lines, sanitized and width-capped.
 func extractThreadName(e transcript.Entry) string {
@@ -735,7 +730,7 @@ func extractThreadName(e transcript.Entry) string {
 	if strings.HasPrefix(text, "<") || strings.HasPrefix(text, "{") || strings.HasPrefix(text, "[Request") {
 		return ""
 	}
-	return textutil.TruncateToWidth(textutil.SanitizeForDisplay(text), threadNameMaxWidth)
+	return textutil.SanitizeSessionName(text)
 }
 
 func extractCustomTitle(e transcript.Entry) string {

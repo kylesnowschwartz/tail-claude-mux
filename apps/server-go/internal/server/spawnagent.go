@@ -14,11 +14,11 @@ func (s *Server) handleSpawnAgent(w http.ResponseWriter, r *http.Request) {
 	var req tmux.SpawnAgentRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, apiBodyLimit))
 	if err := decoder.Decode(&req); err != nil {
-		writeSpawnAgentError(w, http.StatusBadRequest, "request body must be valid JSON")
+		writeSpawnAgentDecodeError(w, err)
 		return
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		writeSpawnAgentError(w, http.StatusBadRequest, "request body must be valid JSON")
+		writeSpawnAgentDecodeError(w, err)
 		return
 	}
 
@@ -35,6 +35,15 @@ func (s *Server) handleSpawnAgent(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+func writeSpawnAgentDecodeError(w http.ResponseWriter, err error) {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		writeSpawnAgentError(w, http.StatusBadRequest, "request body is too large")
+		return
+	}
+	writeSpawnAgentError(w, http.StatusBadRequest, "request body must be valid JSON")
 }
 
 func writeSpawnAgentError(w http.ResponseWriter, status int, message string) {

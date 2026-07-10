@@ -12,20 +12,23 @@ import (
 )
 
 const (
-	spawnAgentNameMaxWidth = 80
 	spawnAgentDedupeLimit  = 100
 	spawnAgentFormat       = "#{session_name} #{pane_id} #{window_id}"
 	spawnAgentShellPrefix  = "sh -c "
 	spawnAgentShellWrapper = "%s; status=$?; printf \"\\n[tcm] agent exited with status %%d\\n\" \"$status\"; exec \"${SHELL:-sh}\""
-	defaultCodexCommand    = "codex"
-	defaultClaudeCommand   = "claude"
-	defaultPiCommand       = "pi"
-	agentEndOfOptions      = "--"
-	tmuxExactTargetPrefix  = "="
 	tmuxSessionSeparator   = ":"
 	tmuxWindowSeparator    = "."
 	tmuxSafeNameSeparator  = "-"
 )
+
+var spawnAgents = map[string]struct {
+	binary       string
+	endOfOptions string
+}{
+	"codex":  {binary: "codex", endOfOptions: "--"},
+	"claude": {binary: "claude", endOfOptions: "--"},
+	"pi":     {binary: "pi"},
+}
 
 // SpawnAgentRequest is the POST /spawn-agent request.
 type SpawnAgentRequest struct {
@@ -71,13 +74,13 @@ func (t *Tmux) SpawnAgent(req SpawnAgentRequest) (SpawnAgentResult, error) {
 	}
 
 	fields := strings.Fields(out)
-	if len(fields) < 3 {
+	if len(fields) != 3 {
 		return SpawnAgentResult{}, fmt.Errorf("tmux returned an unexpected result")
 	}
 	return SpawnAgentResult{
-		SessionName: strings.Join(fields[:len(fields)-2], " "),
-		PaneID:      fields[len(fields)-2],
-		WindowID:    fields[len(fields)-1],
+		SessionName: fields[0],
+		PaneID:      fields[1],
+		WindowID:    fields[2],
 	}, nil
 }
 
@@ -98,11 +101,15 @@ func validateSpawnAgentRequest(req SpawnAgentRequest) error {
 	if !info.IsDir() {
 		return &SpawnAgentValidationError{message: "dir must be a directory"}
 	}
-	if _, ok := defaultSpawnAgentCommand(req.Agent); !ok {
+	agent, ok := spawnAgents[req.Agent]
+	if !ok {
 		return &SpawnAgentValidationError{message: "agent must be codex, claude, or pi"}
 	}
 	if strings.TrimSpace(req.Prompt) == "" {
 		return &SpawnAgentValidationError{message: "prompt is required"}
+	}
+	if len(req.Command) == 0 && agent.endOfOptions == "" && strings.HasPrefix(req.Prompt, "-") {
+		return &SpawnAgentValidationError{message: "this agent cannot accept a prompt that begins with '-'"}
 	}
 	return nil
 }
@@ -113,7 +120,7 @@ func (t *Tmux) resolveSpawnAgentName(req SpawnAgentRequest) (string, error) {
 		name = filepath.Base(req.Dir)
 	}
 	name = strings.Join(strings.Fields(name), tmuxSafeNameSeparator)
-	name = textutil.TruncateToWidth(textutil.SanitizeForDisplay(name), spawnAgentNameMaxWidth)
+	name = textutil.SanitizeSessionName(name)
 	name = strings.NewReplacer(
 		tmuxSessionSeparator, tmuxSafeNameSeparator,
 		tmuxWindowSeparator, tmuxSafeNameSeparator,
@@ -124,12 +131,20 @@ func (t *Tmux) resolveSpawnAgentName(req SpawnAgentRequest) (string, error) {
 	if name == StashSession {
 		return "", &SpawnAgentValidationError{message: "name is reserved by tcm"}
 	}
+	sessions, err := t.listSessions()
+	if err != nil {
+		return "", fmt.Errorf("tmux could not list sessions: %w", err)
+	}
+	existing := make(map[string]struct{}, len(sessions))
+	for _, session := range sessions {
+		existing[session.Name] = struct{}{}
+	}
 	for suffix := 1; suffix <= spawnAgentDedupeLimit; suffix++ {
 		candidate := name
 		if suffix > 1 {
 			candidate = fmt.Sprintf("%s-%d", name, suffix)
 		}
-		if _, err := t.Run("has-session", "-t", tmuxExactTargetPrefix+candidate); err != nil {
+		if _, found := existing[candidate]; !found {
 			return candidate, nil
 		}
 	}
@@ -137,15 +152,7 @@ func (t *Tmux) resolveSpawnAgentName(req SpawnAgentRequest) (string, error) {
 }
 
 func buildSpawnAgentCommand(req SpawnAgentRequest) string {
-	argv := req.Command
-	if len(argv) == 0 {
-		command, _ := defaultSpawnAgentCommand(req.Agent)
-		argv = []string{command}
-		if req.Agent == defaultCodexCommand || req.Agent == defaultClaudeCommand {
-			argv = append(argv, agentEndOfOptions)
-		}
-	}
-	argv = append(append([]string(nil), argv...), req.Prompt)
+	argv := buildSpawnAgentArgv(req)
 	quoted := make([]string, len(argv))
 	for i, arg := range argv {
 		quoted[i] = shellQuote(arg)
@@ -155,17 +162,16 @@ func buildSpawnAgentCommand(req SpawnAgentRequest) string {
 	return spawnAgentShellPrefix + shellQuote(wrapper)
 }
 
-func defaultSpawnAgentCommand(agent string) (string, bool) {
-	switch agent {
-	case defaultCodexCommand:
-		return defaultCodexCommand, true
-	case defaultClaudeCommand:
-		return defaultClaudeCommand, true
-	case defaultPiCommand:
-		return defaultPiCommand, true
-	default:
-		return "", false
+func buildSpawnAgentArgv(req SpawnAgentRequest) []string {
+	argv := append([]string(nil), req.Command...)
+	if len(argv) == 0 {
+		agent := spawnAgents[req.Agent]
+		argv = append(argv, agent.binary)
+		if agent.endOfOptions != "" {
+			argv = append(argv, agent.endOfOptions)
+		}
 	}
+	return append(argv, req.Prompt)
 }
 
 func shellQuote(arg string) string {
