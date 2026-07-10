@@ -98,6 +98,20 @@ function shortThreadId(id: string): string {
   return id.length <= 4 ? id : id.slice(-4);
 }
 
+type SessionAgent = SessionData["agents"][number];
+
+function isLiveAgent(agent: SessionAgent): boolean {
+  return agent.liveness === "alive"
+    || (agent.liveness !== "exited" && !["done", "error", "interrupted"].includes(agent.status));
+}
+
+function liveFirstAgents(agents: readonly SessionAgent[]): SessionAgent[] {
+  const live: SessionAgent[] = [];
+  const inactive: SessionAgent[] = [];
+  for (const agent of agents) (isLiveAgent(agent) ? live : inactive).push(agent);
+  return live.concat(inactive);
+}
+
 /** Build an FZF_DEFAULT_OPTS --color string from an tcm palette.
  *  fzf doesn't understand the literal string "transparent" — it wants -1 to
  *  mean "use terminal default", which is how we render transparency. */
@@ -399,6 +413,13 @@ function App() {
     return counts;
   });
 
+  const focusedVisibleAgents = createMemo(() => {
+    const data = focusedData();
+    const index = focusedIdx();
+    if (!data || index < 0) return [];
+    return liveFirstAgents(data.agents ?? []).slice(0, visibleAgentCounts()[index] ?? 0);
+  });
+
   function send(cmd: ClientCommand) {
     if (connected() && ws) ws.send(JSON.stringify(cmd));
   }
@@ -443,12 +464,12 @@ function App() {
     if (!next || next === current) return;
 
     setFocusedSession(next);
+    setFocusedAgentIdx((index) => Math.min(index, Math.max(0, (visibleAgentCounts()[nextIdx] ?? 0) - 1)));
     send({ type: "focus-session", name: next });
   }
 
   function moveAgentFocus(delta: -1 | 1) {
-    const data = focusedData();
-    const agents = data?.agents ?? [];
+    const agents = focusedVisibleAgents();
     if (agents.length === 0) return;
     const idx = focusedAgentIdx();
     const next = Math.max(0, Math.min(agents.length - 1, idx + delta));
@@ -457,7 +478,7 @@ function App() {
 
   function activateFocusedAgent() {
     const data = focusedData();
-    const agents = data?.agents ?? [];
+    const agents = focusedVisibleAgents();
     const agent = agents[focusedAgentIdx()];
     if (!agent || !data) return;
     send({
@@ -472,7 +493,7 @@ function App() {
 
   function dismissFocusedAgent() {
     const data = focusedData();
-    const agents = data?.agents ?? [];
+    const agents = focusedVisibleAgents();
     const agent = agents[focusedAgentIdx()];
     if (!agent || !data) return;
     send({
@@ -493,7 +514,7 @@ function App() {
 
   function killFocusedAgentPane() {
     const data = focusedData();
-    const agents = data?.agents ?? [];
+    const agents = focusedVisibleAgents();
     const agent = agents[focusedAgentIdx()];
     if (!agent || !data) return;
     send({
@@ -736,8 +757,7 @@ function App() {
 
   // Reset agent-mode when focused session loses all agents
   createEffect(() => {
-    const data = focusedData();
-    const agents = data?.agents ?? [];
+    const agents = focusedVisibleAgents();
     if (panelFocus() === "agents" && agents.length === 0) {
       setPanelFocus("sessions");
     }
@@ -1454,11 +1474,7 @@ function SessionCard(props: SessionCardProps) {
     return b.length > 15 ? b.slice(0, 14) + "…" : b;
   };
 
-  const agentCount = () =>
-    props.session.agents?.filter((a) =>
-      a.liveness === "alive" ||
-      (a.liveness !== "exited" && !["done", "error", "interrupted"].includes(a.status)),
-    ).length ?? 0;
+  const agentCount = () => props.session.agents?.filter(isLiveAgent).length ?? 0;
 
   // Locked count format (B1 / Q3): bare numeric, capped at "9+". The legacy
   // "●N" badge and the "2π" same-type compaction are both retired.
@@ -1469,7 +1485,7 @@ function SessionCard(props: SessionCardProps) {
     return String(n);
   };
 
-  const agents = () => props.session.agents ?? [];
+  const agents = () => liveFirstAgents(props.session.agents ?? []);
   const visibleAgents = () => agents().slice(0, props.visibleAgentCount);
   const hiddenAgentCount = () => Math.max(0, agents().length - visibleAgents().length);
   const branchStyle = () => props.isSelected
