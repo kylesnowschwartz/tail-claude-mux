@@ -1357,13 +1357,16 @@ function AgentListItem(props: AgentListItemProps) {
   };
 
   const nameStyle = () => {
-    if (!props.isSessionSelected) return tier("dim", P(), props.paneFocused());
-    const base = isUnseen()
-      ? P().teal
-      : (props.isKeyboardFocused ? P().text : P().subtext1);
+    const base = props.isSessionSelected
+      ? {
+          fg: props.isKeyboardFocused ? P().text : P().subtext1,
+          attributes: props.isKeyboardFocused ? BOLD : undefined,
+        }
+      : tier("dim", P(), props.paneFocused());
+    const attentionFg = isUnseen() ? P().teal : base.fg;
     return {
-      fg: label() === "waiting" ? lerpHex(base, P().yellow, props.glowT()) : base,
-      attributes: props.isKeyboardFocused ? BOLD : undefined,
+      ...base,
+      fg: label() === "waiting" ? lerpHex(attentionFg, P().yellow, props.glowT()) : attentionFg,
     };
   };
   const supportingStyle = () => tier(
@@ -1371,7 +1374,7 @@ function AgentListItem(props: AgentListItemProps) {
     P(),
     props.isSessionSelected && props.paneFocused(),
   );
-  const identityStyle = () => props.isPaneFocused && props.isSessionSelected
+  const identityStyle = () => props.isPaneFocused
     ? { fg: P().sky }
     : nameStyle();
 
@@ -1456,9 +1459,12 @@ function SessionCard(props: SessionCardProps) {
   const P = () => props.theme().palette;
   const nameStyle = () => {
     const base = tier(props.isSelected ? "primary" : "dim", P(), props.paneFocused());
+    const attentionFg = props.session.unseen ? P().teal : base.fg;
     return {
       ...base,
-      fg: props.session.unseen && props.isSelected ? P().teal : base.fg,
+      fg: props.session.agentState?.status === "waiting"
+        ? lerpHex(attentionFg, P().yellow, props.glowT())
+        : attentionFg,
       attributes: (base.attributes ?? 0) | (props.isCurrent ? BOLD : 0),
     };
   };
