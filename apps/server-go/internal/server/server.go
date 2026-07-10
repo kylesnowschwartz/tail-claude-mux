@@ -92,6 +92,7 @@ type Server struct {
 	dirSessionCacheAt time.Time
 	panesCache        []tmux.Pane
 	panesCacheAt      time.Time
+	waitPollInterval  time.Duration // tests shorten the in-memory /wait poll.
 
 	// Sidebar lifecycle + width enforcement state (see sidebar.go).
 	ensureSidebarTimer      *time.Timer
@@ -129,10 +130,12 @@ func New(b *state.Builder, tr *tracker.Tracker, w *ccwatch.Adapter, pi *piwatch.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /state", s.handleState)
+	mux.HandleFunc("GET /wait", s.handleWait)
 	mux.HandleFunc("GET /explain", s.handleExplain)
 	mux.HandleFunc("POST /hook", s.handleHook)
 	mux.HandleFunc("POST /focus", s.handleFocus)
 	mux.HandleFunc("POST /spawn-agent", s.handleSpawnAgent)
+	mux.HandleFunc("POST /followup", s.handleFollowup)
 	mux.HandleFunc("POST /set-status", s.handleSetStatus)
 	mux.HandleFunc("POST /set-progress", s.handleSetProgress)
 	mux.HandleFunc("POST /log", s.handleLog)

@@ -89,6 +89,50 @@ func New(sessionsDir, sessionIndexPath string) *Adapter {
 
 func (a *Adapter) Name() string { return "codex" }
 
+// NewestRolloutForCwd returns the newest Codex rollout whose session metadata
+// identifies cwd. Follow-up delivery uses this exact lookup instead of --last,
+// which can select a parallel thread.
+func (a *Adapter) NewestRolloutForCwd(cwd string) (path, threadID string) {
+	var newest time.Time
+	_ = filepath.WalkDir(a.SessionsDir, func(candidate string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || threadIDFromPath(candidate) == "" {
+			return nil
+		}
+		file, err := os.Open(candidate)
+		if err != nil {
+			return nil
+		}
+		scanner := bufio.NewScanner(file)
+		matches := scanner.Scan() && rolloutCwd(scanner.Bytes()) == cwd
+		_ = file.Close()
+		if !matches {
+			return nil
+		}
+		info, err := entry.Info()
+		if err == nil && (path == "" || info.ModTime().After(newest)) {
+			path, threadID, newest = candidate, threadIDFromPath(candidate), info.ModTime()
+		}
+		return nil
+	})
+	return path, threadID
+}
+
+func rolloutCwd(line []byte) string {
+	var entry struct {
+		Cwd     string `json:"cwd"`
+		Payload struct {
+			Cwd string `json:"cwd"`
+		} `json:"payload"`
+	}
+	if json.Unmarshal(line, &entry) != nil {
+		return ""
+	}
+	if entry.Cwd != "" {
+		return entry.Cwd
+	}
+	return entry.Payload.Cwd
+}
+
 func (a *Adapter) Start(ctx *Context) {
 	a.ctx = ctx
 	a.seedFromJSONL()
