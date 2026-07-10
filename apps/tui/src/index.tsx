@@ -30,8 +30,6 @@ import {
   BRAND_CLAWD,
   BRANCH_GLYPH,
   DIR_MISMATCH_GLYPH,
-  WRAP_UP,
-  WRAP_DOWN,
   AGENT_GLYPHS,
 } from "./vocab";
 import { tier } from "./tiers";
@@ -39,6 +37,7 @@ import {
   type ActivityLog,
   type BucketIcon,
   SPARKLINE_BUCKET_MS,
+  SPARK_ROWS,
   BLANK_SLOT,
   seismographGeometry,
   windowMs,
@@ -202,33 +201,6 @@ function getLocalSessionName(): string | null {
   return null;
 }
 
-/**
- * Rolodex wrap rule — the split horizontal divider with a centred chevron
- * that marks where the rolodex visually wraps around the focused card.
- *
- * Renders as: `─────  ·  ─────` where the centre glyph is
- * \u{F0143} (chevron-up) above the focused card, \u{F0140} (chevron-down)
- * below it.
- *
- * The two flex-grown rule segments overflow horizontally; their containing
- * box clips them to the panel width.
- */
-function WrapRule(props: { direction: "up" | "down"; palette: ThemePalette }) {
-  const fg = props.palette.surface1;
-  const chevron = props.direction === "up" ? WRAP_UP : WRAP_DOWN;
-  return (
-    <box height={1} flexDirection="row" paddingLeft={1} paddingRight={1}>
-      <box flexGrow={1} flexShrink={1} overflow="hidden">
-        <text style={{ fg }}>{"─".repeat(200)}</text>
-      </box>
-      <text style={{ fg }} flexShrink={0}>{" "}{chevron}{" "}</text>
-      <box flexGrow={1} flexShrink={1} overflow="hidden">
-        <text style={{ fg }}>{"─".repeat(200)}</text>
-      </box>
-    </box>
-  );
-}
-
 // ────────────────────────────────────────────────────────────────────────────
 // Activity zone — pure histogram/icon logic lives in ./activity.ts. The
 // original text-stream layout spec (docs/simmer/activity-zone/result.md) is
@@ -236,7 +208,7 @@ function WrapRule(props: { direction: "up" | "down"; palette: ThemePalette }) {
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
- * Activity zone — a two-row, full-width "seismograph" beneath the rolodex.
+ * Activity zone: a two-row, full-width "seismograph" beneath the session list.
  *
  *            ▂▂▂                ← histogram overflow row (bursts stack up)
  *   ▁▁▁▄▄▄▁▁▁███▅▅▅▁▁▁▁▁▁▁▁▁   ← histogram: activity density, one bucket = 8 s,
@@ -362,7 +334,6 @@ function App() {
   // --- Theme state (driven by server) ---
   const [theme, setTheme] = createSignal<Theme>(resolveTheme(undefined));
   const P = () => theme().palette;
-  const S = () => theme().status;
 
   const [sessions, setSessions] = createStore<SessionData[]>([]);
   const [focusedSession, setFocusedSession] = createSignal<string | null>(null);
@@ -414,61 +385,30 @@ function App() {
     return sessions.findIndex(s => s.name === name);
   });
 
-  // Rolodex: a *linear tape* of sessions in their natural order. The focused
-  // card is pinned at the vertical centre of the zone; the viewport slides
-  // over the tape as the focus index changes. Sessions appear in stable,
-  // predictable positions relative to each other — the visible layout
-  // never rotates.
-  //
-  // `j`/`k` navigation wraps modularly (see moveLocalFocus) so a single
-  // press at either end snaps to the opposite end. That wrap is a
-  // *navigation* behaviour; the tape itself does not wrap visually — at the
-  // boundaries the `before` / `after` halves shrink, leaving empty space
-  // above or below the focused card. The chevron separators above and below
-  // the focused card stay always-visible regardless.
-  // (The earlier wheel/rotation model disoriented users in live QA, hence
-  // this slide-up/down approach.)
-  const rolodex = createMemo(() => {
-    const idx = focusedIdx();
-    if (idx < 0) return { before: [] as SessionData[], after: [] as SessionData[] };
-    return {
-      before: sessions.slice(0, idx),
-      after: sessions.slice(idx + 1),
-    };
-  });
+  const visibleAgentCounts = createMemo(() => {
+    const headerRows = 2;
+    const footerRows = 3;
+    const activityZoneRows = SPARK_ROWS + 1;
+    const availableRows = Math.max(0, termDims().height - headerRows - footerRows - activityZoneRows);
+    const counts = sessions.map((session) => session.agents?.length ?? 0);
+    const fixedRows = sessions.reduce(
+      (total, session) => total + 2 + 1 + (session.branch ? 1 : 0),
+      0,
+    );
+    const agentRows = () => counts.reduce((total, visible, index) => {
+      const count = sessions[index]?.agents?.length ?? 0;
+      return total + visible + (visible < count ? 1 : 0);
+    }, 0);
 
-  const sessionsBefore = createMemo(() => rolodex().before);
-  const sessionsAfter = createMemo(() => rolodex().after);
-
-  // Compute the tallest card height across all sessions so the
-  // focused-card frame never resizes as you cycle.
-  // Accounts for text wrapping in narrow sidebars.
-  const maxCardHeight = createMemo(() => {
-    let max = 0;
-    for (const session of sessions) {
-      let h = 1; // row 1: name
-      if (session.branch) h++; // row 2: branch
-
-      // expanded content
-      const { project, parent } = formatDir(session.dir);
-      if (project && project !== session.name) {
-        h++;
-        if (parent) h++;
+    while (fixedRows + agentRows() > availableRows) {
+      let largest = -1;
+      for (let i = 0; i < counts.length; i++) {
+        if (counts[i]! > 1 && (largest < 0 || counts[i]! > counts[largest]!)) largest = i;
       }
-
-      // Agent rows are single-line by construction (the row text has
-      // wrapMode="none", so long names end-clip instead of wrapping) —
-      // estimating wrap here would add a phantom empty row whenever a
-      // registry session name is long.
-      h += (session.agents ?? []).length;
-      // no gap between agents — card border provides visual grouping
-
-      // Status / progress / logs render in the ActivityZone now, not in the
-      // focused card. No height contribution from metadata.
-
-      max = Math.max(max, h);
+      if (largest < 0) break;
+      counts[largest] = counts[largest]! - 1;
     }
-    return max;
+    return counts;
   });
 
   function send(cmd: ClientCommand) {
@@ -970,7 +910,7 @@ function App() {
   });
 
   // Header counters (runningCount / errorCount / unseenCount) were retired
-  // in the panel redesign — the rolodex is the summary.
+  // in the panel redesign; the session list is the summary.
 
   return (
     <box flexDirection="column" flexGrow={1} backgroundColor={P().crust}>
@@ -984,22 +924,30 @@ function App() {
         </text>
       </box>
 
-      {/* Session rolodex — focused card pinned at center, neighbors above/below */}
-      <box flexDirection="column" flexGrow={1} flexShrink={1} paddingTop={1}>
-        {/* Sessions above focused — bottom-aligned so nearest is adjacent */}
-        <box flexDirection="column" flexGrow={1} flexBasis={0} justifyContent="flex-end" gap={1} paddingBottom={1}>
-          <For each={sessionsBefore()}>
-            {(session, i) => (
-              <>
+      <box flexDirection="column" flexGrow={1} flexShrink={1} justifyContent="flex-end" gap={0}>
+        <For each={sessions}>
+          {(session, index) => {
+            const isSelected = () => session.name === focusedSession();
+            return (
+              // Keep overflow unset: OpenTUI drops the last row's click zone
+              // when a bordered box also uses overflow="hidden".
+              <box
+                border
+                borderStyle="rounded"
+                borderColor={isSelected()
+                  ? (paneFocused() ? P().blue : P().overlay0)
+                  : (paneFocused() ? P().surface2 : P().surface0)}
+                flexShrink={0}
+              >
                 <SessionCard
                   session={session}
-                  isFocused={false}
+                  isSelected={isSelected()}
                   isCurrent={session.name === currentSession()}
+                  visibleAgentCount={visibleAgentCounts()[index()] ?? 0}
                   paneFocused={paneFocused}
                   spinIdx={spinIdx}
                   glowT={glowT}
                   theme={theme}
-                  statusColors={S}
                   onSelect={() => {
                     setFocusedSession(session.name);
                     send({ type: "focus-session", name: session.name });
@@ -1029,121 +977,13 @@ function App() {
                     });
                   }}
                 />
-              </>
-            )}
-          </For>
-        </box>
-
-        {/* Always-visible chevron wrap-rule above the focused card. */}
-        <WrapRule direction="up" palette={P()} />
-
-        {/* Focused session — bordered frame pinned at center.
-            +2 on height: maxCardHeight() returns inner content rows (name +
-            branch + agents + ...); the rounded border eats 1 row top + 1 row
-            bottom, and overflow="hidden" clips anything that doesn't fit.
-            Without the +2, agent rows get silently truncated whenever the
-            card has both a branch and any agents (regression visible since
-            commit e1bf37d shrank agent rows from 2 lines to 1). */}
-        {/* overflow="hidden" is deliberately ABSENT: combined with `border`,
-            opentui's hit-grid clips the LAST content row's click zone (verified
-            against 0.1.90 and 0.1.107 with repro-zones.tsx — the bottom agent
-            row went dead while rendering fine). maxCardHeight() already sizes
-            the frame to fit content, so clipping only guarded against its own
-            estimation bugs — at the cost of unclickable rows. */}
-        <box border borderStyle="rounded" borderColor={paneFocused() ? P().blue : P().surface2} flexShrink={0} height={maxCardHeight() + 2}>
-          <Show when={focusedData()}>
-            {(data: Accessor<SessionData>) => (
-              <SessionCard
-                session={data()}
-                isFocused={true}
-                isCurrent={data().name === currentSession()}
-                paneFocused={paneFocused}
-                spinIdx={spinIdx}
-                glowT={glowT}
-                theme={theme}
-                statusColors={S}
-                onSelect={() => switchToSession(data().name)}
-                panelFocus={panelFocus}
-                focusedAgentIdx={focusedAgentIdx}
-                focusedPaneId={focusedPaneId}
-                onAgentDismiss={(agent) => {
-                  send({
-                    type: "dismiss-agent",
-                    session: data().name,
-                    agent: agent.agent,
-                    threadId: agent.threadId,
-                    paneId: agent.paneId,
-                    pid: agent.pid,
-                  });
-                }}
-                onAgentFocus={(agent) => {
-                  send({
-                    type: "focus-agent-pane",
-                    session: data().name,
-                    agent: agent.agent,
-                    threadId: agent.threadId,
-                    threadName: agent.threadName,
-                    paneId: agent.paneId,
-                  });
-                }}
-              />
-            )}
-          </Show>
-        </box>
-
-        {/* Always-visible chevron wrap-rule below the focused card. */}
-        <WrapRule direction="down" palette={P()} />
-
-        {/* Sessions below focused */}
-        <box flexDirection="column" flexGrow={1} flexBasis={0} gap={1} paddingTop={1}>
-          <For each={sessionsAfter()}>
-            {(session, i) => (
-              <>
-                <SessionCard
-                  session={session}
-                  isFocused={false}
-                  isCurrent={session.name === currentSession()}
-                  paneFocused={paneFocused}
-                  spinIdx={spinIdx}
-                  glowT={glowT}
-                  theme={theme}
-                  statusColors={S}
-                  onSelect={() => {
-                    setFocusedSession(session.name);
-                    send({ type: "focus-session", name: session.name });
-                    switchToSession(session.name);
-                  }}
-                  panelFocus={panelFocus}
-                  focusedAgentIdx={focusedAgentIdx}
-                  focusedPaneId={focusedPaneId}
-                  onAgentDismiss={(agent) => {
-                    send({
-                      type: "dismiss-agent",
-                      session: session.name,
-                      agent: agent.agent,
-                      threadId: agent.threadId,
-                      paneId: agent.paneId,
-                      pid: agent.pid,
-                    });
-                  }}
-                  onAgentFocus={(agent) => {
-                    send({
-                      type: "focus-agent-pane",
-                      session: session.name,
-                      agent: agent.agent,
-                      threadId: agent.threadId,
-                      threadName: agent.threadName,
-                      paneId: agent.paneId,
-                    });
-                  }}
-                />
-              </>
-            )}
-          </For>
-        </box>
+              </box>
+            );
+          }}
+        </For>
       </box>
 
-      {/* Activity zone — two-row full-width seismograph below the rolodex. */}
+      {/* Activity zone: two-row full-width seismograph below the session list. */}
       <ActivityZone
         focusedSession={focusedData()}
         palette={P()}
@@ -1440,12 +1280,13 @@ function ThemePicker(props: ThemePickerProps) {
 interface AgentListItemProps {
   agent: SessionData["agents"][number];
   palette: Accessor<Theme["palette"]>;
-  statusColors: Accessor<Theme["status"]>;
+  paneFocused: Accessor<boolean>;
   spinIdx: Accessor<number>;
   // 0..1 sine-driven glow phase. Only consulted when this row is waiting;
   // upstream ticks the signal only while any row is waiting, so the closure
   // is dormant otherwise.
   glowT: Accessor<number>;
+  isSessionSelected: boolean;
   isKeyboardFocused: boolean;
   isPaneFocused: boolean;
   onDismiss: () => void;
@@ -1507,16 +1348,15 @@ function AgentListItem(props: AgentListItemProps) {
     return "transparent";
   };
 
-  // Agent-name fg. Normally the focus/unseen-driven palette tone; while the
-  // agent is waiting on input, the row breathes toward `yellow` so it pulls
-  // the eye without adding chrome. (Status glyph still shows yellow; this is
-  // the only animated part.)
-  const nameFg = () => {
+  const nameStyle = () => {
+    if (!props.isSessionSelected) return tier("dim", P(), props.paneFocused());
     const base = isUnseen()
       ? P().teal
       : (props.isKeyboardFocused ? P().text : P().subtext1);
-    if (label() !== "waiting") return base;
-    return lerpHex(base, P().yellow, props.glowT());
+    return {
+      fg: label() === "waiting" ? lerpHex(base, P().yellow, props.glowT()) : base,
+      attributes: props.isKeyboardFocused ? BOLD : undefined,
+    };
   };
 
   return (
@@ -1541,28 +1381,27 @@ function AgentListItem(props: AgentListItemProps) {
             onMouseOver={() => setIsDismissHover(true)}
             onMouseOut={() => setIsDismissHover(false)}
           >
-            <span style={{ fg: isDismissHover() ? P().red : P().overlay0 }}>{(props.agent.windowIndex != null ? String(props.agent.windowIndex).padStart(2, " ") : " ·") + " "}</span>
+            <span style={{ fg: isDismissHover() ? P().red : tier("muted", P(), props.paneFocused()).fg }}>{(props.agent.windowIndex != null ? String(props.agent.windowIndex).padStart(2, " ") : " ·") + " "}</span>
           </text>
           {/* wrapMode="none" is load-bearing: without it opentui measures
               at the default word-wrap height and yoga grows the row,
-              spilling past the focused card's border (which no longer
-              clips; see the overflow note on the card frame). No
+              spilling past the card's border (which does not
+              clip; see the overflow note on the card frame). No
               `truncate`: it renders a middle-ellipsis; plain end-clip is
               the intended look. */}
           <text flexGrow={1} wrapMode="none">
             <span style={{
               // Focused-pane highlight wins over the normal name-fg palette,
               // matching the trailing "•" dot. Same anchor color, two surfaces.
-              fg: props.isPaneFocused ? P().sky : nameFg(),
-              attributes: props.isKeyboardFocused ? BOLD : undefined,
+              ...(props.isPaneFocused ? { fg: P().sky } : nameStyle()),
             }}>{AGENT_GLYPHS[props.agent.agent] ?? props.agent.agent}</span>
             <Show when={props.agent.subagent}>
-              <span style={{ fg: P().overlay1 }}>{"  "}{props.agent.subagent}</span>
+              <span style={tier(props.isSessionSelected ? "dim" : "muted", P(), props.paneFocused())}>{"  "}{props.agent.subagent}</span>
             </Show>
             {/* Session name from the agent-ouija registry when known;
                 the 4-char uuid suffix is the fallback identity. */}
             <Show when={props.agent.threadName || props.agent.threadId}>
-              <span style={{ fg: P().overlay0, attributes: DIM }}>{"  "}{props.agent.threadName || shortThreadId(props.agent.threadId!)}</span>
+              <span style={tier("muted", P(), props.paneFocused())}>{"  "}{props.agent.threadName || shortThreadId(props.agent.threadId!)}</span>
             </Show>
             <Show when={props.isPaneFocused}>
               <span style={{ fg: P().sky }}>{" •"}</span>
@@ -1585,13 +1424,13 @@ function AgentListItem(props: AgentListItemProps) {
 
 interface SessionCardProps {
   session: SessionData;
-  isFocused: boolean;
+  isSelected: boolean;
   isCurrent: boolean;
+  visibleAgentCount: number;
   paneFocused: Accessor<boolean>;
   spinIdx: Accessor<number>;
   glowT: Accessor<number>;
   theme: Accessor<Theme>;
-  statusColors: Accessor<Theme["status"]>;
   onSelect: () => void;
   panelFocus: Accessor<"sessions" | "agents">;
   focusedAgentIdx: Accessor<number>;
@@ -1602,59 +1441,13 @@ interface SessionCardProps {
 
 function SessionCard(props: SessionCardProps) {
   const P = () => props.theme().palette;
-
-  // Resolve five-label scheme for session card
-  const label = (): "working" | "waiting" | "ready" | "stopped" | "error" => {
-    const state = props.session.agentState;
-    if (!state) return "ready";
-    if (state.status === "running") return "working";
-    if (state.status === "waiting") return "waiting";
-    if (state.status === "error") return "error";
-    if (state.liveness === "alive") return "ready";
-    if (state.status === "done" || state.status === "interrupted") return "stopped";
-    return "ready";
-  };
-
-  const unseen = () => props.session.unseen;
-
-  // B5 (locked decision): the session-row severity gutter is BLANK when
-  // the session is in a nominal state (ready/stopped). Only attention-
-  // needing states (working/waiting/error) show a glyph. Applies on the
-  // session row whether the card is collapsed or focused; agent-level
-  // severity still appears on each agent row inside the focused card.
-  const statusIcon = () => {
-    const l = label();
-    if (l === "working") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
-    if (l === "waiting") return SEV_WAITING;
-    if (l === "error") return SEV_ERROR;
-    return "";
-  };
-
-  const statusColor = () => {
-    const l = label();
-    if (l === "working") return P().blue;
-    if (l === "waiting") return P().yellow;
-    if (l === "ready") return P().green;
-    if (l === "stopped") return P().surface2;
-    if (l === "error") return P().red;
-    return P().surface2;
-  };
-
-  const nameColor = () => {
-    const focused = props.paneFocused();
-    // Unseen sessions get the teal colour shift (color-only marker, replaces
-    // the retired ● glyph).
-    const base = unseen()
-      ? P().teal
-      : props.isCurrent
-        ? (focused ? P().text : P().subtext0)
-        : (focused ? P().subtext1 : P().overlay1);
-    // Mirror AgentListItem.nameFg: when this session is itself waiting (e.g.
-    // collapsed card with no visible agent rows), breathe the name toward
-    // yellow so the gated tick — which counts session-level waiting — has
-    // something to paint.
-    if (label() !== "waiting") return base;
-    return lerpHex(base, P().yellow, props.glowT());
+  const nameStyle = () => {
+    const base = tier(props.isSelected ? "primary" : "dim", P(), props.paneFocused());
+    return {
+      ...base,
+      fg: props.session.unseen && props.isSelected ? P().teal : base.fg,
+      attributes: (base.attributes ?? 0) | (props.isCurrent ? BOLD : 0),
+    };
   };
 
   const truncName = () => {
@@ -1666,22 +1459,6 @@ function SessionCard(props: SessionCardProps) {
     const b = props.session.branch;
     if (!b) return "";
     return b.length > 15 ? b.slice(0, 14) + "…" : b;
-  };
-
-  const metaSummary = () => {
-    const meta = props.session.metadata;
-    if (!meta) return "";
-    const parts: string[] = [];
-    if (meta.status) parts.push(meta.status.text);
-    if (meta.progress) {
-      if (meta.progress.current != null && meta.progress.total != null) {
-        parts.push(`${meta.progress.current}/${meta.progress.total}`);
-      } else if (meta.progress.percent != null) {
-        parts.push(`${Math.round(meta.progress.percent * 100)}%`);
-      }
-      if (meta.progress.label) parts.push(meta.progress.label);
-    }
-    return parts.join(" · ");
   };
 
   const agentCount = () =>
@@ -1699,116 +1476,75 @@ function SessionCard(props: SessionCardProps) {
     return String(n);
   };
 
-  const agentBadgeColor = () => {
-    if (props.isFocused) return P().subtext0;
-    return P().overlay0;
-  };
-
-  const metaTone = () => props.session.metadata?.status?.tone;
-
-  const bgColor = () => "transparent";
-
-  // --- Expanded content helpers ---
   const dirParts = () => formatDir(props.session.dir);
   const dirMismatch = () => dirParts().project !== props.session.name;
   const agents = () => props.session.agents ?? [];
-  const meta = () => props.session.metadata;
-  // Note: logs are summarised by the standalone ActivityZone seismograph
-  // beneath the rolodex; collapsed cards keep a one-line status/progress
-  // summary (metaSummary). The focused card body stays lean: name + branch +
-  // dir + agents only.
-
-  // ▎ current-session left bar retired in render: bold name + row position
-  // already signal current state.
+  const visibleAgents = () => agents().slice(0, props.visibleAgentCount);
+  const hiddenAgentCount = () => Math.max(0, agents().length - visibleAgents().length);
+  const branchStyle = () => props.isSelected
+    ? { fg: P().pink }
+    : tier("dim", P(), props.paneFocused());
 
   return (
     <box id={`session-${props.session.name}`} flexDirection="column" flexShrink={0}>
       <box
         flexDirection="row"
-        backgroundColor={bgColor()}
+        backgroundColor="transparent"
         paddingLeft={1}
         onMouseDown={props.onSelect}
       >
-        {/* Content */}
         <box flexDirection="column" flexGrow={1} paddingRight={1}>
-          {/* Row 1: name + agent badge (left) + status icons (right) */}
           <box flexDirection="row">
             <text wrapMode="none">
-              <span style={{ fg: nameColor(), attributes: props.isCurrent ? BOLD : undefined }}>
-                {truncName()}
-              </span>
+              <span style={nameStyle()}>{truncName()}</span>
               <Show when={agentBadge()}>
-                <span style={{ fg: agentBadgeColor() }}>{" "}{agentBadge()}</span>
+                <span style={tier(props.isSelected ? "secondary" : "dim", P(), props.paneFocused())}>{" "}{agentBadge()}</span>
               </Show>
             </text>
             <box flexGrow={1} />
-            {/* Unseen marker is now color-only on the name (see nameColor()). */}
-            {/* Row-level statusIcon shown only on collapsed cards — the focused
-                card's agent rows below already render per-agent severity, so a
-                second spinner/icon at the session row is redundant. */}
-            <Show when={statusIcon() && !props.isFocused}>
-              <text flexShrink={0}>
-                <span style={{ fg: statusColor() }}>{" "}{statusIcon()}</span>
-              </text>
-            </Show>
           </box>
 
-          {/* Row 2: branch + dir-mismatch flag (focused only) */}
           <Show when={props.session.branch}>
             <box flexDirection="row">
               <text wrapMode="none">
-                <span style={{ fg: props.isFocused ? P().pink : (props.paneFocused() ? P().overlay0 : P().surface2) }}>
+                <span style={branchStyle()}>
                   {BRANCH_GLYPH}{" "}{truncBranch()}
                 </span>
               </text>
               <box flexGrow={1} />
-              <Show when={props.isFocused && dirMismatch()}>
+              <Show when={dirMismatch()}>
                 <text flexShrink={0}>
-                  <span style={{ fg: P().overlay0, attributes: DIM }}>{" "}{DIR_MISMATCH_GLYPH}</span>
+                  <span style={tier(props.isSelected ? "muted" : "dim", P(), props.paneFocused())}>{" "}{DIR_MISMATCH_GLYPH}</span>
                 </text>
               </Show>
             </box>
           </Show>
-
-          {/* Row 3: metadata summary (status + progress) — only when collapsed */}
-          <Show when={!props.isFocused && metaSummary()}>
-            <text wrapMode="none">
-              <span style={{ fg: toneColor(metaTone(), P()), attributes: DIM }}>{metaSummary()}</span>
-            </text>
-          </Show>
         </box>
       </box>
 
-      {/* Expanded detail — shown inline when focused */}
-      <Show when={props.isFocused}>
-        <box flexDirection="column" paddingLeft={1}>
-          {/* Directory mismatch is now flagged with DIR_MISMATCH_GLYPH on the
-              branch row above; the inline two-line cwd block has been retired. */}
-          {/* Agent instances */}
-          <Show when={agents().length > 0}>
-            <box flexDirection="column">
-              <For each={agents()}>
-                {(agent, i) => (
-                  <AgentListItem
-                    agent={agent}
-                    palette={() => P()}
-                    statusColors={props.statusColors}
-                    spinIdx={props.spinIdx}
-                    glowT={props.glowT}
-                    isKeyboardFocused={props.panelFocus() === "agents" && i() === props.focusedAgentIdx()}
-                    isPaneFocused={agent.paneId != null && agent.paneId === props.focusedPaneId()}
-                    onDismiss={() => props.onAgentDismiss(agent)}
-                    onFocusPane={() => props.onAgentFocus(agent)}
-                  />
-                )}
-              </For>
-            </box>
-          </Show>
-
-          {/* Metadata moved to the ActivityZone component (see App). The
-              focused card no longer renders status / progress / logs inline. */}
-        </box>
-      </Show>
+      <box flexDirection="column" paddingLeft={1}>
+        <For each={visibleAgents()}>
+          {(agent, i) => (
+            <AgentListItem
+              agent={agent}
+              palette={() => P()}
+              paneFocused={props.paneFocused}
+              spinIdx={props.spinIdx}
+              glowT={props.glowT}
+              isSessionSelected={props.isSelected}
+              isKeyboardFocused={props.isSelected && props.panelFocus() === "agents" && i() === props.focusedAgentIdx()}
+              isPaneFocused={agent.paneId != null && agent.paneId === props.focusedPaneId()}
+              onDismiss={() => props.onAgentDismiss(agent)}
+              onFocusPane={() => props.onAgentFocus(agent)}
+            />
+          )}
+        </For>
+        <Show when={hiddenAgentCount() > 0}>
+          <text wrapMode="none" style={tier("dim", P(), props.paneFocused())}>
+            {"   +"}{hiddenAgentCount()} more
+          </text>
+        </Show>
+      </box>
     </box>
   );
 }

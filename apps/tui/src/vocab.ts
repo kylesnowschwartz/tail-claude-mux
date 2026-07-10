@@ -48,8 +48,6 @@ export { STATUSLINE_LAST_WINDOW, STATUSLINE_SHELL, AGENT_GLYPHS } from "@tcm/run
 export const BRAND_CLAWD = ID_CLAUDE_CODE;   // header product mark
 export const BRANCH_GLYPH = "\u{F062C}";     // nf-md-source-branch
 export const DIR_MISMATCH_GLYPH = "\u{F19CB}"; // nf-md-folder-question-outline
-export const WRAP_UP = "\u{F0143}";          // nf-md-chevron-up (rolodex top)
-export const WRAP_DOWN = "\u{F0140}";        // nf-md-chevron-down (rolodex bottom)
 
 // ── Activity-zone glyphs (sparkline + gutter + verb stripe) ──
 // Verb glyphs come from three nerd-fonts families (see header). The palette
