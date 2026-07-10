@@ -1,15 +1,18 @@
-// tcm-watch — deterministic delegation watcher (experiment arm B1).
+// tcm-watch — deterministic delegation watcher.
 //
-// Lifts the tcm-status-watcher agent's protocol into Workflow JS: the
-// detection SIGNAL is unchanged (pane quiescence primary, TCM /state
-// advisory — /state may report "idle" during active codex work), but the
-// seams move from prose into code: leg retry, leg cap, and quiescence
-// state carried across legs deterministically.
+// Detection is GET /wait primary (the server long-polls its own tracker,
+// which since b92897d reconciles codex hook status against rollout
+// evidence, so `done` is trustworthy). Pane quiescence (3 consecutive
+// identical capture hashes while not "running") remains as the in-script
+// fallback whenever /wait is unusable: server down, pre-B2 binary (its
+// mux answers every path with the root banner), or a session the server
+// doesn't track. Each loop iteration re-tries /wait first, so the leg
+// self-heals when the server comes back.
 //
 // Pacing constraint: Workflow JS has no sleep and bans clocks, so cadence
-// lives INSIDE each haiku leg (bash script with in-script sleep and a
-// self-deadline under the 600s Bash cap). The JS loop is a retry wrapper,
-// not the cadence source.
+// lives INSIDE each haiku leg (bash script with in-script sleep/blocking
+// curl and a self-deadline under the 600s Bash cap). The JS loop is a
+// retry wrapper, not the cadence source.
 //
 // Invoke via scriptPath with args:
 //   { session: "tcm-session-name", pane: "%42" (optional),
@@ -20,8 +23,8 @@
 
 export const meta = {
   name: 'tcm-watch',
-  description: 'Watch a TCM-tracked delegate tmux session until terminal state (quiescence-primary poll legs)',
-  phases: [{ title: 'Watch', detail: 'haiku poll legs, cadence in-leg' }],
+  description: 'Watch a TCM-tracked delegate tmux session until terminal state (/wait long-poll primary, pane-quiescence fallback)',
+  phases: [{ title: 'Watch', detail: 'haiku legs blocking on GET /wait' }],
 }
 
 const LEG_SECONDS = 480 // in-script self-deadline; Bash hard cap is 600s
@@ -55,9 +58,40 @@ QCOUNT=${p.seedCount}
 LAST_HASH='${p.seedHash || 'none'}'
 LAST_ST='none'
 UNREADABLE=0
+wait_status() {
+  # one long-poll; prints "STATUS TIMEDOUT" iff the response is real /wait JSON
+  local t=$1 resp
+  resp=$(curl -fsS "localhost:7391/wait?session=$SESH&timeout=$t" 2>/dev/null) || return 1
+  printf '%s' "$resp" | jq -er '"\\(.status) \\(.timedOut)"' 2>/dev/null
+}
 while true; do
   if (( SECONDS >= SELF_DEADLINE )); then echo "RESOLUTION=continue POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$LAST_ST NOTE=deadline"; exit 0; fi
   if ! tmux has-session -t "=$SESH" 2>/dev/null; then echo "RESOLUTION=session-dead POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$LAST_ST NOTE=session-gone"; exit 0; fi
+  REMAIN=$((SELF_DEADLINE-SECONDS)); (( REMAIN > 540 )) && REMAIN=540
+  if (( REMAIN >= 5 )) && wr=$(wait_status "$REMAIN"); then
+    POLLS=$((POLLS+1))
+    st=\${wr%% *}; to=\${wr##* }
+    LAST_ST="$st"
+    case "$st" in
+      done) echo "RESOLUTION=finished POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$st NOTE=wait-done"; exit 0;;
+      error) echo "RESOLUTION=error POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$st NOTE=wait-error"; exit 0;;
+      interrupted) echo "RESOLUTION=error POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$st NOTE=wait-interrupted"; exit 0;;
+      gone) echo "RESOLUTION=session-dead POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$st NOTE=wait-gone"; exit 0;;
+      waiting)
+        if [ "$to" = "true" ]; then continue; fi
+        # observed transient: an approval prompt can flash and self-resolve;
+        # confirm it holds for 5s before reporting
+        sleep 5
+        if wr2=$(wait_status 5); then
+          st2=\${wr2%% *}
+          if [ "$st2" = "waiting" ]; then echo "RESOLUTION=waiting POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=waiting NOTE=wait-waiting-confirmed"; exit 0; fi
+          LAST_ST="$st2"
+        fi
+        continue;;
+      *) continue;;
+    esac
+  fi
+  # fallback: /wait unusable (server down, pre-B2 binary, untracked session)
   st=$(curl -fsS localhost:7391/state 2>/dev/null | jq -r --arg s "$SESH" '[.. | objects | select(.session? == $s) | .status] | first // empty' 2>/dev/null)
   [ -n "$st" ] && LAST_ST="$st"
   if [ "$st" = "error" ]; then echo "RESOLUTION=error POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$st NOTE=state-error"; exit 0; fi
@@ -103,15 +137,15 @@ STEP 1 — Write the following script VERBATIM (byte-for-byte${p.pane ? ', no ed
 
 ${legScript(p)}
 
-STEP 2 — Run it with ONE Bash call: bash <scratchpad>/tcm-watch-leg.sh with timeout 600000. It self-limits to ${LEG_SECONDS}s and always prints exactly one RESOLUTION= line. (Standalone sleep is blocked in your harness; the in-script sleep is fine. Do not inline the loop in the shell — the outer shell mangles multi-line commands.)
+STEP 2 — Run it with ONE Bash call: bash <scratchpad>/tcm-watch-leg.sh with timeout 600000. It self-limits to ${LEG_SECONDS}s and always prints exactly one RESOLUTION= line. It spends most of its time blocked on a long-poll curl to the local TCM server; that is by design. (Standalone sleep is blocked in your harness; the in-script sleep/curl is fine. Do not inline the loop in the shell — the outer shell mangles multi-line commands.)
 
 STEP 3 — Map the printed line to StructuredOutput: resolution=RESOLUTION, polls=POLLS, quiescence_count=QCOUNT, last_pane_hash=HASH, last_state=STATE, resolved_pane=the PANE value used, evidence=NOTE.
 
-WHY THE SCRIPT IS SHAPED THIS WAY (do not "improve" it): TCM /state reports "idle" during active codex work, so /state is advisory — pane quiescence (3 consecutive identical capture hashes while not "running") is the primary completion signal. The seed QCOUNT/LAST_HASH continue the previous leg's quiescence streak.
+WHY THE SCRIPT IS SHAPED THIS WAY (do not "improve" it): GET /wait is the primary signal — the server reconciles hook status against the codex thread's rollout evidence, so its done/error/interrupted are trustworthy and arrive with zero polling. The pane-quiescence branch only runs when /wait is unusable (server down or session untracked), and the seed QCOUNT/LAST_HASH continue the previous leg's quiescence streak. A "waiting" wake is confirmed 5s later before being reported, because approval prompts can flash and self-resolve.
 
 HARD RULES
 - Write ONLY inside your scratchpad directory — never ~/.claude, ~/.agents, or any project tree.
-- Never interact with the delegate: no send-keys, no kill-session, no POSTs to TCM.
+- Never interact with the delegate: no send-keys, no kill-session, no state-changing calls to TCM (the read-only GETs in the script are fine).
 - Never print pane content; the script reports hashes and one NOTE clause only.
 - If the script dies or emits no RESOLUTION line, return resolution "continue" with the failure described in evidence. Ending without structured output is a failed leg.`
 }
