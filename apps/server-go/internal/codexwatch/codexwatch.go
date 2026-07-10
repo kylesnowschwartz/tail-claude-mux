@@ -89,8 +89,6 @@ func New(sessionsDir, sessionIndexPath string) *Adapter {
 
 func (a *Adapter) Name() string { return "codex" }
 
-func (a *Adapter) ProbeOnScan() bool { return true }
-
 func (a *Adapter) Start(ctx *Context) {
 	a.ctx = ctx
 	a.seedFromJSONL()
@@ -280,6 +278,21 @@ func lookupThreadName(path, threadID string) string {
 // process can also own subagent rollouts, so source:"cli" outranks those.
 func (a *Adapter) SessionInfoForPid(pid int) (threadID, name string) {
 	path := a.rolloutPathForPID(pid, "")
+	return a.sessionInfoForRollout(path)
+}
+
+// ScanStateForPid resolves identity and status from one rollout lookup so the
+// three-second pane scan launches lsof only once per Codex process.
+func (a *Adapter) ScanStateForPid(pid int, _ string) (threadID, name string, verdict tracker.ProbeVerdict) {
+	path := a.rolloutPathForPID(pid, "")
+	threadID, name = a.sessionInfoForRollout(path)
+	if threadID == "" {
+		return "", "", tracker.ProbeNoSignal
+	}
+	return threadID, name, probeRolloutPath(path)
+}
+
+func (a *Adapter) sessionInfoForRollout(path string) (threadID, name string) {
 	if path == "" {
 		return "", ""
 	}
@@ -295,6 +308,10 @@ func (a *Adapter) ProbeLiveStatus(pid int, threadID, _ string) tracker.ProbeVerd
 	if path == "" && threadID != "" {
 		path = a.rolloutPathForThread(threadID)
 	}
+	return probeRolloutPath(path)
+}
+
+func probeRolloutPath(path string) tracker.ProbeVerdict {
 	if path == "" {
 		return tracker.ProbeNoSignal
 	}

@@ -47,9 +47,8 @@ const (
 
 type agentStateSource interface {
 	Name() string
-	SessionInfoForPid(pid int) (threadID, name string)
+	ScanStateForPid(pid int, paneTitle string) (threadID, name string, verdict tracker.ProbeVerdict)
 	ProbeLiveStatus(pid int, threadID, paneTitle string) tracker.ProbeVerdict
-	ProbeOnScan() bool
 }
 
 func stateSourceForAgent(agent string, sources ...agentStateSource) agentStateSource {
@@ -80,11 +79,9 @@ func scanStateForPane(pa tracker.PanePresence, sources ...agentStateSource) (tra
 	if source == nil {
 		return pa, tracker.ProbeNoSignal
 	}
-	pa.ThreadID, pa.ThreadName = source.SessionInfoForPid(pa.PID)
-	if pa.ThreadID == "" || !source.ProbeOnScan() {
-		return pa, tracker.ProbeNoSignal
-	}
-	return pa, source.ProbeLiveStatus(pa.PID, pa.ThreadID, pa.PaneTitle)
+	var verdict tracker.ProbeVerdict
+	pa.ThreadID, pa.ThreadName, verdict = source.ScanStateForPid(pa.PID, pa.PaneTitle)
+	return pa, verdict
 }
 
 // StartWatchers binds the Claude watcher context, runs its cold-start seed,

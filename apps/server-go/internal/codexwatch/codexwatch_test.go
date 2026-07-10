@@ -379,6 +379,30 @@ func TestSessionInfoForPidResolvesPrimaryRollout(t *testing.T) {
 	}
 }
 
+func TestScanStateForPidReusesRolloutLookup(t *testing.T) {
+	dir := t.TempDir()
+	threadID := "12345678-1234-1234-1234-123456789abc"
+	path := writeRollout(t, filepath.Join(dir, "sessions"), threadID, `"cli"`,
+		`{"type":"response_item","payload":{"type":"reasoning"}}`+"\n")
+	index := filepath.Join(dir, "session_index.jsonl")
+	writeIndexName(t, index, threadID, "Primary task")
+
+	a := New(filepath.Join(dir, "sessions"), index)
+	lookups := 0
+	a.openFilesForPID = func(pid int) []string {
+		lookups++
+		return []string{path}
+	}
+
+	gotID, gotName, verdict := a.ScanStateForPid(4242, "ignored")
+	if gotID != threadID || gotName != "Primary task" || verdict != tracker.ProbeWorking {
+		t.Fatalf("ScanStateForPid = (%q, %q, %v), want (%q, %q, ProbeWorking)", gotID, gotName, verdict, threadID, "Primary task")
+	}
+	if lookups != 1 {
+		t.Fatalf("rollout lookups = %d, want 1", lookups)
+	}
+}
+
 func TestProbeLiveStatusFromRollout(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
