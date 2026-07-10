@@ -6,6 +6,7 @@
 // after a successful bind, and answers POST /restart by re-exec'ing itself
 // in place (same pid, so the pid file stays true; sockets are CLOEXEC so
 // the port frees for the fresh image).
+// The -refresh flag sets the server refresh loop interval (default 2s).
 //
 // A/B usage against a live instance:
 //
