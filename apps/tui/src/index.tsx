@@ -1358,6 +1358,14 @@ function AgentListItem(props: AgentListItemProps) {
       attributes: props.isKeyboardFocused ? BOLD : undefined,
     };
   };
+  const supportingStyle = () => tier(
+    "muted",
+    P(),
+    props.isSessionSelected && props.paneFocused(),
+  );
+  const identityStyle = () => props.isPaneFocused && props.isSessionSelected
+    ? { fg: P().sky }
+    : nameStyle();
 
   return (
     <box flexDirection="column" flexShrink={0} onMouseDown={() => {
@@ -1373,6 +1381,7 @@ function AgentListItem(props: AgentListItemProps) {
         <box flexDirection="row">
           <text
             flexShrink={0}
+            style={supportingStyle()}
             onMouseDown={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -1381,7 +1390,7 @@ function AgentListItem(props: AgentListItemProps) {
             onMouseOver={() => setIsDismissHover(true)}
             onMouseOut={() => setIsDismissHover(false)}
           >
-            <span style={{ fg: isDismissHover() ? P().red : tier("muted", P(), props.paneFocused()).fg }}>{(props.agent.windowIndex != null ? String(props.agent.windowIndex).padStart(2, " ") : " ·") + " "}</span>
+            <span style={isDismissHover() ? { fg: P().red } : supportingStyle()}>{(props.agent.windowIndex != null ? String(props.agent.windowIndex).padStart(2, " ") : " ·") + " "}</span>
           </text>
           {/* wrapMode="none" is load-bearing: without it opentui measures
               at the default word-wrap height and yoga grows the row,
@@ -1389,25 +1398,21 @@ function AgentListItem(props: AgentListItemProps) {
               clip; see the overflow note on the card frame). No
               `truncate`: it renders a middle-ellipsis; plain end-clip is
               the intended look. */}
-          <text flexGrow={1} wrapMode="none">
-            <span style={{
-              // Focused-pane highlight wins over the normal name-fg palette,
-              // matching the trailing "•" dot. Same anchor color, two surfaces.
-              ...(props.isPaneFocused ? { fg: P().sky } : nameStyle()),
-            }}>{AGENT_GLYPHS[props.agent.agent] ?? props.agent.agent}</span>
+          <text flexGrow={1} wrapMode="none" style={nameStyle()}>
+            <span style={identityStyle()}>{AGENT_GLYPHS[props.agent.agent] ?? props.agent.agent}</span>
             <Show when={props.agent.subagent}>
               <span style={tier(props.isSessionSelected ? "dim" : "muted", P(), props.paneFocused())}>{"  "}{props.agent.subagent}</span>
             </Show>
             {/* Session name from the agent-ouija registry when known;
                 the 4-char uuid suffix is the fallback identity. */}
             <Show when={props.agent.threadName || props.agent.threadId}>
-              <span style={tier("muted", P(), props.paneFocused())}>{"  "}{props.agent.threadName || shortThreadId(props.agent.threadId!)}</span>
+              <span style={supportingStyle()}>{"  "}{props.agent.threadName || shortThreadId(props.agent.threadId!)}</span>
             </Show>
             <Show when={props.isPaneFocused}>
-              <span style={{ fg: P().sky }}>{" •"}</span>
+              <span style={identityStyle()}>{" •"}</span>
             </Show>
           </text>
-          <text flexShrink={0}>
+          <text flexShrink={0} style={{ fg: color() }}>
             <span style={{ fg: color() }}>{" "}{icon()}</span>
           </text>
         </box>
@@ -1495,7 +1500,7 @@ function SessionCard(props: SessionCardProps) {
       >
         <box flexDirection="column" flexGrow={1} paddingRight={1}>
           <box flexDirection="row">
-            <text wrapMode="none">
+            <text wrapMode="none" style={nameStyle()}>
               <span style={nameStyle()}>{truncName()}</span>
               <Show when={agentBadge()}>
                 <span style={tier(props.isSelected ? "secondary" : "dim", P(), props.paneFocused())}>{" "}{agentBadge()}</span>
@@ -1506,14 +1511,14 @@ function SessionCard(props: SessionCardProps) {
 
           <Show when={props.session.branch}>
             <box flexDirection="row">
-              <text wrapMode="none">
+              <text wrapMode="none" style={branchStyle()}>
                 <span style={branchStyle()}>
                   {BRANCH_GLYPH}{" "}{truncBranch()}
                 </span>
               </text>
               <box flexGrow={1} />
               <Show when={dirMismatch()}>
-                <text flexShrink={0}>
+                <text flexShrink={0} style={tier(props.isSelected ? "muted" : "dim", P(), props.paneFocused())}>
                   <span style={tier(props.isSelected ? "muted" : "dim", P(), props.paneFocused())}>{" "}{DIR_MISMATCH_GLYPH}</span>
                 </text>
               </Show>
@@ -1540,7 +1545,7 @@ function SessionCard(props: SessionCardProps) {
           )}
         </For>
         <Show when={hiddenAgentCount() > 0}>
-          <text wrapMode="none" style={tier("dim", P(), props.paneFocused())}>
+          <text wrapMode="none" style={tier(props.isSelected ? "dim" : "muted", P(), props.paneFocused())}>
             {"   +"}{hiddenAgentCount()} more
           </text>
         </Show>
