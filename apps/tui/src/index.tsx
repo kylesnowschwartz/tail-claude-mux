@@ -72,6 +72,8 @@ const FOOTER_ROWS = 3; // App footer: separator, key row, and paddingBottom={1};
 const ACTIVITY_ZONE_ROWS = SPARK_ROWS + 1; // ActivityZone: histogram rows plus the icon/suffix row.
 const CARD_CHROME_ROWS = 3; // Session frame: rounded border top/bottom plus the name row.
 const BRANCH_ROWS = 1; // SessionCard adds exactly one row when session.branch is present.
+const HIDDEN_AGENTS_ROWS = 1; // SessionCard adds exactly one "+N more" row when agents are trimmed.
+const OVERFLOW_INDICATOR_ROWS = 1; // "▲ N more" / "▼ N more" line when the session stack scrolls.
 
 function toneColor(tone: MetadataTone | undefined, palette: ReturnType<() => Theme["palette"]>): string {
   switch (tone) {
@@ -355,9 +357,13 @@ function App() {
     return sessions.findIndex(s => s.name === name);
   });
 
+  const listBudgetRows = createMemo(() =>
+    Math.max(0, termDims().height - HEADER_ROWS - FOOTER_ROWS - ACTIVITY_ZONE_ROWS));
+
   const visibleAgentCounts = createMemo(() => {
-    const availableRows = Math.max(0, termDims().height - HEADER_ROWS - FOOTER_ROWS - ACTIVITY_ZONE_ROWS);
+    const availableRows = listBudgetRows();
     const counts = sessions.map((session) => session.agents?.length ?? 0);
+    const focused = focusedIdx();
     const fixedRows = sessions.reduce(
       (total, session) => total + CARD_CHROME_ROWS + (session.branch ? BRANCH_ROWS : 0),
       0,
@@ -370,12 +376,77 @@ function App() {
     while (fixedRows + agentRows() > availableRows) {
       let largest = -1;
       for (let i = 0; i < counts.length; i++) {
+        if (i === focused) continue; // the focused card keeps its agent rows reachable
         if (counts[i]! > 1 && (largest < 0 || counts[i]! > counts[largest]!)) largest = i;
       }
       if (largest < 0) break;
       counts[largest] = counts[largest]! - 1;
     }
+
+    // The focused card is exempt from the shrink loop, but must still fit
+    // the viewport on its own alongside the scroll indicators.
+    if (focused >= 0 && focused < counts.length) {
+      const chrome = CARD_CHROME_ROWS + (sessions[focused]?.branch ? BRANCH_ROWS : 0);
+      const indicatorAllowance = sessions.length > 1 ? 2 * OVERFLOW_INDICATOR_ROWS : 0;
+      const maxAgents = Math.max(1, availableRows - chrome - HIDDEN_AGENTS_ROWS - indicatorAllowance);
+      if (counts[focused]! > maxAgents) counts[focused] = maxAgents;
+    }
     return counts;
+  });
+
+  // Session-list viewport: when the stack is taller than the pane, render a
+  // window of cards around the focused one plus ▲/▼ overflow indicators, so
+  // every session stays reachable (the old render-everything flex-end layout
+  // silently spilled cards past the top edge).
+  const sessionWindow = createMemo(() => {
+    const counts = visibleAgentCounts();
+    const budget = listBudgetRows();
+    const len = sessions.length;
+    const heights = sessions.map((session, i) => {
+      const total = session.agents?.length ?? 0;
+      const visible = counts[i] ?? 0;
+      return CARD_CHROME_ROWS + (session.branch ? BRANCH_ROWS : 0)
+        + visible + (visible < total ? HIDDEN_AGENTS_ROWS : 0);
+    });
+    if (heights.reduce((total, h) => total + h, 0) <= budget) {
+      return { start: 0, end: len, above: 0, below: 0 };
+    }
+
+    const indicatorRows = (start: number, end: number) =>
+      (start > 0 ? OVERFLOW_INDICATOR_ROWS : 0) + (end < len ? OVERFLOW_INDICATOR_ROWS : 0);
+    const anchor = Math.min(Math.max(0, focusedIdx()), len - 1);
+    let start = anchor;
+    let end = anchor + 1;
+    let used = heights[anchor] ?? 0;
+    let grew = true;
+    while (grew) {
+      grew = false;
+      if (end < len && used + heights[end]! + indicatorRows(start, end + 1) <= budget) {
+        used += heights[end]!;
+        end++;
+        grew = true;
+      }
+      if (start > 0 && used + heights[start - 1]! + indicatorRows(start - 1, end) <= budget) {
+        start--;
+        used += heights[start]!;
+        grew = true;
+      }
+    }
+    return { start, end, above: start, below: len - end };
+  });
+
+  // Overflow indicators are list items rather than siblings of the card
+  // <For>: the renderer mounts a dynamic fragment's children after all of
+  // its parent's static children, so a second fragment in the same box
+  // scrambles the visual order.
+  type OverflowIndicator = { overflow: -1 | 1; count: number };
+  const listItems = createMemo<(SessionData | OverflowIndicator)[]>(() => {
+    const win = sessionWindow();
+    const items: (SessionData | OverflowIndicator)[] = [];
+    if (win.above > 0) items.push({ overflow: -1, count: win.above });
+    items.push(...sessions.slice(win.start, win.end));
+    if (win.below > 0) items.push({ overflow: 1, count: win.below });
+    return items;
   });
 
   const focusedVisibleAgents = createMemo(() => {
@@ -884,8 +955,19 @@ function App() {
       </box>
 
       <box flexDirection="column" flexGrow={1} flexShrink={1} justifyContent="flex-end" gap={0}>
-        <For each={sessions}>
-          {(session, index) => {
+        <For each={listItems()}>
+          {(item) => {
+            if ("overflow" in item) {
+              return (
+                <box paddingLeft={2} flexShrink={0} onMouseDown={() => moveLocalFocus(item.overflow)}>
+                  <text wrapMode="none" style={tier("muted", P(), paneFocused())}>
+                    {item.overflow < 0 ? "▲ " : "▼ "}{item.count}{" more"}
+                  </text>
+                </box>
+              );
+            }
+            const session = item;
+            const sessionIdx = createMemo(() => sessions.indexOf(session));
             const isSelected = () => session.name === focusedSession();
             return (
               // Keep overflow unset: OpenTUI drops the last row's click zone
@@ -902,7 +984,7 @@ function App() {
                   session={session}
                   isSelected={isSelected()}
                   isCurrent={session.name === currentSession()}
-                  visibleAgentCount={visibleAgentCounts()[index()] ?? 0}
+                  visibleAgentCount={visibleAgentCounts()[sessionIdx()] ?? 0}
                   paneFocused={paneFocused}
                   spinIdx={spinIdx}
                   glowT={glowT}
