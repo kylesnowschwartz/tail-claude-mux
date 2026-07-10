@@ -158,8 +158,15 @@ func (t *Tmux) SpawnManagedPane(targetPane string, splitFlags []string, size int
 	return newID
 }
 
-// markPane stamps the identification title + stable marker option.
+// markPane stamps the identification title + stable marker option, and
+// disables passthrough on the pane. Managed panes spawn detached, so their
+// TUI's tmux-wrapped capability-probe queries would otherwise reach the
+// outer terminal, whose replies land in whatever pane the user has focused
+// as garbage typed input (the leak the retired refocus gate worked around).
+// The TUI never sees those replies from an unfocused pane anyway, so
+// discarding the queries costs nothing.
 func (t *Tmux) markPane(paneID, markerOption, title string) {
 	_, _ = t.Run("select-pane", "-t", paneID, "-T", title)
 	_, _ = t.Run("set-option", "-p", "-t", paneID, markerOption, markerValue)
+	_, _ = t.Run("set-option", "-p", "-q", "-t", paneID, "allow-passthrough", "off")
 }

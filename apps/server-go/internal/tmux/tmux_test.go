@@ -177,6 +177,7 @@ func TestSpawnSidebar_CommandSequenceFrozen(t *testing.T) {
 				{"split-window", "-d", "-h", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "exec /scripts/start.sh"},
 				{"select-pane", "-t", "%9", "-T", "tcm-sidebar"},
 				{"set-option", "-p", "-t", "%9", "@tcm-sidebar", "1"},
+				{"set-option", "-p", "-q", "-t", "%9", "allow-passthrough", "off"},
 			},
 		},
 		{
@@ -187,6 +188,7 @@ func TestSpawnSidebar_CommandSequenceFrozen(t *testing.T) {
 				{"split-window", "-d", "-h", "-b", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "exec /scripts/start.sh"},
 				{"select-pane", "-t", "%9", "-T", "tcm-sidebar"},
 				{"set-option", "-p", "-t", "%9", "@tcm-sidebar", "1"},
+				{"set-option", "-p", "-q", "-t", "%9", "allow-passthrough", "off"},
 			},
 		},
 		{
@@ -197,6 +199,7 @@ func TestSpawnSidebar_CommandSequenceFrozen(t *testing.T) {
 				{"join-pane", "-d", "-hb", "-f", "-l", "33", "-s", "%8", "-t", "%1"},
 				{"select-pane", "-t", "%8", "-T", "tcm-sidebar"},
 				{"set-option", "-p", "-t", "%8", "@tcm-sidebar", "1"},
+				{"set-option", "-p", "-q", "-t", "%8", "allow-passthrough", "off"},
 			},
 		},
 	}
@@ -225,6 +228,7 @@ func TestSpawnManagedPane_CommandSequence(t *testing.T) {
 		{"split-window", "-d", "-v", "-l", "8", "-t", "%1", "-P", "-F", "#{pane_id}", "watch date"},
 		{"select-pane", "-t", "%9", "-T", "tcm-companion"},
 		{"set-option", "-p", "-t", "%9", "@tcm-companion", "1"},
+		{"set-option", "-p", "-q", "-t", "%9", "allow-passthrough", "off"},
 	}
 	if !reflect.DeepEqual(cmds, want) {
 		t.Errorf("cmds = %v\nwant %v", cmds, want)
@@ -248,6 +252,7 @@ func TestSpawnCompanion_FreshAndRestore(t *testing.T) {
 				{"split-window", "-d", "-v", "-l", "8", "-t", "%2", "-P", "-F", "#{pane_id}", "watch date"},
 				{"select-pane", "-t", "%9", "-T", "tcm-companion"},
 				{"set-option", "-p", "-t", "%9", "@tcm-companion", "1"},
+				{"set-option", "-p", "-q", "-t", "%9", "allow-passthrough", "off"},
 			},
 		},
 		{
@@ -258,6 +263,7 @@ func TestSpawnCompanion_FreshAndRestore(t *testing.T) {
 				{"join-pane", "-d", "-v", "-l", "8", "-s", "%8", "-t", "%2"},
 				{"select-pane", "-t", "%8", "-T", "tcm-companion"},
 				{"set-option", "-p", "-t", "%8", "@tcm-companion", "1"},
+				{"set-option", "-p", "-q", "-t", "%8", "allow-passthrough", "off"},
 			},
 		},
 	}
