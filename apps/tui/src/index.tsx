@@ -193,7 +193,7 @@ function getLocalSessionName(): string | null {
  * histogram as the window slides. Newest bucket is the rightmost slot. The
  * freshest occupied glyph renders bright, older ones dim; system-tag bells
  * keep their tone colour and errors render red (severity bypasses the
- * unfocus tier slide).
+ * text tiers).
  *
  * Empty states: no logs → flat baseline + blank glyph row; window slid past
  * the newest log → flat baseline + a dim right-aligned `·Nm` age marker (the
@@ -202,7 +202,6 @@ function getLocalSessionName(): string | null {
 function ActivityZone(props: {
   focusedSession: SessionData | null;
   palette: ThemePalette;
-  paneFocused: boolean;
 }) {
   // Reactive terminal size, read here (not via a prop) so a stale-width
   // caller mistake is unrepresentable — see the note on App's termDims.
@@ -254,12 +253,12 @@ function ActivityZone(props: {
     return "·" + formatRelTime(age);
   });
 
-  const sparklineStyle = () => tier("secondary", props.palette, props.paneFocused);
-  const suffixStyle    = () => tier("dim",       props.palette, props.paneFocused);
+  const sparklineStyle = () => tier("secondary", props.palette);
+  const suffixStyle    = () => tier("dim",       props.palette);
   // Glyph freshness mirrors the retired description tiers: bright on the
-  // newest occupied bucket, dim on older ones. Severity/tone bypass the slide.
-  const freshFg = () => props.paneFocused ? props.palette.text     : props.palette.subtext0;
-  const oldFg   = () => props.paneFocused ? props.palette.overlay1 : props.palette.surface2;
+  // newest occupied bucket, dim on older ones. Severity/tone bypass the tiers.
+  const freshFg = () => props.palette.text;
+  const oldFg   = () => props.palette.overlay1;
   const iconStyle = (cell: BucketIcon, idx: number) => {
     if (cell.kind === "error")  return { fg: props.palette.red };
     if (cell.kind === "system") return { fg: toneColor(cell.tone, props.palette) };
@@ -314,7 +313,8 @@ function App() {
   const [connected, setConnected] = createSignal(false);
   const [spinIdx, setSpinIdx] = createSignal(0);
 
-  // --- Pane focus: does this terminal pane have focus? ---
+  // --- Pane focus: does this terminal pane have focus? Drives the header
+  //     FOCUS chip — the "your keystrokes land here" warning. ---
   const [paneFocused, setPaneFocused] = createSignal(false);
 
   // --- Pane focus: which paneId is currently focused anywhere in the user's
@@ -440,8 +440,10 @@ function App() {
     if (connected() && ws) ws.send(JSON.stringify(cmd));
   }
 
-  // Suppress pane-focus-out events briefly after session switch to prevent
-  // the focus highlight from blinking during tmux's focus handoff.
+  // Suppress transient pane-focus-in events briefly after session switch:
+  // clicking a card focuses the sidebar pane for an instant before tmux
+  // hands focus to the target session's pane, which would flash the FOCUS
+  // chip on every switch.
   let focusSuppressUntil = 0;
 
   function switchToSession(name: string) {
@@ -452,9 +454,9 @@ function App() {
     setFocusedSession(name);
     setPanelFocus("sessions");
     setFocusedAgentIdx(0);
-    // Hold paneFocused true during session switch — tmux's focus handoff
-    // briefly unfocuses the sidebar, causing a visible blink.
-    setPaneFocused(true);
+    // Focus is leaving for the target pane; no trailing pane-focus event
+    // arrives once the handoff settles, so record the destination now.
+    setPaneFocused(false);
     focusSuppressUntil = Date.now() + 500;
     send({ type: "switch-session", name });
   }
@@ -678,8 +680,9 @@ function App() {
               setFocusedPaneId(msg.paneId ?? null);
               if (muxCtx.type !== "none") {
                 const isFocused = msg.paneId === muxCtx.paneId;
-                // During session switch, suppress transient unfocus to prevent blink
-                if (isFocused || Date.now() >= focusSuppressUntil) {
+                // During session switch, ignore the transient focus-in from
+                // the card click so the FOCUS chip doesn't flash.
+                if (!isFocused || Date.now() >= focusSuppressUntil) {
                   setPaneFocused(isFocused);
                 }
               }
@@ -924,14 +927,19 @@ function App() {
 
   return (
     <box flexDirection="column" flexGrow={1} backgroundColor={P().crust}>
-      {/* Header */}
-      <box flexDirection="column" paddingLeft={1} paddingTop={1} paddingBottom={0} flexShrink={0}>
-        <text>
-          <span style={{ fg: paneFocused() ? P().blue : P().overlay1 }}>{BRAND_CLAWD}{" "}</span>
-          <span style={{ fg: paneFocused() ? P().text : P().overlay1, attributes: BOLD }}>tcm</span>
-          <span style={{ fg: paneFocused() ? P().subtext0 : P().overlay0 }}>{"  "}{String(sessions.length)}{" sessions"}</span>
+      {/* Header. The FOCUS chip is the pane-focus signal (the panel no
+          longer dims when unfocused): loud when keystrokes would land
+          here, absent the rest of the time. */}
+      <box flexDirection="row" paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={0} flexShrink={0}>
+        <text flexGrow={1} wrapMode="none">
+          <span style={{ fg: P().blue }}>{BRAND_CLAWD}{" "}</span>
+          <span style={{ fg: P().text, attributes: BOLD }}>tcm</span>
+          <span style={{ fg: P().subtext0 }}>{"  "}{String(sessions.length)}{" sessions"}</span>
           <Show when={flashMessage()}><span style={{ fg: P().overlay0, attributes: DIM }}>{" "}{flashMessage()}</span></Show>
         </text>
+        <Show when={paneFocused()}>
+          <text flexShrink={0} style={{ fg: P().crust, bg: P().blue, attributes: BOLD }}> FOCUS </text>
+        </Show>
       </box>
 
       <box flexDirection="column" flexGrow={1} flexShrink={1} justifyContent="flex-end" gap={0}>
@@ -940,7 +948,7 @@ function App() {
             if ("overflow" in item) {
               return (
                 <box paddingLeft={2} flexShrink={0} onMouseDown={() => moveLocalFocus(item.overflow)}>
-                  <text wrapMode="none" style={tier("muted", P(), paneFocused())}>
+                  <text wrapMode="none" style={tier("muted", P())}>
                     {item.overflow < 0 ? "▲ " : "▼ "}{item.count}{" more"}
                   </text>
                 </box>
@@ -955,9 +963,7 @@ function App() {
               <box
                 border
                 borderStyle="rounded"
-                borderColor={isSelected()
-                  ? (paneFocused() ? P().blue : P().overlay0)
-                  : (paneFocused() ? P().surface2 : P().surface0)}
+                borderColor={isSelected() ? P().blue : P().surface2}
                 flexShrink={0}
               >
                 <SessionCard
@@ -965,7 +971,6 @@ function App() {
                   isSelected={isSelected()}
                   isCurrent={session.name === currentSession()}
                   visibleAgentCount={visibleAgentCounts()[sessionIdx()] ?? 0}
-                  paneFocused={paneFocused}
                   spinIdx={spinIdx}
                   glowT={glowT}
                   theme={theme}
@@ -1009,16 +1014,15 @@ function App() {
       <ActivityZone
         focusedSession={focusedData()}
         palette={P()}
-        paneFocused={paneFocused()}
       />
 
       {/* Footer */}
       {(() => {
-        const keyFg = () => paneFocused() ? P().subtext0 : P().surface2;
-        const labelFg = () => paneFocused() ? P().overlay1 : P().surface2;
+        const keyFg = () => P().subtext0;
+        const labelFg = () => P().overlay1;
         return (
           <box flexDirection="column" paddingLeft={1} paddingBottom={1} paddingTop={0} flexShrink={0}>
-            <box height={1}><text style={{ fg: paneFocused() ? P().overlay0 : P().surface2 }}>{"─".repeat(200)}</text></box>
+            <box height={1}><text style={{ fg: P().overlay0 }}>{"─".repeat(200)}</text></box>
             <Show when={panelFocus() === "sessions"} fallback={
               <text>
                 <span style={{ fg: keyFg() }}>{"←"}</span>
@@ -1302,7 +1306,6 @@ function ThemePicker(props: ThemePickerProps) {
 interface AgentListItemProps {
   agent: SessionData["agents"][number];
   palette: Accessor<Theme["palette"]>;
-  paneFocused: Accessor<boolean>;
   spinIdx: Accessor<number>;
   // 0..1 sine-driven glow phase. Only consulted when this row is waiting;
   // upstream ticks the signal only while any row is waiting, so the closure
@@ -1376,18 +1379,18 @@ function AgentListItem(props: AgentListItemProps) {
           fg: props.isKeyboardFocused ? P().text : P().subtext1,
           attributes: props.isKeyboardFocused ? BOLD : undefined,
         }
-      : tier("dim", P(), props.paneFocused());
+      : tier("dim", P());
     const attentionFg = isUnseen() ? P().teal : base.fg;
     return {
       ...base,
       fg: label() === "waiting" ? lerpHex(attentionFg, P().yellow, props.glowT()) : attentionFg,
     };
   };
-  const supportingStyle = () => tier(
-    "muted",
-    P(),
-    props.isSessionSelected && props.paneFocused(),
-  );
+  // Supporting detail steps below muted on unselected cards, preserving
+  // the selected/unselected contrast the tier scale doesn't encode.
+  const supportingStyle = () => props.isSessionSelected
+    ? tier("muted", P())
+    : { fg: P().surface2 };
   const identityStyle = () => props.isPaneFocused
     ? { fg: P().sky }
     : nameStyle();
@@ -1426,7 +1429,7 @@ function AgentListItem(props: AgentListItemProps) {
           <text flexGrow={1} wrapMode="none" style={nameStyle()}>
             <span style={identityStyle()}>{AGENT_GLYPHS[props.agent.agent] ?? props.agent.agent}</span>
             <Show when={props.agent.subagent}>
-              <span style={tier(props.isSessionSelected ? "dim" : "muted", P(), props.paneFocused())}>{"  "}{props.agent.subagent}</span>
+              <span style={tier(props.isSessionSelected ? "dim" : "muted", P())}>{"  "}{props.agent.subagent}</span>
             </Show>
             {/* Session name from the agent-ouija registry when known;
                 the 4-char uuid suffix is the fallback identity. */}
@@ -1457,7 +1460,6 @@ interface SessionCardProps {
   isSelected: boolean;
   isCurrent: boolean;
   visibleAgentCount: number;
-  paneFocused: Accessor<boolean>;
   spinIdx: Accessor<number>;
   glowT: Accessor<number>;
   theme: Accessor<Theme>;
@@ -1472,7 +1474,7 @@ interface SessionCardProps {
 function SessionCard(props: SessionCardProps) {
   const P = () => props.theme().palette;
   const nameStyle = () => {
-    const base = tier(props.isSelected ? "primary" : "dim", P(), props.paneFocused());
+    const base = tier(props.isSelected ? "primary" : "dim", P());
     const attentionFg = props.session.unseen ? P().teal : base.fg;
     return {
       ...base,
@@ -1510,7 +1512,7 @@ function SessionCard(props: SessionCardProps) {
   const hiddenAgentCount = () => Math.max(0, agents().length - visibleAgents().length);
   const branchStyle = () => props.isSelected
     ? { fg: P().pink }
-    : tier("dim", P(), props.paneFocused());
+    : tier("dim", P());
 
   return (
     <box id={`session-${props.session.name}`} flexDirection="column" flexShrink={0}>
@@ -1525,7 +1527,7 @@ function SessionCard(props: SessionCardProps) {
             <text wrapMode="none" style={nameStyle()}>
               <span style={nameStyle()}>{truncName()}</span>
               <Show when={agentBadge()}>
-                <span style={tier(props.isSelected ? "secondary" : "dim", P(), props.paneFocused())}>{" "}{agentBadge()}</span>
+                <span style={tier(props.isSelected ? "secondary" : "dim", P())}>{" "}{agentBadge()}</span>
               </Show>
             </text>
             <box flexGrow={1} />
@@ -1549,7 +1551,6 @@ function SessionCard(props: SessionCardProps) {
             <AgentListItem
               agent={agent}
               palette={() => P()}
-              paneFocused={props.paneFocused}
               spinIdx={props.spinIdx}
               glowT={props.glowT}
               isSessionSelected={props.isSelected}
@@ -1561,7 +1562,7 @@ function SessionCard(props: SessionCardProps) {
           )}
         </For>
         <Show when={hiddenAgentCount() > 0}>
-          <text wrapMode="none" style={tier(props.isSelected ? "dim" : "muted", P(), props.paneFocused())}>
+          <text wrapMode="none" style={tier(props.isSelected ? "dim" : "muted", P())}>
             {"   +"}{hiddenAgentCount()} more
           </text>
         </Show>

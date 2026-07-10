@@ -253,7 +253,7 @@ export const MOCK_SCENARIOS: Record<string, MockScenario> = {
 
   unfocused: {
     name: "unfocused",
-    description: "Same as quiet but the panel pane is unfocused (sleep state).",
+    description: "Same as quiet but the panel pane is unfocused (no FOCUS chip).",
     sessions: [aiEngineeringTemplate, piMono, tcmLive, claudeCodeSystem, theThemerReady],
     focusedSession: "tcm",
     currentSession: "tcm",
