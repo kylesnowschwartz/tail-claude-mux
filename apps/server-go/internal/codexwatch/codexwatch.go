@@ -26,7 +26,6 @@ import (
 )
 
 const staleMS = 5 * 60 * 1000
-const threadNameMaxWidth = 80
 
 var codexCmdRE = regexp.MustCompile(`(?i)(?:^|/)codex($|[\s/])`)
 var rolloutIDRE = regexp.MustCompile(`[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
@@ -214,7 +213,7 @@ func promptThreadName(prompt string) string {
 	if line, _, ok := strings.Cut(prompt, "\n"); ok {
 		prompt = line
 	}
-	return textutil.TruncateToWidth(textutil.SanitizeForDisplay(strings.TrimSpace(prompt)), threadNameMaxWidth)
+	return textutil.SanitizeSessionName(strings.TrimSpace(prompt))
 }
 
 func (a *Adapter) resolveThreadNameAsync(threadID string, state *threadState) {
@@ -261,7 +260,7 @@ func lookupThreadName(path, threadID string) string {
 			ThreadName string `json:"thread_name"`
 		}
 		if json.Unmarshal([]byte(line), &entry) == nil && entry.ID == threadID && entry.ThreadName != "" {
-			name = textutil.TruncateToWidth(textutil.SanitizeForDisplay(entry.ThreadName), threadNameMaxWidth)
+			name = textutil.SanitizeSessionName(entry.ThreadName)
 		}
 	}
 	return name
