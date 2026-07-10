@@ -89,48 +89,78 @@ func New(sessionsDir, sessionIndexPath string) *Adapter {
 
 func (a *Adapter) Name() string { return "codex" }
 
-// NewestRolloutForCwd returns the newest Codex rollout whose session metadata
-// identifies cwd. Follow-up delivery uses this exact lookup instead of --last,
-// which can select a parallel thread.
-func (a *Adapter) NewestRolloutForCwd(cwd string) (path, threadID string) {
+// RolloutForFollowup resolves a tracked thread directly. Older tracker entries
+// without a thread ID fall back to the newest rollout for cwd.
+func (a *Adapter) RolloutForFollowup(cwd, trackedThreadID string) (path, threadID string, err error) {
 	var newest time.Time
-	_ = filepath.WalkDir(a.SessionsDir, func(candidate string, entry os.DirEntry, err error) error {
-		if err != nil || entry.IsDir() || threadIDFromPath(candidate) == "" {
+	err = filepath.WalkDir(a.SessionsDir, func(candidate string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		candidateThreadID := threadIDFromPath(candidate)
+		if candidateThreadID == "" {
+			return nil
+		}
+		if trackedThreadID != "" {
+			if candidateThreadID == trackedThreadID {
+				path, threadID = candidate, candidateThreadID
+				return filepath.SkipAll
+			}
 			return nil
 		}
 		file, err := os.Open(candidate)
 		if err != nil {
-			return nil
+			return err
 		}
 		scanner := bufio.NewScanner(file)
-		matches := scanner.Scan() && rolloutCwd(scanner.Bytes()) == cwd
-		_ = file.Close()
+		matches := false
+		if scanner.Scan() {
+			rolloutDir, parseErr := rolloutCwd(scanner.Bytes())
+			if parseErr != nil {
+				_ = file.Close()
+				return parseErr
+			}
+			matches = rolloutDir == cwd
+		}
+		if scanErr := scanner.Err(); scanErr != nil {
+			_ = file.Close()
+			return scanErr
+		}
+		if err := file.Close(); err != nil {
+			return err
+		}
 		if !matches {
 			return nil
 		}
 		info, err := entry.Info()
-		if err == nil && (path == "" || info.ModTime().After(newest)) {
-			path, threadID, newest = candidate, threadIDFromPath(candidate), info.ModTime()
+		if err != nil {
+			return err
+		}
+		if path == "" || info.ModTime().After(newest) {
+			path, threadID, newest = candidate, candidateThreadID, info.ModTime()
 		}
 		return nil
 	})
-	return path, threadID
+	return path, threadID, err
 }
 
-func rolloutCwd(line []byte) string {
+func rolloutCwd(line []byte) (string, error) {
 	var entry struct {
 		Cwd     string `json:"cwd"`
 		Payload struct {
 			Cwd string `json:"cwd"`
 		} `json:"payload"`
 	}
-	if json.Unmarshal(line, &entry) != nil {
-		return ""
+	if err := json.Unmarshal(line, &entry); err != nil {
+		return "", err
 	}
 	if entry.Cwd != "" {
-		return entry.Cwd
+		return entry.Cwd, nil
 	}
-	return entry.Payload.Cwd
+	return entry.Payload.Cwd, nil
 }
 
 func (a *Adapter) Start(ctx *Context) {

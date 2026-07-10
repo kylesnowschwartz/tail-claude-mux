@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
@@ -38,6 +40,8 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 		writeFollowupError(w, http.StatusBadRequest, "session and message are required")
 		return
 	}
+	s.followupMu.Lock()
+	defer s.followupMu.Unlock()
 
 	state := s.followupState(req.Session)
 	if state == nil {
@@ -48,8 +52,8 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 		writeFollowupError(w, http.StatusUnprocessableEntity, "follow-up is only supported for codex sessions")
 		return
 	}
-	if state.Status == wire.StatusRunning {
-		writeFollowupError(w, http.StatusConflict, "session is running; refusing to interrupt it")
+	if message := followupStatusConflict(state.Status); message != "" {
+		writeFollowupError(w, http.StatusConflict, message)
 		return
 	}
 	dir := s.followupDir(req.Session, state.PaneID)
@@ -57,7 +61,11 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 		writeFollowupError(w, http.StatusInternalServerError, "session is missing follow-up metadata")
 		return
 	}
-	rolloutPath, uuid := s.CodexWatcher.NewestRolloutForCwd(dir)
+	rolloutPath, uuid, err := s.CodexWatcher.RolloutForFollowup(dir, state.ThreadID)
+	if err != nil {
+		writeFollowupError(w, http.StatusInternalServerError, "could not inspect codex rollouts")
+		return
+	}
 	if uuid == "" {
 		writeFollowupError(w, http.StatusNotFound, "no codex rollout found for session directory")
 		return
@@ -65,6 +73,22 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 	messageFile, err := writeFollowupMessage(req.Session, req.Message)
 	if err != nil {
 		writeFollowupError(w, http.StatusInternalServerError, "could not write follow-up message")
+		return
+	}
+	current := s.followupState(req.Session)
+	if current == nil || current.ThreadID != state.ThreadID || current.PaneID != state.PaneID {
+		_ = os.Remove(messageFile)
+		writeFollowupError(w, http.StatusConflict, "session changed before follow-up delivery; refusing to interrupt it")
+		return
+	}
+	if message := followupStatusConflict(current.Status); message != "" {
+		_ = os.Remove(messageFile)
+		writeFollowupError(w, http.StatusConflict, message)
+		return
+	}
+	if currentDir := s.followupDir(req.Session, current.PaneID); currentDir != dir {
+		_ = os.Remove(messageFile)
+		writeFollowupError(w, http.StatusConflict, "session pane changed before follow-up delivery; refusing to interrupt it")
 		return
 	}
 	command := fmt.Sprintf(`codex -c mcp_servers.just.enabled=false resume %s "Read %s and address it"`, uuid, messageFile)
@@ -76,6 +100,17 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(followupResponse{UUID: uuid, RolloutPath: rolloutPath, MessageFile: messageFile, PaneID: state.PaneID})
+}
+
+func followupStatusConflict(status string) string {
+	switch status {
+	case wire.StatusRunning:
+		return "session is running; refusing to interrupt it"
+	case wire.StatusWaiting:
+		return "session is waiting for input; refusing to interrupt it"
+	default:
+		return ""
+	}
 }
 
 func (s *Server) followupState(session string) *wire.AgentEvent {
@@ -100,6 +135,7 @@ func (s *Server) followupDir(session, paneID string) string {
 }
 
 func writeFollowupMessage(session, message string) (string, error) {
+	cleanupOldFollowupMessages(os.TempDir(), time.Now())
 	name := strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
 			return r
@@ -121,6 +157,16 @@ func writeFollowupMessage(session, message string) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+func cleanupOldFollowupMessages(dir string, now time.Time) {
+	matches, _ := filepath.Glob(filepath.Join(dir, "tcm-followup-*"))
+	for _, path := range matches {
+		info, err := os.Stat(path)
+		if err == nil && now.Sub(info.ModTime()) > 24*time.Hour {
+			_ = os.Remove(path)
+		}
+	}
 }
 
 func writeFollowupError(w http.ResponseWriter, status int, message string) {

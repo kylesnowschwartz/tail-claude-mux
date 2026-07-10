@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
@@ -21,11 +22,12 @@ import (
 
 func TestFollowupRefusals(t *testing.T) {
 	tests := []struct {
-		name, session, agent, status string
-		wantCode                     int
+		name, session, agent, status, wantError string
+		wantCode                                int
 	}{
 		{name: "unknown", session: "missing", wantCode: http.StatusNotFound},
-		{name: "running", session: "work", agent: "codex", status: wire.StatusRunning, wantCode: http.StatusConflict},
+		{name: "running", session: "work", agent: "codex", status: wire.StatusRunning, wantCode: http.StatusConflict, wantError: "session is running; refusing to interrupt it"},
+		{name: "waiting", session: "work", agent: "codex", status: wire.StatusWaiting, wantCode: http.StatusConflict, wantError: "session is waiting for input; refusing to interrupt it"},
 		{name: "non codex", session: "work", agent: "claude-code", status: wire.StatusIdle, wantCode: http.StatusUnprocessableEntity},
 	}
 	for _, tt := range tests {
@@ -40,6 +42,15 @@ func TestFollowupRefusals(t *testing.T) {
 			s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(body)))
 			if response.Code != tt.wantCode {
 				t.Fatalf("status = %d, want %d: %s", response.Code, tt.wantCode, response.Body.String())
+			}
+			if tt.wantError != "" {
+				var body map[string]string
+				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				if body["error"] != tt.wantError {
+					t.Fatalf("error = %q, want %q", body["error"], tt.wantError)
+				}
 			}
 		})
 	}
@@ -66,7 +77,7 @@ func TestFollowupPinsThreadAndRespawnsPane(t *testing.T) {
 		return "", nil
 	}
 	tr := tracker.New()
-	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "codex", ThreadID: "thread", Status: wire.StatusDone, PaneID: "%7"}, false)
+	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "codex", ThreadID: uuid, Status: wire.StatusDone, PaneID: "%7"}, false)
 	tm := &tmux.Tmux{Run: run}
 	s := &Server{Tracker: tr, Builder: &state.Builder{Tmux: tm}, CodexWatcher: codexwatch.New(sessionsDir, "")}
 	response := httptest.NewRecorder()
@@ -93,5 +104,74 @@ func TestFollowupPinsThreadAndRespawnsPane(t *testing.T) {
 	wantCommand := fmt.Sprintf(`codex -c mcp_servers.just.enabled=false resume %s "Read %s and address it"`, uuid, body.MessageFile)
 	if respawnArgs[4] != wantCommand {
 		t.Fatalf("command = %q, want %q", respawnArgs[4], wantCommand)
+	}
+}
+
+func TestFollowupRevalidatesBeforeRespawn(t *testing.T) {
+	sessionsDir := t.TempDir()
+	rolloutDir := filepath.Join(sessionsDir, "2026", "07", "11")
+	if err := os.MkdirAll(rolloutDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	uuid := "22222222-2222-2222-2222-222222222222"
+	rolloutPath := filepath.Join(rolloutDir, "rollout-2026-07-11T00-00-00-"+uuid+".jsonl")
+	if err := os.WriteFile(rolloutPath, []byte(`{"type":"session_meta","payload":{"cwd":"/project"}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "codex", ThreadID: uuid, Status: wire.StatusDone, PaneID: "%7"}, false)
+	listCalls := 0
+	respawned := false
+	var s *Server
+	run := func(args ...string) (string, error) {
+		if args[0] == "list-panes" {
+			listCalls++
+			if listCalls == 1 {
+				s.mu.Lock()
+				tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "codex", ThreadID: uuid, Status: wire.StatusRunning, PaneID: "%7", TS: 1}, false)
+				s.mu.Unlock()
+			}
+			return tmuxtest.PaneSpec{Session: "work", ID: "%7", PID: "123", Dir: "/project"}.Row(), nil
+		}
+		respawned = true
+		return "", nil
+	}
+	tm := &tmux.Tmux{Run: run}
+	s = &Server{Tracker: tr, Builder: &state.Builder{Tmux: tm}, CodexWatcher: codexwatch.New(sessionsDir, "")}
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(`{"session":"work","message":"please continue"}`)))
+	if response.Code != http.StatusConflict || respawned {
+		t.Fatalf("status = %d, respawned = %v: %s", response.Code, respawned, response.Body.String())
+	}
+}
+
+func TestCleanupOldFollowupMessages(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	oldPath := filepath.Join(dir, "tcm-followup-old.md")
+	recentPath := filepath.Join(dir, "tcm-followup-recent.md")
+	otherPath := filepath.Join(dir, "other-old.md")
+	for _, path := range []string{oldPath, recentPath, otherPath} {
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := now.Add(-25 * time.Hour)
+	if err := os.Chtimes(oldPath, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(otherPath, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	cleanupOldFollowupMessages(dir, now)
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("old follow-up still exists: %v", err)
+	}
+	for _, path := range []string{recentPath, otherPath} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("preserved file %q: %v", path, err)
+		}
 	}
 }

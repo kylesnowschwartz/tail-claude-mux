@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestNewestRolloutForCwd(t *testing.T) {
+func TestRolloutForFollowup(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "2026", "07", "11")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -32,8 +32,35 @@ func TestNewestRolloutForCwd(t *testing.T) {
 	wantPath := writeRollout(newID, "/project", now)
 	writeRollout(otherID, "/other", now.Add(time.Hour))
 
-	path, id := New(root, "").NewestRolloutForCwd("/project")
+	adapter := New(root, "")
+	path, id, err := adapter.RolloutForFollowup("/project", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if path != wantPath || id != newID {
 		t.Fatalf("got (%q, %q), want (%q, %q)", path, id, wantPath, newID)
+	}
+
+	oldPath, id, err := adapter.RolloutForFollowup("/project", oldID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldPath == wantPath || id != oldID {
+		t.Fatalf("tracked thread got (%q, %q), want thread %q", oldPath, id, oldID)
+	}
+}
+
+func TestRolloutForFollowupReturnsReadError(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "2026", "07", "11")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "rollout-2026-07-11T00-00-00-11111111-1111-1111-1111-111111111111.jsonl")
+	if err := os.WriteFile(path, []byte("not-json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := New(root, "").RolloutForFollowup("/project", ""); err == nil {
+		t.Fatal("expected malformed rollout error")
 	}
 }

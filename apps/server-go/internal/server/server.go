@@ -79,9 +79,10 @@ type Server struct {
 	Header        *theming.HeaderSync
 	HeaderEnabled bool
 
-	mu        sync.Mutex
-	clients   map[*client]bool
-	lastState []byte // last broadcast ServerState, JSON-encoded
+	mu         sync.Mutex
+	followupMu sync.Mutex
+	clients    map[*client]bool
+	lastState  []byte // last broadcast ServerState, JSON-encoded
 
 	// Watcher plumbing (see watch.go).
 	watchersSeeded    bool
