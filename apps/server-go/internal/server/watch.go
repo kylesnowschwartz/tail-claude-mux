@@ -45,6 +45,32 @@ const (
 	paneHighlightFlash  = 300 * time.Millisecond
 )
 
+type agentStateSource interface {
+	Name() string
+	SessionInfoForPid(pid int) (threadID, name string)
+	ProbeLiveStatus(pid int, threadID, paneTitle string) tracker.ProbeVerdict
+}
+
+func stateSourceForAgent(agent string, sources ...agentStateSource) agentStateSource {
+	for _, source := range sources {
+		if source != nil && source.Name() == agent {
+			return source
+		}
+	}
+	return nil
+}
+
+func (s *Server) agentStateSources() []agentStateSource {
+	sources := make([]agentStateSource, 0, 2)
+	if s.Watcher != nil {
+		sources = append(sources, s.Watcher)
+	}
+	if s.CodexWatcher != nil {
+		sources = append(sources, s.CodexWatcher)
+	}
+	return sources
+}
+
 // StartWatchers binds the Claude watcher context, runs its cold-start seed,
 // arms the seed-grace timer, and launches the pane-scan and liveness-sweep
 // loops. Call once, before serving.
@@ -246,16 +272,15 @@ func (s *Server) paneScanLoop() {
 		panes := s.Builder.Tmux.ListAllPanes()
 		next := s.Scanner.Scan(panes)
 
-		// Resolve thread identity + registry session name at scan time
-		// (sessions/<pid>.json) so minted rows carry their threadId and
-		// display name from birth instead of waiting for a hook to
-		// graduate them. File IO, so outside the lock.
-		if s.Watcher != nil {
-			for _, paneAgents := range next {
-				for i, pa := range paneAgents {
-					if pa.Agent == "claude-code" && pa.PID != 0 {
-						paneAgents[i].ThreadID, paneAgents[i].ThreadName = s.Watcher.SessionInfoForPid(pa.PID)
-					}
+		// Resolve thread identity + display name from each watcher's durable
+		// process registry at scan time so minted rows carry their threadId
+		// from birth instead of waiting for a hook to graduate them. File IO,
+		// so outside the lock.
+		stateSources := s.agentStateSources()
+		for _, paneAgents := range next {
+			for i, pa := range paneAgents {
+				if source := stateSourceForAgent(pa.Agent, stateSources...); source != nil && pa.PID != 0 {
+					paneAgents[i].ThreadID, paneAgents[i].ThreadName = source.SessionInfoForPid(pa.PID)
 				}
 			}
 		}
@@ -299,10 +324,18 @@ func (s *Server) livenessLoop() {
 // probeLiveness asks the owning watcher whether a stale running instance is
 // genuinely working (reconcileStaleRunning's probe). Runs with s.mu held.
 func (s *Server) probeLiveness(ev wire.AgentEvent) tracker.ProbeVerdict {
-	if ev.PID == 0 || s.Watcher == nil || ev.Agent != s.Watcher.Name() {
+	return probeLivenessFromSources(ev, s.agentStateSources()...)
+}
+
+func probeLivenessFromSources(ev wire.AgentEvent, sources ...agentStateSource) tracker.ProbeVerdict {
+	if ev.PID == 0 {
 		return tracker.ProbeNoSignal
 	}
-	return s.Watcher.ProbeLiveStatus(ev.PID, ev.ThreadID, ev.PaneTitle)
+	source := stateSourceForAgent(ev.Agent, sources...)
+	if source == nil {
+		return tracker.ProbeNoSignal
+	}
+	return source.ProbeLiveStatus(ev.PID, ev.ThreadID, ev.PaneTitle)
 }
 
 // resolveSessionLocked ports watcherCtx.resolveSession: direct dir match,

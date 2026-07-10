@@ -6,6 +6,7 @@ import (
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
@@ -37,6 +38,43 @@ func TestSelectAgentPaneSwitchesClientAcrossSessions(t *testing.T) {
 	wantSwitch := []string{"switch-client", "-c", "/dev/ttys001", "-t", "target"}
 	if !slices.Equal(calls[1], wantSwitch) {
 		t.Fatalf("switch command = %v, want %v", calls[1], wantSwitch)
+	}
+}
+
+type fakeAgentStateSource struct {
+	name    string
+	verdict tracker.ProbeVerdict
+	calls   int
+}
+
+func (f *fakeAgentStateSource) Name() string { return f.name }
+
+func (f *fakeAgentStateSource) SessionInfoForPid(int) (string, string) { return "", "" }
+
+func (f *fakeAgentStateSource) ProbeLiveStatus(int, string, string) tracker.ProbeVerdict {
+	f.calls++
+	return f.verdict
+}
+
+func TestProbeLivenessRoutesByAgent(t *testing.T) {
+	claude := &fakeAgentStateSource{name: "claude-code", verdict: tracker.ProbeEnded}
+	codex := &fakeAgentStateSource{name: "codex", verdict: tracker.ProbeWorking}
+	sources := []agentStateSource{claude, codex}
+
+	if got := probeLivenessFromSources(wire.AgentEvent{Agent: "codex", PID: 42}, sources...); got != tracker.ProbeWorking {
+		t.Fatalf("codex verdict = %v, want ProbeWorking", got)
+	}
+	if codex.calls != 1 || claude.calls != 0 {
+		t.Fatalf("calls after codex probe = claude %d, codex %d", claude.calls, codex.calls)
+	}
+	if got := probeLivenessFromSources(wire.AgentEvent{Agent: "claude-code", PID: 43}, sources...); got != tracker.ProbeEnded {
+		t.Fatalf("claude verdict = %v, want ProbeEnded", got)
+	}
+	if codex.calls != 1 || claude.calls != 1 {
+		t.Fatalf("calls after claude probe = claude %d, codex %d", claude.calls, codex.calls)
+	}
+	if got := probeLivenessFromSources(wire.AgentEvent{Agent: "pi", PID: 44}, sources...); got != tracker.ProbeNoSignal {
+		t.Fatalf("unknown-agent verdict = %v, want ProbeNoSignal", got)
 	}
 }
 
