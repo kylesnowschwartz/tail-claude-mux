@@ -1,0 +1,9 @@
+name: delegation-experiment
+stages:
+  - name: delegate
+    produces: delegation-record
+    inputs:
+      - task
+    skill: tcm-delegate
+    eval:
+      method: pairwise

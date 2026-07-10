@@ -1,0 +1,43 @@
+quorum: unanimous
+seats:
+  codex:
+    provider: openai/gpt-5.5
+    harness: codex
+    invoke: codex exec --ephemeral -m gpt-5.5 -s read-only -
+    mode: diff-only
+    model_fallbacks:
+      - gpt-5.4
+      - gpt-5.3
+  gemini:
+    provider: google/gemini-3.1-pro-preview
+    harness: gemini-cli
+    invoke: gemini -m gemini-3.1-pro-preview -p
+    mode: inline-no-tools
+    model_fallbacks:
+      - gemini-3-pro-preview
+  opus:
+    provider: anthropic/claude-opus
+    harness: claude-code
+    invoke: claude -p --model opus
+    mode: inline
+tiers:
+  L1:
+    name: Full three-seat gate
+    seats:
+      - gemini
+      - opus
+      - codex
+  L2:
+    name: Strong two-seat gate
+    seats:
+      - opus
+      - codex
+  L3:
+    name: Medium two-seat gate
+    seats:
+      - opus
+      - codex
+  L4:
+    name: Light single-seat gate
+    seats:
+      - opus
