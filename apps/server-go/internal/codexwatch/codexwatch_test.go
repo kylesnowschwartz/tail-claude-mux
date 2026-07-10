@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
@@ -71,6 +72,19 @@ func writeIndexName(t *testing.T, path, threadID, name string) {
 	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeRollout(t *testing.T, dir, threadID, source, entries string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "rollout-2026-07-10T00-00-00-"+threadID+".jsonl")
+	meta := `{"type":"session_meta","payload":{"id":"` + threadID + `","source":` + source + `}}` + "\n"
+	if err := os.WriteFile(path, []byte(meta+entries), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func TestHookStatusMapAndStrictAgentFilter(t *testing.T) {
@@ -338,6 +352,65 @@ func TestSeedNestedRecentRollout(t *testing.T) {
 	}
 	if state := h.adapter.threads[threadID]; state == nil || !state.nameFromIndex {
 		t.Fatalf("seeded name was not marked index-sourced: %#v", state)
+	}
+}
+
+func TestSessionInfoForPidResolvesPrimaryRollout(t *testing.T) {
+	dir := t.TempDir()
+	sessions := filepath.Join(dir, "sessions", "2026", "07", "10")
+	primaryID := "12345678-1234-1234-1234-123456789abc"
+	subagentID := "87654321-4321-4321-4321-cba987654321"
+	primary := writeRollout(t, sessions, primaryID, `"cli"`, "")
+	subagent := writeRollout(t, sessions, subagentID, `{"subagent":{"other":"guardian"}}`, "")
+	index := filepath.Join(dir, "session_index.jsonl")
+	writeIndexName(t, index, primaryID, "Primary task")
+
+	a := New(filepath.Join(dir, "sessions"), index)
+	a.openFilesForPID = func(pid int) []string {
+		if pid != 4242 {
+			t.Fatalf("pid = %d, want 4242", pid)
+		}
+		return []string{subagent, primary}
+	}
+
+	threadID, name := a.SessionInfoForPid(4242)
+	if threadID != primaryID || name != "Primary task" {
+		t.Fatalf("SessionInfoForPid = (%q, %q), want (%q, %q)", threadID, name, primaryID, "Primary task")
+	}
+}
+
+func TestProbeLiveStatusFromRollout(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		entries string
+		want    tracker.ProbeVerdict
+	}{
+		{
+			name:    "working",
+			entries: `{"type":"response_item","payload":{"type":"reasoning"}}` + "\n",
+			want:    tracker.ProbeWorking,
+		},
+		{
+			name:    "idle",
+			entries: `{"type":"turn_context","payload":{"cwd":"/project"}}` + "\n",
+			want:    tracker.ProbeEnded,
+		},
+		{
+			name:    "completed",
+			entries: `{"type":"event_msg","payload":{"type":"task_complete"}}` + "\n",
+			want:    tracker.ProbeEnded,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			threadID := "12345678-1234-1234-1234-123456789abc"
+			path := writeRollout(t, filepath.Join(dir, "sessions"), threadID, `"cli"`, tc.entries)
+			a := New(filepath.Join(dir, "sessions"), filepath.Join(dir, "index.jsonl"))
+			a.openFilesForPID = func(int) []string { return []string{path} }
+			if got := a.ProbeLiveStatus(4242, threadID, "ignored"); got != tc.want {
+				t.Fatalf("ProbeLiveStatus = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

@@ -1,9 +1,9 @@
 // Package codexwatch adapts Codex lifecycle hooks and recent rollout files
 // into tcm agent events.
 //
-// Live hooks own status after startup. Rollout JSONL is read once for a
-// bounded cold-start seed, and session_index.jsonl is read once per new
-// thread to resolve its display name.
+// Live hooks provide immediate status updates. Rollout JSONL also provides a
+// bounded cold-start seed, scan-time process identity, and a durable liveness
+// probe when hooks are silent. session_index.jsonl resolves display names.
 //
 // The Adapter is not safe for concurrent use. The server serializes hook and
 // seed work under its state lock. Name lookup reads off-lock and re-enters via
@@ -11,17 +11,21 @@
 package codexwatch
 
 import (
+	"bufio"
 	"encoding/json"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/textutil"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
@@ -67,9 +71,10 @@ type Adapter struct {
 	SessionsDir      string
 	SessionIndexPath string
 
-	ctx     *Context
-	threads map[string]*threadState
-	now     func() int64
+	ctx             *Context
+	threads         map[string]*threadState
+	now             func() int64
+	openFilesForPID func(pid int) []string
 }
 
 func New(sessionsDir, sessionIndexPath string) *Adapter {
@@ -78,6 +83,7 @@ func New(sessionsDir, sessionIndexPath string) *Adapter {
 		SessionIndexPath: sessionIndexPath,
 		threads:          map[string]*threadState{},
 		now:              func() int64 { return time.Now().UnixMilli() },
+		openFilesForPID:  lsofPathsForPID,
 	}
 }
 
@@ -264,6 +270,117 @@ func lookupThreadName(path, threadID string) string {
 		}
 	}
 	return name
+}
+
+// SessionInfoForPid resolves a live Codex process to its primary rollout.
+// Codex has no sessions/<pid>.json registry: the process itself is the
+// authoritative association because it keeps each active rollout open. A
+// process can also own subagent rollouts, so source:"cli" outranks those.
+func (a *Adapter) SessionInfoForPid(pid int) (threadID, name string) {
+	path := a.rolloutPathForPID(pid, "")
+	if path == "" {
+		return "", ""
+	}
+	threadID = threadIDFromPath(path)
+	return threadID, lookupThreadName(a.SessionIndexPath, threadID)
+}
+
+// ProbeLiveStatus classifies the latest durable state in a thread's rollout.
+// A definitive non-running state ends reconciliation; missing or unreadable
+// rollout data leaves the tracker unchanged.
+func (a *Adapter) ProbeLiveStatus(pid int, threadID, _ string) tracker.ProbeVerdict {
+	path := a.rolloutPathForPID(pid, threadID)
+	if path == "" && threadID != "" {
+		path = a.rolloutPathForThread(threadID)
+	}
+	if path == "" {
+		return tracker.ProbeNoSignal
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return tracker.ProbeNoSignal
+	}
+	status, _ := parseRollout(string(raw))
+	if status == wire.StatusRunning {
+		return tracker.ProbeWorking
+	}
+	return tracker.ProbeEnded
+}
+
+func (a *Adapter) rolloutPathForPID(pid int, threadID string) string {
+	if pid <= 1 || a.openFilesForPID == nil {
+		return ""
+	}
+	var fallback string
+	for _, path := range a.openFilesForPID(pid) {
+		if !a.isRolloutPath(path) {
+			continue
+		}
+		id := threadIDFromPath(path)
+		if id == "" || threadID != "" && id != threadID {
+			continue
+		}
+		if isPrimaryRollout(path) {
+			return path
+		}
+		if fallback == "" {
+			fallback = path
+		}
+	}
+	return fallback
+}
+
+func (a *Adapter) rolloutPathForThread(threadID string) string {
+	var found string
+	_ = filepath.WalkDir(a.SessionsDir, func(path string, entry os.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() && threadIDFromPath(path) == threadID {
+			found = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
+}
+
+func (a *Adapter) isRolloutPath(path string) bool {
+	rel, err := filepath.Rel(a.SessionsDir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && filepath.Ext(path) == ".jsonl"
+}
+
+func isPrimaryRollout(path string) bool {
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	for scanner := bufio.NewScanner(file); scanner.Scan(); {
+		var entry struct {
+			Type    string `json:"type"`
+			Payload struct {
+				Source json.RawMessage `json:"source"`
+			} `json:"payload"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &entry) != nil || entry.Type != "session_meta" {
+			continue
+		}
+		var source string
+		return json.Unmarshal(entry.Payload.Source, &source) == nil && source == "cli"
+	}
+	return false
+}
+
+func lsofPathsForPID(pid int) []string {
+	out, err := exec.Command("lsof", "-a", "-p", strconv.Itoa(pid), "-Fn").Output()
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for line := range strings.SplitSeq(string(out), "\n") {
+		if path, ok := strings.CutPrefix(line, "n"); ok && filepath.IsAbs(path) {
+			paths = append(paths, path)
+		}
+	}
+	return paths
 }
 
 func (a *Adapter) seedFromJSONL() {
