@@ -174,7 +174,7 @@ func TestSpawnSidebar_CommandSequenceFrozen(t *testing.T) {
 			position: "right",
 			listing:  mainPane,
 			want: [][]string{
-				{"split-window", "-h", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "REFOCUS_WINDOW=@1 exec /scripts/start.sh"},
+				{"split-window", "-d", "-h", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "REFOCUS_WINDOW=@1 exec /scripts/start.sh"},
 				{"select-pane", "-t", "%9", "-T", "tcm-sidebar"},
 				{"set-option", "-p", "-t", "%9", "@tcm-sidebar", "1"},
 			},
@@ -184,7 +184,7 @@ func TestSpawnSidebar_CommandSequenceFrozen(t *testing.T) {
 			position: "left",
 			listing:  mainPane,
 			want: [][]string{
-				{"split-window", "-h", "-b", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "REFOCUS_WINDOW=@1 exec /scripts/start.sh"},
+				{"split-window", "-d", "-h", "-b", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "REFOCUS_WINDOW=@1 exec /scripts/start.sh"},
 				{"select-pane", "-t", "%9", "-T", "tcm-sidebar"},
 				{"set-option", "-p", "-t", "%9", "@tcm-sidebar", "1"},
 			},
@@ -194,7 +194,7 @@ func TestSpawnSidebar_CommandSequenceFrozen(t *testing.T) {
 			position: "left",
 			listing:  mainPane + "\n" + stashSidebar,
 			want: [][]string{
-				{"join-pane", "-hb", "-f", "-l", "33", "-s", "%8", "-t", "%1"},
+				{"join-pane", "-d", "-hb", "-f", "-l", "33", "-s", "%8", "-t", "%1"},
 				{"select-pane", "-t", "%8", "-T", "tcm-sidebar"},
 				{"set-option", "-p", "-t", "%8", "@tcm-sidebar", "1"},
 			},
@@ -222,7 +222,7 @@ func TestSpawnManagedPane_CommandSequence(t *testing.T) {
 		t.Fatalf("pane id = %q, want %%9", got)
 	}
 	want := [][]string{
-		{"split-window", "-v", "-l", "8", "-t", "%1", "-P", "-F", "#{pane_id}", "watch date"},
+		{"split-window", "-d", "-v", "-l", "8", "-t", "%1", "-P", "-F", "#{pane_id}", "watch date"},
 		{"select-pane", "-t", "%9", "-T", "tcm-companion"},
 		{"set-option", "-p", "-t", "%9", "@tcm-companion", "1"},
 	}

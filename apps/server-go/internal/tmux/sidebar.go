@@ -75,10 +75,8 @@ func (t *Tmux) KillStashSession() {
 // SpawnSidebar creates a sidebar pane in windowID at the given edge and
 // returns its pane id ("" on failure). A stashed sidebar pane is restored
 // via join-pane when one exists; otherwise a fresh pane runs
-// scriptsDir/start.sh. Neither path focuses the new pane — the TUI
-// refocuses itself after terminal-capability detection, and focusing
-// earlier leaks capability query responses into the main pane as garbage
-// escape sequences (see provider.ts spawnSidebar).
+// scriptsDir/start.sh. Neither path focuses the new pane, preventing user
+// keystrokes from reaching the sidebar while its TUI starts.
 //
 // Lists panes itself, fresh per call: a caller-shared listing would offer
 // the same stashed pane to every window, and join-pane would keep moving
@@ -106,9 +104,9 @@ func (t *Tmux) SpawnSidebar(windowID string, width int, position, scriptsDir str
 
 	// Restore-from-stash first: hide/show cycles park live TUI panes in
 	// the stash session rather than killing them.
-	joinFlags := []string{"-h", "-f"}
+	joinFlags := []string{"-d", "-h", "-f"}
 	if position == "left" {
-		joinFlags = []string{"-hb", "-f"}
+		joinFlags = []string{"-d", "-hb", "-f"}
 	}
 	if id := t.restoreFromStash(panes, func(p Pane) bool { return p.Sidebar },
 		joinFlags, width, target.ID, sidebarMarkerOption, SidebarPaneTitle); id != "" {
@@ -147,10 +145,10 @@ func (t *Tmux) restoreFromStash(panes []Pane, isKind func(Pane) bool, joinFlags 
 
 // SpawnManagedPane splits targetPane, sizes the new pane, runs command
 // inside it, and marks it as tcm-managed. Returns the new pane id ("" on
-// failure). splitFlags travel verbatim to split-window so each caller
-// pins its exact orientation/placement arg sequence.
+// failure). Managed panes are always detached so creating one never steals
+// focus; splitFlags provide only the caller-specific orientation/placement.
 func (t *Tmux) SpawnManagedPane(targetPane string, splitFlags []string, size int, command, markerOption, title string) string {
-	args := append([]string{"split-window"}, splitFlags...)
+	args := append([]string{"split-window", "-d"}, splitFlags...)
 	args = append(args, "-l", strconv.Itoa(size), "-t", targetPane, "-P", "-F", "#{pane_id}", command)
 	newID, err := t.Run(args...)
 	if err != nil || newID == "" {

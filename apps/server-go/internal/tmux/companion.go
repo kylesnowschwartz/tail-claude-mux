@@ -39,9 +39,8 @@ func CompanionPanes(panes []Pane) []Pane {
 // and returns its pane id ("" on failure). A stashed companion pane is
 // restored via join-pane when one exists (hide/show cycles park live
 // guests in the stash rather than killing them); otherwise a fresh pane
-// runs command. Both paths pass -d: unlike the sidebar TUI, which
-// refocuses the main pane itself after spawning focused, an arbitrary
-// guest never gives focus back — so the companion must never take it.
+// runs command. Restore passes -d directly; fresh creation inherits the
+// detached-focus invariant from SpawnManagedPane.
 //
 // Lists panes itself, fresh per call, for the same reason SpawnSidebar
 // does: a caller-shared listing would offer the same stashed pane to
@@ -51,7 +50,7 @@ func (t *Tmux) SpawnCompanion(sidebarPaneID string, rows int, command string) st
 		[]string{"-d", "-v"}, rows, sidebarPaneID, companionMarkerOption, CompanionPaneTitle); id != "" {
 		return id
 	}
-	return t.SpawnManagedPane(sidebarPaneID, []string{"-d", "-v"}, rows, command,
+	return t.SpawnManagedPane(sidebarPaneID, []string{"-v"}, rows, command,
 		companionMarkerOption, CompanionPaneTitle)
 }
 
