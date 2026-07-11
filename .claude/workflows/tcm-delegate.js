@@ -120,12 +120,21 @@ if (!READABLE) {
 }
 
 phase('Result')
-const result = await agent(resultPrompt({ session: spawned.session_name }), {
-  label: `result:${spawned.session_name}`, phase: 'Result', model: 'haiku', effort: 'low', schema: RESULT_SCHEMA,
-})
+// Invariant: once the delegate reached a readable state, this workflow
+// returns that outcome no matter what the result leg does. A schema
+// retry-cap inside agent() THROWS — without this catch it voids a
+// delegation whose real work already succeeded.
+let result = null
+try {
+  result = await agent(resultPrompt({ session: spawned.session_name }), {
+    label: `result:${spawned.session_name}`, phase: 'Result', model: 'haiku', effort: 'low', schema: RESULT_SCHEMA,
+  })
+} catch (e) {
+  log(`tcm-delegate: result leg failed (${e && e.message ? e.message : e}); delegate outcome preserved`)
+}
 return {
   outcome: watch.resolution,
-  detail: result ? result.evidence : 'result leg died; pane capture is the fallback',
+  detail: result ? result.evidence : `result leg failed; curl localhost:7391/result?session=${spawned.session_name}`,
   sessionName: spawned.session_name, paneId: spawned.pane_id, dir: cfg.dir,
   resultSummary: result ? result.summary : '', watch,
 }
