@@ -65,13 +65,13 @@ echo "SESSION=$SESH PANE=$PANE WINDOW=$WIN ALIVE=$ALIVE NOTE=ok"`
 function spawnPrompt(p) {
   return `You are a delegate spawner. Three steps, nothing else.
 
-STEP 1 — Write the following brief text EXACTLY to a file named delegate-brief.md in your scratchpad directory:
+STEP 1 — Write the following brief text EXACTLY to a file named delegate-brief-${p.name}.md in your scratchpad directory:
 ---BEGIN BRIEF---
 ${p.brief}
 ---END BRIEF---
 (Do not include the BEGIN/END marker lines in the file.)
 
-STEP 2 — Write the following script to tcm-spawn.sh in your scratchpad directory, VERBATIM except for ONE edit: replace __BRIEF__ with the absolute path of the delegate-brief.md you just wrote.
+STEP 2 — Write the following script to tcm-spawn-${p.name}.sh in your scratchpad directory, VERBATIM except for ONE edit: replace __BRIEF__ with the absolute path of the delegate-brief-${p.name}.md you just wrote.
 
 ${spawnScript(p)}
 
@@ -81,7 +81,9 @@ HARD RULES: write only inside your scratchpad; do not send keys to, capture, or 
 }
 
 function resultPrompt(p) {
-  return `A codex delegate working in ${p.dir} has finished. Find its rollout: the newest file matching ~/.codex/sessions/*/*/*/rollout-*.jsonl whose FIRST line contains "cwd":"${p.dir}" (check the newest ~40 by mtime; use head -1 plus grep/jq per file — never cat a whole rollout). From that file, extract the FINAL assistant message (the last line whose payload has type "message" with role "assistant", or the last agent_message payload — the format drifts, so fall back to the last line containing meaningful assistant text). Return StructuredOutput: summary = the delegate's conclusions in at most 120 words (verbatim key claims, no embellishment), rollout_path = the file you read, evidence = one clause on how you identified the final message. If no rollout matches, summary="" and evidence explains. Read nothing except rollout files under ~/.codex/sessions; write nothing anywhere.`
+  return `Run this single command exactly once: curl -fsS 'localhost:7391/result?session=${encodeURIComponent(p.session)}'
+
+Map the JSON response to StructuredOutput: summary=finalMessage, rollout_path=rolloutPath, evidence=identification+"; status="+status. If curl fails, including HTTP 404, return summary="", rollout_path="", and put the curl failure in evidence. Do not read or scan rollout files. Do not run any other command.`
 }
 
 let cfg = args || {}
@@ -118,8 +120,8 @@ if (!READABLE) {
 }
 
 phase('Result')
-const result = await agent(resultPrompt({ dir: cfg.dir }), {
-  label: `result:${spawned.session_name}`, phase: 'Result', model: 'sonnet', effort: 'low', schema: RESULT_SCHEMA,
+const result = await agent(resultPrompt({ session: spawned.session_name }), {
+  label: `result:${spawned.session_name}`, phase: 'Result', model: 'haiku', effort: 'low', schema: RESULT_SCHEMA,
 })
 return {
   outcome: watch.resolution,
