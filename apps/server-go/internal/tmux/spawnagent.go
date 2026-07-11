@@ -148,7 +148,7 @@ func (t *Tmux) resolveSpawnAgentName(req SpawnAgentRequest) (string, error) {
 	} else {
 		foundOwner := false
 		for _, session := range sessions {
-			if session.Name == req.OwnerSession {
+			if session.Name == req.OwnerSession || session.ID == req.OwnerSession {
 				foundOwner = true
 				break
 			}

@@ -156,14 +156,14 @@ func TestResolveSpawnAgentWindowName(t *testing.T) {
 		}
 	}}
 
-	got, err := tm.resolveSpawnAgentName(SpawnAgentRequest{Dir: dir, Name: "agent", OwnerSession: "owner"})
+	got, err := tm.resolveSpawnAgentName(SpawnAgentRequest{Dir: dir, Name: "agent", OwnerSession: "$1"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != "agent-3" {
 		t.Errorf("name = %q, want agent-3", got)
 	}
-	wantListWindows := []string{"list-windows", "-t", "owner", "-F", "#{window_name}"}
+	wantListWindows := []string{"list-windows", "-t", "$1", "-F", "#{window_name}"}
 	if len(commands) != 2 || !reflect.DeepEqual(commands[1], wantListWindows) {
 		t.Errorf("commands = %#v, want list-sessions then %#v", commands, wantListWindows)
 	}
