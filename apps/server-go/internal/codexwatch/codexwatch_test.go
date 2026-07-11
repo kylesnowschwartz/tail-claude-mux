@@ -111,7 +111,7 @@ func TestHookStatusMapAndStrictAgentFilter(t *testing.T) {
 			t.Fatalf("agent %q was accepted", agent)
 		}
 	}
-	if _, ok := hookStatusMap["Unknown"]; ok {
+	if _, ok := rollout.ClaimForHookEvent("Unknown"); ok {
 		t.Fatal("unknown event unexpectedly mapped")
 	}
 }

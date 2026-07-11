@@ -11,7 +11,6 @@
 package codexwatch
 
 import (
-	"encoding/json"
 	"errors"
 	"log"
 	"os"
@@ -24,7 +23,6 @@ import (
 
 	"github.com/kylesnowschwartz/agent-ouija/codex/discover"
 	"github.com/kylesnowschwartz/agent-ouija/codex/rollout"
-	"github.com/kylesnowschwartz/agent-ouija/jsonl"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/textutil"
@@ -34,23 +32,7 @@ import (
 
 const staleMS = 5 * 60 * 1000
 
-const approvalContextScanBytes = 256 * 1024
-
 var codexCmdRE = regexp.MustCompile(`(?i)(?:^|/)codex($|[\s/])`)
-
-var hookStatusMap = map[string]string{
-	"SessionStart":      wire.StatusIdle,
-	"UserPromptSubmit":  wire.StatusRunning,
-	"PreToolUse":        wire.StatusRunning,
-	"PostToolUse":       wire.StatusRunning,
-	"PermissionRequest": wire.StatusWaiting,
-	// Stop is a turn boundary, not a session end: the codex process stays
-	// alive at its prompt, so the row rests at idle like a live agent.
-	// Trade-off: idle is not terminal, so a turn finishing in an inactive
-	// session sets no unseen badge (tracker's unseen policy keys on
-	// terminal/waiting).
-	"Stop": wire.StatusIdle,
-}
 
 type Context struct {
 	ResolveSession      func(projectDir string) string
@@ -147,8 +129,8 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	if payload.Agent != "codex" || a.ctx == nil {
 		return
 	}
-	newStatus := hookStatusMap[payload.Event]
-	if newStatus == "" {
+	claim, ok := rollout.ClaimForHookEvent(payload.Event)
+	if !ok {
 		return
 	}
 
@@ -173,16 +155,11 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 			log.Printf("codex-hook %s: pid unresolved (reported=%d, snapshot=%dB)", shortThread(threadID), payload.PID, len(payload.ProcessSnapshot))
 		}
 	}
-	if payload.Event == "Stop" {
-		if status := a.rolloutStatusForThread(state.pid, threadID); wire.IsTerminalStatus(status) {
-			newStatus = status
-		}
-	} else if payload.Event == "PermissionRequest" && a.approvalIsAutoReviewed(state.pid, threadID) {
-		// An external approval reviewer resumes Codex without user input. Its
-		// PermissionRequest hook is an authorization boundary, not a blocked
-		// pane, so keep the thread running.
-		newStatus = wire.StatusRunning
+	var evidence rollout.State
+	if claim.NeedsEvidence() {
+		evidence = a.trailingStateForThread(state.pid, threadID)
 	}
+	newStatus := verdictWire(rollout.Reconcile(claim, evidence))
 
 	session := a.resolveStateSession(state, payload.Cwd)
 	if session == "" {
@@ -231,32 +208,16 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	}
 }
 
-func (a *Adapter) approvalIsAutoReviewed(pid int, threadID string) bool {
+func (a *Adapter) trailingStateForThread(pid int, threadID string) rollout.State {
 	path := a.rolloutPathForPID(pid, threadID)
 	if path == "" && threadID != "" {
 		path = a.rolloutPathForThread(threadID)
 	}
-	if path == "" {
-		return false
+	state, err := trailingRolloutState(path)
+	if err != nil {
+		return rollout.State{}
 	}
-
-	autoReviewed := false
-	found := false
-	err := jsonl.ReverseScan(path, approvalContextScanBytes, func(line []byte) bool {
-		var entry struct {
-			Type    string `json:"type"`
-			Payload struct {
-				ApprovalsReviewer string `json:"approvals_reviewer"`
-			} `json:"payload"`
-		}
-		if json.Unmarshal(line, &entry) != nil || entry.Type != "turn_context" {
-			return true
-		}
-		found = true
-		autoReviewed = entry.Payload.ApprovalsReviewer == "auto_review"
-		return false
-	})
-	return err == nil && found && autoReviewed
+	return state
 }
 
 type emitKind int
@@ -414,20 +375,31 @@ func scanRolloutPath(path string) tracker.ProbeVerdict {
 	}
 }
 
-func (a *Adapter) rolloutStatusForThread(pid int, threadID string) string {
-	path := a.rolloutPathForPID(pid, threadID)
-	if path == "" && threadID != "" {
-		path = a.rolloutPathForThread(threadID)
-	}
-	return rolloutStatusForPath(path)
-}
-
 func rolloutStatusForPath(path string) string {
 	state, err := trailingRolloutState(path)
 	if err != nil {
 		return ""
 	}
 	return wireStatus(state.Status)
+}
+
+func verdictWire(verdict rollout.Verdict) string {
+	switch verdict {
+	case rollout.VerdictIdle:
+		return wire.StatusIdle
+	case rollout.VerdictRunning:
+		return wire.StatusRunning
+	case rollout.VerdictWaiting:
+		return wire.StatusWaiting
+	case rollout.VerdictDone:
+		return wire.StatusDone
+	case rollout.VerdictInterrupted:
+		return wire.StatusInterrupted
+	case rollout.VerdictError:
+		return wire.StatusError
+	default:
+		return ""
+	}
 }
 
 func (a *Adapter) rolloutPathForPID(pid int, threadID string) string {
