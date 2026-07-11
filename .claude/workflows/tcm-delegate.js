@@ -56,7 +56,7 @@ function spawnScript(p) {
 BRIEF='__BRIEF__'
 OWNER='${p.ownerSession || ''}'
 if [ -z "$OWNER" ]; then OWNER=$(tmux display-message -p '#{session_name}' 2>/dev/null || true); fi
-RESP=$(curl -fsS -X POST localhost:7391/spawn-agent -H 'Content-Type: application/json' -d "$(jq -n --arg dir '${p.dir}' --arg name '${p.name}' --arg owner "$OWNER" --rawfile pr "$BRIEF" '{dir:$dir, agent:"codex", prompt:$pr, name:$name, command:["codex","-c","mcp_servers.just.enabled=false"]} + (if $owner != "" then {ownerSession:$owner} else {} end)')")
+RESP=$(curl -fsS -X POST localhost:7391/spawn-agent -H 'Content-Type: application/json' -d "$(jq -n --arg dir '${p.dir}' --arg name '${p.name}' --arg owner "$OWNER" --rawfile pr "$BRIEF" '{dir:$dir, agent:"codex", prompt:$pr, name:$name, command:["codex","--dangerously-bypass-approvals-and-sandbox","-c","mcp_servers.just.enabled=false"]} + (if $owner != "" then {ownerSession:$owner} else {} end)')")
 if [ -z "$RESP" ]; then echo "SESSION=none PANE=none WINDOW=none OWNER=$OWNER ALIVE=no NOTE=spawn-request-failed"; exit 0; fi
 SESH=$(printf '%s' "$RESP" | jq -r .sessionName)
 PANE=$(printf '%s' "$RESP" | jq -r .paneId)
