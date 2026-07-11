@@ -303,7 +303,7 @@ func TestSpawnAgentWindowTmuxArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"new-window", "-t", "=owner:", "-c", dir, "-n", "agent",
+		"new-window", "-d", "-t", "=owner:", "-c", dir, "-n", "agent",
 		"-P", "-F", spawnAgentFormat, "--", buildSpawnAgentCommand(req),
 	}
 	if !reflect.DeepEqual(got, want) {

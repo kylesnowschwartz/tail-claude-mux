@@ -72,7 +72,9 @@ func (t *Tmux) SpawnAgent(req SpawnAgentRequest) (SpawnAgentResult, error) {
 	command := buildSpawnAgentCommand(req)
 	args := []string{"new-session", "-d", "-s", name, "-c", req.Dir}
 	if req.OwnerSession != "" {
-		args = []string{"new-window", "-t", exactOwnerSessionTarget(req.OwnerSession), "-c", req.Dir, "-n", name}
+		// -d keeps focus on the caller's window — a spawned delegate must
+		// never yank Kyle away from what he is doing.
+		args = []string{"new-window", "-d", "-t", exactOwnerSessionTarget(req.OwnerSession), "-c", req.Dir, "-n", name}
 	}
 	args = append(args, "-P", "-F", spawnAgentFormat, "--", command)
 	out, err := t.Run(args...)
