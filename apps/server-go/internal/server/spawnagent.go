@@ -9,7 +9,7 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 )
 
-// handleSpawnAgent starts an agent in a detached tmux session.
+// handleSpawnAgent starts an agent in a tmux session or owner window.
 func (s *Server) handleSpawnAgent(w http.ResponseWriter, r *http.Request) {
 	var req tmux.SpawnAgentRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, apiBodyLimit))

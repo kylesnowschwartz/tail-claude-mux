@@ -140,6 +140,41 @@ func TestResolveSpawnAgentName(t *testing.T) {
 	}
 }
 
+func TestResolveSpawnAgentWindowName(t *testing.T) {
+	dir := t.TempDir()
+	var commands [][]string
+	tm := &Tmux{Run: func(args ...string) (string, error) {
+		commands = append(commands, append([]string(nil), args...))
+		switch args[0] {
+		case "list-sessions":
+			return "$1\towner\t0\t0\t2\t/tmp\n$2\tother\t0\t0\t1\t/tmp", nil
+		case "list-windows":
+			return "agent\nagent-2", nil
+		default:
+			t.Fatalf("unexpected tmux command %q", args[0])
+			return "", nil
+		}
+	}}
+
+	got, err := tm.resolveSpawnAgentName(SpawnAgentRequest{Dir: dir, Name: "agent", OwnerSession: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "agent-3" {
+		t.Errorf("name = %q, want agent-3", got)
+	}
+	wantListWindows := []string{"list-windows", "-t", "owner", "-F", "#{window_name}"}
+	if len(commands) != 2 || !reflect.DeepEqual(commands[1], wantListWindows) {
+		t.Errorf("commands = %#v, want list-sessions then %#v", commands, wantListWindows)
+	}
+
+	_, err = tm.resolveSpawnAgentName(SpawnAgentRequest{Dir: dir, Name: "agent", OwnerSession: "missing"})
+	var validationErr *SpawnAgentValidationError
+	if !errors.As(err, &validationErr) || err.Error() != "owner session does not exist" {
+		t.Fatalf("missing owner error = %v, want validation error", err)
+	}
+}
+
 func TestSpawnAgentCommandQuoting(t *testing.T) {
 	prompt := "fix 'single' and \"double\"\nthen print $HOME"
 	tests := []struct {
@@ -242,6 +277,39 @@ func TestSpawnAgentTmuxArguments(t *testing.T) {
 		t.Errorf("args = %#v, want %#v", got, want)
 	}
 	if result != (SpawnAgentResult{SessionName: "agent", PaneID: "%42", WindowID: "@7"}) {
+		t.Errorf("result = %#v", result)
+	}
+}
+
+func TestSpawnAgentWindowTmuxArguments(t *testing.T) {
+	dir := t.TempDir()
+	var got []string
+	tm := &Tmux{Run: func(args ...string) (string, error) {
+		switch args[0] {
+		case "list-sessions":
+			return "$1\towner\t0\t0\t1\t/tmp", nil
+		case "list-windows":
+			return "shell", nil
+		default:
+			got = append([]string(nil), args...)
+			return "owner %42 @7", nil
+		}
+	}}
+	req := SpawnAgentRequest{
+		Dir: dir, Agent: "pi", Prompt: "task", Name: "agent", OwnerSession: "owner",
+	}
+	result, err := tm.SpawnAgent(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"new-window", "-t", "owner", "-c", dir, "-n", "agent",
+		"-P", "-F", spawnAgentFormat, "--", buildSpawnAgentCommand(req),
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("args = %#v, want %#v", got, want)
+	}
+	if result != (SpawnAgentResult{SessionName: "owner", PaneID: "%42", WindowID: "@7"}) {
 		t.Errorf("result = %#v", result)
 	}
 }

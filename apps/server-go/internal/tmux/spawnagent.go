@@ -32,10 +32,11 @@ var spawnAgents = map[string]struct {
 
 // SpawnAgentRequest is the POST /spawn-agent request.
 type SpawnAgentRequest struct {
-	Dir    string `json:"dir"`
-	Agent  string `json:"agent"`
-	Prompt string `json:"prompt"`
-	Name   string `json:"name,omitempty"`
+	Dir          string `json:"dir"`
+	Agent        string `json:"agent"`
+	Prompt       string `json:"prompt"`
+	Name         string `json:"name,omitempty"`
+	OwnerSession string `json:"ownerSession,omitempty"`
 	// Command replaces the default agent argv. Its prompt is appended bare;
 	// callers supplying an override own any end-of-options handling it needs.
 	Command []string `json:"command,omitempty"`
@@ -56,7 +57,7 @@ type SpawnAgentValidationError struct {
 // Error implements error.
 func (e *SpawnAgentValidationError) Error() string { return e.message }
 
-// SpawnAgent validates and starts an agent in a new detached tmux session.
+// SpawnAgent validates and starts an agent in a new tmux session or owner window.
 func (t *Tmux) SpawnAgent(req SpawnAgentRequest) (SpawnAgentResult, error) {
 	if err := validateSpawnAgentRequest(req); err != nil {
 		return SpawnAgentResult{}, err
@@ -67,8 +68,12 @@ func (t *Tmux) SpawnAgent(req SpawnAgentRequest) (SpawnAgentResult, error) {
 		return SpawnAgentResult{}, err
 	}
 	command := buildSpawnAgentCommand(req)
-	out, err := t.Run("new-session", "-d", "-s", name, "-c", req.Dir,
-		"-P", "-F", spawnAgentFormat, "--", command)
+	args := []string{"new-session", "-d", "-s", name, "-c", req.Dir}
+	if req.OwnerSession != "" {
+		args = []string{"new-window", "-t", req.OwnerSession, "-c", req.Dir, "-n", name}
+	}
+	args = append(args, "-P", "-F", spawnAgentFormat, "--", command)
+	out, err := t.Run(args...)
 	if err != nil {
 		return SpawnAgentResult{}, fmt.Errorf("tmux could not start the agent: %s", tmuxErrorDetail(out, err))
 	}
@@ -136,8 +141,30 @@ func (t *Tmux) resolveSpawnAgentName(req SpawnAgentRequest) (string, error) {
 		return "", fmt.Errorf("tmux could not list sessions: %w", err)
 	}
 	existing := make(map[string]struct{}, len(sessions))
-	for _, session := range sessions {
-		existing[session.Name] = struct{}{}
+	if req.OwnerSession == "" {
+		for _, session := range sessions {
+			existing[session.Name] = struct{}{}
+		}
+	} else {
+		foundOwner := false
+		for _, session := range sessions {
+			if session.Name == req.OwnerSession {
+				foundOwner = true
+				break
+			}
+		}
+		if !foundOwner {
+			return "", &SpawnAgentValidationError{message: "owner session does not exist"}
+		}
+		out, err := t.Run("list-windows", "-t", req.OwnerSession, "-F", "#{window_name}")
+		if err != nil {
+			return "", fmt.Errorf("tmux could not list owner session windows: %w", err)
+		}
+		for name := range strings.SplitSeq(out, "\n") {
+			if name != "" {
+				existing[name] = struct{}{}
+			}
+		}
 	}
 	for suffix := 1; suffix <= spawnAgentDedupeLimit; suffix++ {
 		candidate := name
@@ -147,6 +174,9 @@ func (t *Tmux) resolveSpawnAgentName(req SpawnAgentRequest) (string, error) {
 		if _, found := existing[candidate]; !found {
 			return candidate, nil
 		}
+	}
+	if req.OwnerSession != "" {
+		return "", fmt.Errorf("could not find an available tmux window name")
 	}
 	return "", fmt.Errorf("could not find an available tmux session name")
 }
