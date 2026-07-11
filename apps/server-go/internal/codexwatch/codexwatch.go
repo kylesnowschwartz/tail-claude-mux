@@ -48,6 +48,7 @@ type threadState struct {
 	nameFromIndex       bool
 	nameLookupInFlight  bool
 	pid                 int
+	routingPID          int
 	dropLogged          bool
 	lastToolDescription string
 	lastToolVerb        string
@@ -147,11 +148,14 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		processes := procwalk.ParseProcessSnapshot(payload.ProcessSnapshot)
 		resolved := procwalk.ResolveAgentSessionPid(payload.PID, codexCmdRE, processes)
 		if resolved != payload.PID {
-			state.pid = resolved
+			state.routingPID = resolved
 		} else if info, ok := processes[payload.PID]; ok && codexCmdRE.MatchString(info.Command) {
-			state.pid = payload.PID
+			state.routingPID = payload.PID
 		}
-		if state.pid == 0 {
+		if state.routingPID != 0 && a.rolloutPathForPID(state.routingPID, threadID) != "" {
+			state.pid = state.routingPID
+		}
+		if state.routingPID == 0 {
 			log.Printf("codex-hook %s: pid unresolved (reported=%d, snapshot=%dB)", shortThread(threadID), payload.PID, len(payload.ProcessSnapshot))
 		}
 	}
@@ -243,8 +247,8 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, kind
 }
 
 func (a *Adapter) resolveStateSession(state *threadState, fallbackCwd string) string {
-	if state.pid != 0 {
-		return a.ctx.ResolveSessionByPid(state.pid)
+	if state.routingPID != 0 {
+		return a.ctx.ResolveSessionByPid(state.routingPID)
 	}
 	if state.projectDir != "" {
 		return a.ctx.ResolveSession(state.projectDir)

@@ -155,6 +155,7 @@ func TestDedupAndToolDescriptionLifecycle(t *testing.T) {
 }
 
 func TestPidResolutionBranchesAndAuthoritativeRouting(t *testing.T) {
+	const threadID = "12345678-1234-1234-1234-123456789abc"
 	cases := []struct {
 		name        string
 		reported    int
@@ -171,8 +172,12 @@ func TestPidResolutionBranchesAndAuthoritativeRouting(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: "thread", Cwd: "/project", PID: tc.reported, ProcessSnapshot: tc.snapshot})
-			state := h.adapter.threads["thread"]
+			if tc.wantPID != 0 {
+				path := writeRollout(t, h.adapter.SessionsDir, threadID, `"cli"`, "")
+				h.adapter.openFilesForPID = func(int) []string { return []string{path} }
+			}
+			h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: threadID, Cwd: "/project", PID: tc.reported, ProcessSnapshot: tc.snapshot})
+			state := h.adapter.threads[threadID]
 			if state == nil || state.pid != tc.wantPID {
 				t.Fatalf("pid = %v, want %d", state, tc.wantPID)
 			}
@@ -185,6 +190,61 @@ func TestPidResolutionBranchesAndAuthoritativeRouting(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHookPidRequiresRolloutOwnership(t *testing.T) {
+	const parentPID = 200
+	parentThreadID := "12345678-1234-1234-1234-123456789abc"
+	foreignThreadID := "87654321-4321-4321-4321-cba987654321"
+	payload := wire.HookPayload{
+		Agent:           "codex",
+		Event:           "UserPromptSubmit",
+		Cwd:             "/project",
+		PID:             300,
+		ProcessSnapshot: "300 200 /bin/sh hook\n200 100 /usr/local/bin/codex",
+	}
+
+	t.Run("foreign thread cannot steal parent row", func(t *testing.T) {
+		h := newHarness(t)
+		parentRollout := writeRollout(t, h.adapter.SessionsDir, parentThreadID, `"cli"`, "")
+		h.adapter.openFilesForPID = func(pid int) []string {
+			if pid != parentPID {
+				t.Fatalf("pid = %d, want %d", pid, parentPID)
+			}
+			return []string{parentRollout}
+		}
+		tr := tracker.New()
+		tr.ApplyEvent(wire.AgentEvent{
+			Agent: "codex", Session: "pid-session", ThreadID: parentThreadID,
+			Status: wire.StatusRunning, PaneID: "%7", PID: parentPID,
+		}, false)
+		h.adapter.ctx.Emit = func(ev wire.AgentEvent) { tr.ApplyEvent(ev, false) }
+
+		payload.SessionID = foreignThreadID
+		h.adapter.HandleHook(payload)
+
+		if state := h.adapter.threads[foreignThreadID]; state == nil || state.pid != 0 || state.routingPID != parentPID {
+			t.Fatalf("foreign thread state = %#v, want identity pid 0 and routing pid %d", state, parentPID)
+		}
+		got := tr.GetEvent("pid-session", "codex", parentThreadID, "")
+		if got == nil || got.ThreadID != parentThreadID || got.PaneID != "%7" || got.PID != parentPID {
+			t.Fatalf("parent state = %#v, want original parent row and pane binding", got)
+		}
+	})
+
+	t.Run("owned thread keeps pid", func(t *testing.T) {
+		h := newHarness(t)
+		parentRollout := writeRollout(t, h.adapter.SessionsDir, parentThreadID, `"cli"`, "")
+		h.adapter.openFilesForPID = func(int) []string { return []string{parentRollout} }
+
+		payload.SessionID = parentThreadID
+		h.adapter.HandleHook(payload)
+
+		got := h.snapshot()
+		if len(got) != 1 || got[0].PID != parentPID || got[0].Session != "pid-session" {
+			t.Fatalf("events = %#v, want owned pid %d routed to pid-session", got, parentPID)
+		}
+	})
 }
 
 func TestHandleHookLogsUnroutableThreadOnce(t *testing.T) {
