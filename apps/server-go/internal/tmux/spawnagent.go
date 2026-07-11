@@ -72,7 +72,7 @@ func (t *Tmux) SpawnAgent(req SpawnAgentRequest) (SpawnAgentResult, error) {
 	command := buildSpawnAgentCommand(req)
 	args := []string{"new-session", "-d", "-s", name, "-c", req.Dir}
 	if req.OwnerSession != "" {
-		args = []string{"new-window", "-t", req.OwnerSession, "-c", req.Dir, "-n", name}
+		args = []string{"new-window", "-t", exactOwnerSessionTarget(req.OwnerSession), "-c", req.Dir, "-n", name}
 	}
 	args = append(args, "-P", "-F", spawnAgentFormat, "--", command)
 	out, err := t.Run(args...)
@@ -158,7 +158,7 @@ func (t *Tmux) resolveSpawnAgentName(req SpawnAgentRequest) (string, error) {
 		if !foundOwner {
 			return "", &SpawnAgentValidationError{message: "owner session does not exist"}
 		}
-		out, err := t.Run("list-windows", "-t", req.OwnerSession, "-F", "#{window_name}")
+		out, err := t.Run("list-windows", "-t", exactOwnerSessionTarget(req.OwnerSession), "-F", "#{window_name}")
 		if err != nil {
 			return "", fmt.Errorf("tmux could not list owner session windows: %w", err)
 		}
@@ -181,6 +181,13 @@ func (t *Tmux) resolveSpawnAgentName(req SpawnAgentRequest) (string, error) {
 		return "", fmt.Errorf("could not find an available tmux window name")
 	}
 	return "", fmt.Errorf("could not find an available tmux session name")
+}
+
+// A bare session name can be shadowed by a window with the same name. The
+// exact-name prefix and empty window suffix force tmux to resolve the session
+// and select its next unused window index.
+func exactOwnerSessionTarget(ownerSession string) string {
+	return "=" + ownerSession + ":"
 }
 
 func buildSpawnAgentCommand(req SpawnAgentRequest) string {

@@ -163,7 +163,7 @@ func TestResolveSpawnAgentWindowName(t *testing.T) {
 	if got != "agent-3" {
 		t.Errorf("name = %q, want agent-3", got)
 	}
-	wantListWindows := []string{"list-windows", "-t", "$1", "-F", "#{window_name}"}
+	wantListWindows := []string{"list-windows", "-t", "=$1:", "-F", "#{window_name}"}
 	if len(commands) != 2 || !reflect.DeepEqual(commands[1], wantListWindows) {
 		t.Errorf("commands = %#v, want list-sessions then %#v", commands, wantListWindows)
 	}
@@ -303,7 +303,7 @@ func TestSpawnAgentWindowTmuxArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"new-window", "-t", "owner", "-c", dir, "-n", "agent",
+		"new-window", "-t", "=owner:", "-c", dir, "-n", "agent",
 		"-P", "-F", spawnAgentFormat, "--", buildSpawnAgentCommand(req),
 	}
 	if !reflect.DeepEqual(got, want) {
