@@ -511,6 +511,57 @@ func TestCompletedStopPreservesAlivePaneState(t *testing.T) {
 	}
 }
 
+func TestAutoReviewedApprovalDoesNotBecomeWaitingAndCompletedTurnBecomesDone(t *testing.T) {
+	dir := t.TempDir()
+	threadID := "12345678-1234-1234-1234-123456789abc"
+	path := writeRollout(t, dir, threadID, `"cli"`,
+		`{"type":"turn_context","payload":{"cwd":"/project","approvals_reviewer":"auto_review"}}`+"\n"+
+			`{"type":"response_item","payload":{"type":"reasoning"}}`+"\n")
+
+	h := newHarness(t)
+	h.adapter.SessionsDir = dir
+	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project"})
+	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "PermissionRequest", SessionID: threadID, Cwd: "/project"})
+	for _, ev := range h.snapshot() {
+		if ev.Status == wire.StatusWaiting {
+			t.Fatalf("auto-reviewed approval emitted waiting: %#v", h.snapshot())
+		}
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, writeErr := f.WriteString(`{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"RESULT: complete"}]}}` + "\n")
+	closeErr := f.Close()
+	if writeErr != nil || closeErr != nil {
+		t.Fatalf("append final assistant message: write=%v close=%v", writeErr, closeErr)
+	}
+
+	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: threadID, Cwd: "/project"})
+	got := h.snapshot()
+	if got[len(got)-1].Status != wire.StatusDone {
+		t.Fatalf("completed turn status = %q, want done; events=%#v", got[len(got)-1].Status, got)
+	}
+}
+
+func TestManualApprovalStillBecomesWaitingPromptly(t *testing.T) {
+	dir := t.TempDir()
+	threadID := "12345678-1234-1234-1234-123456789abc"
+	writeRollout(t, dir, threadID, `"cli"`,
+		`{"type":"turn_context","payload":{"cwd":"/project"}}`+"\n"+
+			`{"type":"response_item","payload":{"type":"reasoning"}}`+"\n")
+
+	h := newHarness(t)
+	h.adapter.SessionsDir = dir
+	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project"})
+	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "PermissionRequest", SessionID: threadID, Cwd: "/project"})
+	got := h.snapshot()
+	if got[len(got)-1].Status != wire.StatusWaiting {
+		t.Fatalf("manual approval status = %q, want waiting", got[len(got)-1].Status)
+	}
+}
+
 func TestRolloutStatusMapping(t *testing.T) {
 	cases := []struct{ typ, payload, want string }{
 		{"event_msg", `{"type":"task_complete"}`, wire.StatusDone},

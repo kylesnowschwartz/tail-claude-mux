@@ -11,6 +11,7 @@
 package codexwatch
 
 import (
+	"encoding/json"
 	"errors"
 	"log"
 	"os"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/kylesnowschwartz/agent-ouija/codex/discover"
 	"github.com/kylesnowschwartz/agent-ouija/codex/rollout"
+	"github.com/kylesnowschwartz/agent-ouija/jsonl"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/textutil"
@@ -31,6 +33,8 @@ import (
 )
 
 const staleMS = 5 * 60 * 1000
+
+const approvalContextScanBytes = 256 * 1024
 
 var codexCmdRE = regexp.MustCompile(`(?i)(?:^|/)codex($|[\s/])`)
 
@@ -173,6 +177,11 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		if status := a.rolloutStatusForThread(state.pid, threadID); wire.IsTerminalStatus(status) {
 			newStatus = status
 		}
+	} else if payload.Event == "PermissionRequest" && a.approvalIsAutoReviewed(state.pid, threadID) {
+		// An external approval reviewer resumes Codex without user input. Its
+		// PermissionRequest hook is an authorization boundary, not a blocked
+		// pane, so keep the thread running.
+		newStatus = wire.StatusRunning
 	}
 
 	session := a.resolveStateSession(state, payload.Cwd)
@@ -220,6 +229,34 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	if payload.Event == "Stop" {
 		a.resolveThreadNameAsync(threadID, state)
 	}
+}
+
+func (a *Adapter) approvalIsAutoReviewed(pid int, threadID string) bool {
+	path := a.rolloutPathForPID(pid, threadID)
+	if path == "" && threadID != "" {
+		path = a.rolloutPathForThread(threadID)
+	}
+	if path == "" {
+		return false
+	}
+
+	autoReviewed := false
+	found := false
+	err := jsonl.ReverseScan(path, approvalContextScanBytes, func(line []byte) bool {
+		var entry struct {
+			Type    string `json:"type"`
+			Payload struct {
+				ApprovalsReviewer string `json:"approvals_reviewer"`
+			} `json:"payload"`
+		}
+		if json.Unmarshal(line, &entry) != nil || entry.Type != "turn_context" {
+			return true
+		}
+		found = true
+		autoReviewed = entry.Payload.ApprovalsReviewer == "auto_review"
+		return false
+	})
+	return err == nil && found && autoReviewed
 }
 
 type emitKind int
