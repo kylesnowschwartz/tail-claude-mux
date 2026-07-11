@@ -61,9 +61,9 @@ if [ -z "$RESP" ]; then echo "SESSION=none PANE=none WINDOW=none OWNER=$OWNER AL
 SESH=$(printf '%s' "$RESP" | jq -r .sessionName)
 PANE=$(printf '%s' "$RESP" | jq -r .paneId)
 WIN=$(printf '%s' "$RESP" | jq -r .windowId)
-if [ -n "$OWNER" ]; then OWNER="$SESH"; fi
+if [ -n "$OWNER" ] && [ "$SESH" != "$OWNER" ]; then OWNER=""; fi
 sleep 2
-if tmux has-session -t "=$SESH" 2>/dev/null; then ALIVE=yes; else ALIVE=no; fi
+if [ -n "$PANE" ] && [ "$PANE" != "none" ] && tmux display-message -p -t "$PANE" '#{pane_id}' >/dev/null 2>&1; then ALIVE=yes; else ALIVE=no; fi
 echo "SESSION=$SESH PANE=$PANE WINDOW=$WIN OWNER=$OWNER ALIVE=$ALIVE NOTE=ok"`
 }
 
