@@ -230,6 +230,47 @@ func TestHookPidRequiresRolloutOwnership(t *testing.T) {
 		if got == nil || got.ThreadID != parentThreadID || got.PaneID != "%7" || got.PID != parentPID {
 			t.Fatalf("parent state = %#v, want original parent row and pane binding", got)
 		}
+		if got := tr.GetEvent("pid-session", "codex", foreignThreadID, ""); got != nil {
+			t.Fatalf("foreign tracker row = %#v, want no row", got)
+		}
+	})
+
+	t.Run("foreign hook before parent row is suppressed", func(t *testing.T) {
+		h := newHarness(t)
+		parentRollout := writeRollout(t, h.adapter.SessionsDir, parentThreadID, `"cli"`, "")
+		h.adapter.openFilesForPID = func(int) []string { return []string{parentRollout} }
+		tr := tracker.New()
+		h.adapter.ctx.Emit = func(ev wire.AgentEvent) { tr.ApplyEvent(ev, false) }
+
+		payload.SessionID = foreignThreadID
+		h.adapter.HandleHook(payload)
+
+		if got := tr.GetAgents("pid-session"); len(got) != 0 {
+			t.Fatalf("agents = %#v, want no row before parent scan", got)
+		}
+	})
+
+	t.Run("foreign ownership lookup is cached", func(t *testing.T) {
+		h := newHarness(t)
+		parentRollout := writeRollout(t, h.adapter.SessionsDir, parentThreadID, `"cli"`, "")
+		lookups := 0
+		h.adapter.openFilesForPID = func(int) []string {
+			lookups++
+			return []string{parentRollout}
+		}
+
+		payload.SessionID = foreignThreadID
+		for _, event := range []string{"UserPromptSubmit", "PreToolUse", "PermissionRequest", "Stop", "PostToolUse", "UserPromptSubmit", "PreToolUse"} {
+			payload.Event = event
+			h.adapter.HandleHook(payload)
+		}
+
+		if lookups != 2 {
+			t.Fatalf("ownership lookups = %d, want initial check plus one post-Stop lifecycle recheck", lookups)
+		}
+		if got := h.snapshot(); len(got) != 0 {
+			t.Fatalf("foreign hooks emitted events: %#v", got)
+		}
 	})
 
 	t.Run("owned thread keeps pid", func(t *testing.T) {

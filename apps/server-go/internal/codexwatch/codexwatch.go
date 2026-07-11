@@ -49,6 +49,8 @@ type threadState struct {
 	nameLookupInFlight  bool
 	pid                 int
 	routingPID          int
+	ownershipChecked    bool
+	recheckOwnership    bool
 	dropLogged          bool
 	lastToolDescription string
 	lastToolVerb        string
@@ -144,7 +146,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		a.resolveThreadNameAsync(threadID, state)
 	}
 
-	if state.pid == 0 && payload.PID != 0 && payload.ProcessSnapshot != "" {
+	if state.routingPID == 0 && payload.PID != 0 && payload.ProcessSnapshot != "" {
 		processes := procwalk.ParseProcessSnapshot(payload.ProcessSnapshot)
 		resolved := procwalk.ResolveAgentSessionPid(payload.PID, codexCmdRE, processes)
 		if resolved != payload.PID {
@@ -152,12 +154,28 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		} else if info, ok := processes[payload.PID]; ok && codexCmdRE.MatchString(info.Command) {
 			state.routingPID = payload.PID
 		}
-		if state.routingPID != 0 && a.rolloutPathForPID(state.routingPID, threadID) != "" {
-			state.pid = state.routingPID
-		}
 		if state.routingPID == 0 {
 			log.Printf("codex-hook %s: pid unresolved (reported=%d, snapshot=%dB)", shortThread(threadID), payload.PID, len(payload.ProcessSnapshot))
 		}
+	}
+	shouldRecheck := state.recheckOwnership && (payload.Event == "SessionStart" || payload.Event == "UserPromptSubmit")
+	if state.routingPID != 0 && (!state.ownershipChecked || shouldRecheck) {
+		state.ownershipChecked = true
+		state.recheckOwnership = false
+		if a.rolloutPathForPID(state.routingPID, threadID) != "" {
+			state.pid = state.routingPID
+		}
+	}
+	if state.routingPID != 0 && state.pid == 0 {
+		if !state.dropLogged {
+			log.Printf("codex-hook %s: dropped, pid %d does not own thread", shortThread(threadID), state.routingPID)
+			state.dropLogged = true
+		}
+		if payload.Event == "Stop" {
+			state.recheckOwnership = true
+			a.resolveThreadNameAsync(threadID, state)
+		}
+		return
 	}
 	var evidence rollout.State
 	if claim.NeedsEvidence() {
