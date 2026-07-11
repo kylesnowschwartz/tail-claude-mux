@@ -25,7 +25,11 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	state := s.followupState(session)
+	state, resolveErr := s.followupState(session, r.URL.Query().Get("thread"), r.URL.Query().Get("pane"))
+	if resolveErr != nil {
+		writeAgentResolutionError(w, resolveErr)
+		return
+	}
 	if state == nil {
 		writeResultError(w, http.StatusNotFound, "session not found")
 		return

@@ -44,10 +44,15 @@ func (s *Server) mutateMetadata(w http.ResponseWriter, fn func()) {
 func (s *Server) handleSetStatus(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Session string          `json:"session"`
+		Pane    string          `json:"pane,omitempty"`
 		Text    json.RawMessage `json:"text"` // string | null | absent
 		Tone    string          `json:"tone"`
 	}
 	if !decodeAPIBody(w, r, &body, &body.Session) {
+		return
+	}
+	if _, err := s.resolveTrackedEvent(body.Session, "", body.Pane); err != nil {
+		writeAgentResolutionError(w, err)
 		return
 	}
 	// null and absent both clear (bun: `body.text === null || undefined`);
@@ -69,6 +74,7 @@ func (s *Server) handleSetStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSetProgress(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Session string   `json:"session"`
+		Pane    string   `json:"pane,omitempty"`
 		Current *float64 `json:"current"`
 		Total   *float64 `json:"total"`
 		Percent *float64 `json:"percent"`
@@ -76,6 +82,10 @@ func (s *Server) handleSetProgress(w http.ResponseWriter, r *http.Request) {
 		Clear   bool     `json:"clear"`
 	}
 	if !decodeAPIBody(w, r, &body, &body.Session) {
+		return
+	}
+	if _, err := s.resolveTrackedEvent(body.Session, "", body.Pane); err != nil {
+		writeAgentResolutionError(w, err)
 		return
 	}
 	s.mutateMetadata(w, func() {

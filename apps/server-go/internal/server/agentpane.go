@@ -6,7 +6,9 @@
 package server
 
 import (
+	"fmt"
 	"log"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,6 +17,40 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
+
+type agentResolutionError struct {
+	status  int
+	message string
+}
+
+func (s *Server) resolveTrackedEvent(session, threadID, paneID string) (*wire.AgentEvent, *agentResolutionError) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Tracker == nil {
+		if threadID != "" || paneID != "" {
+			return nil, &agentResolutionError{status: http.StatusNotFound, message: "agent not found"}
+		}
+		return nil, nil
+	}
+	if threadID != "" || paneID != "" {
+		state := s.Tracker.GetEvent(session, "", threadID, paneID)
+		if state == nil {
+			return nil, &agentResolutionError{status: http.StatusNotFound, message: "agent not found"}
+		}
+		return state, nil
+	}
+	agents := s.Tracker.GetAgents(session)
+	if len(agents) > 1 {
+		return nil, &agentResolutionError{
+			status: http.StatusBadRequest, message: fmt.Sprintf("session has %d agents; specify pane", len(agents)),
+		}
+	}
+	return s.Tracker.GetState(session), nil
+}
+
+func writeAgentResolutionError(w http.ResponseWriter, err *agentResolutionError) {
+	http.Error(w, err.message, err.status)
+}
 
 // resolveAgentPaneIDLocked finds the tmux pane hosting an agent when the
 // client didn't send one. Strategies in order, all over a fresh pane

@@ -16,6 +16,8 @@ import (
 type followupRequest struct {
 	Session string `json:"session"`
 	Message string `json:"message"`
+	Pane    string `json:"pane,omitempty"`
+	Thread  string `json:"thread,omitempty"`
 }
 
 type followupResponse struct {
@@ -43,7 +45,11 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 	s.followupMu.Lock()
 	defer s.followupMu.Unlock()
 
-	state := s.followupState(req.Session)
+	state, resolveErr := s.followupState(req.Session, req.Thread, req.Pane)
+	if resolveErr != nil {
+		writeAgentResolutionError(w, resolveErr)
+		return
+	}
 	if state == nil {
 		writeFollowupError(w, http.StatusNotFound, "session not found")
 		return
@@ -75,7 +81,12 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 		writeFollowupError(w, http.StatusInternalServerError, "could not write follow-up message")
 		return
 	}
-	current := s.followupState(req.Session)
+	current, resolveErr := s.followupState(req.Session, req.Thread, req.Pane)
+	if resolveErr != nil {
+		_ = os.Remove(messageFile)
+		writeAgentResolutionError(w, resolveErr)
+		return
+	}
 	if current == nil || current.ThreadID != state.ThreadID || current.PaneID != state.PaneID {
 		_ = os.Remove(messageFile)
 		writeFollowupError(w, http.StatusConflict, "session changed before follow-up delivery; refusing to interrupt it")
@@ -113,13 +124,8 @@ func followupStatusConflict(status string) string {
 	}
 }
 
-func (s *Server) followupState(session string) *wire.AgentEvent {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.Tracker == nil {
-		return nil
-	}
-	return s.Tracker.GetState(session)
+func (s *Server) followupState(session, threadID, paneID string) (*wire.AgentEvent, *agentResolutionError) {
+	return s.resolveTrackedEvent(session, threadID, paneID)
 }
 
 func (s *Server) followupDir(session, paneID string) string {

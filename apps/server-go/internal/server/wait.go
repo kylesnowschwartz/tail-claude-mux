@@ -24,6 +24,8 @@ type waitResponse struct {
 
 func (s *Server) handleWait(w http.ResponseWriter, r *http.Request) {
 	session := r.URL.Query().Get("session")
+	paneID := r.URL.Query().Get("pane")
+	threadID := r.URL.Query().Get("thread")
 	if session == "" {
 		http.Error(w, "session is required", http.StatusBadRequest)
 		return
@@ -33,7 +35,12 @@ func (s *Server) handleWait(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "timeout must be a number of seconds", http.StatusBadRequest)
 		return
 	}
-	if s.waitStatus(session) == "" {
+	status, resolveErr := s.waitStatus(session, threadID, paneID)
+	if resolveErr != nil {
+		writeAgentResolutionError(w, resolveErr)
+		return
+	}
+	if status == "" {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
@@ -45,7 +52,11 @@ func (s *Server) handleWait(w http.ResponseWriter, r *http.Request) {
 	defer poll.Stop()
 
 	for {
-		status := s.waitStatus(session)
+		status, resolveErr := s.waitStatus(session, threadID, paneID)
+		if resolveErr != nil {
+			writeAgentResolutionError(w, resolveErr)
+			return
+		}
 		if status == "" {
 			s.writeWaitResponse(w, session, "gone", started, false)
 			return
@@ -58,7 +69,11 @@ func (s *Server) handleWait(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-deadline.C:
-			status = s.waitStatus(session)
+			status, resolveErr = s.waitStatus(session, threadID, paneID)
+			if resolveErr != nil {
+				writeAgentResolutionError(w, resolveErr)
+				return
+			}
 			if status == "" {
 				status = "gone"
 			}
@@ -87,17 +102,12 @@ func parseWaitTimeout(raw string) (time.Duration, error) {
 	return timeout, nil
 }
 
-func (s *Server) waitStatus(session string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.Tracker == nil {
-		return ""
-	}
-	state := s.Tracker.GetState(session)
+func (s *Server) waitStatus(session, threadID, paneID string) (string, *agentResolutionError) {
+	state, err := s.resolveTrackedEvent(session, threadID, paneID)
 	if state == nil {
-		return ""
+		return "", err
 	}
-	return state.Status
+	return state.Status, err
 }
 
 func (s *Server) waitInterval() time.Duration {

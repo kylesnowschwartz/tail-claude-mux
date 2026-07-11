@@ -58,3 +58,22 @@ func TestResultUnknownSessionIsJSON404(t *testing.T) {
 		t.Fatalf("status = %d, content-type = %q", response.Code, response.Header().Get("Content-Type"))
 	}
 }
+
+func TestResultSelectsPaneInMultiAgentSession(t *testing.T) {
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "pi", ThreadID: "one", PaneID: "%1", Status: wire.StatusDone}, false)
+	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "pi", ThreadID: "two", PaneID: "%2", Status: wire.StatusWaiting}, false)
+	s := &Server{Tracker: tr}
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/result?session=work&pane=%252", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	var body resultResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Status != wire.StatusWaiting || body.ThreadID != "two" {
+		t.Fatalf("response = %+v", body)
+	}
+}

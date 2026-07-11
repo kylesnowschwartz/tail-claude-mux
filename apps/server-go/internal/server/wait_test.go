@@ -4,12 +4,56 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
+
+func TestWaitDisambiguatesMultiAgentSession(t *testing.T) {
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Agent: "codex", Session: "work", ThreadID: "one", PaneID: "%1", Status: wire.StatusDone}, false)
+	tr.ApplyEvent(wire.AgentEvent{Agent: "codex", Session: "work", ThreadID: "two", PaneID: "%2", Status: wire.StatusWaiting}, false)
+	s := &Server{Tracker: tr}
+
+	ambiguous := httptest.NewRecorder()
+	s.Handler().ServeHTTP(ambiguous, httptest.NewRequest(http.MethodGet, "/wait?session=work", nil))
+	if ambiguous.Code != http.StatusBadRequest || !strings.Contains(ambiguous.Body.String(), "session has 2 agents; specify pane") {
+		t.Fatalf("ambiguous response = %d %q", ambiguous.Code, ambiguous.Body.String())
+	}
+
+	selected := httptest.NewRecorder()
+	s.Handler().ServeHTTP(selected, httptest.NewRequest(http.MethodGet, "/wait?session=work&pane=%252", nil))
+	if selected.Code != http.StatusOK {
+		t.Fatalf("selected status = %d: %s", selected.Code, selected.Body.String())
+	}
+	var body waitResponse
+	if err := json.Unmarshal(selected.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Status != wire.StatusWaiting {
+		t.Fatalf("selected response = %+v", body)
+	}
+}
+
+func TestWaitSingleInstanceKeepsLegacyResponse(t *testing.T) {
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Agent: "codex", Session: "work", ThreadID: "one", PaneID: "%1", Status: wire.StatusDone}, false)
+	s := &Server{Tracker: tr}
+
+	legacy := httptest.NewRecorder()
+	s.Handler().ServeHTTP(legacy, httptest.NewRequest(http.MethodGet, "/wait?session=work", nil))
+	disambiguated := httptest.NewRecorder()
+	s.Handler().ServeHTTP(disambiguated, httptest.NewRequest(http.MethodGet, "/wait?session=work&pane=%251", nil))
+	if legacy.Code != http.StatusOK || disambiguated.Code != http.StatusOK {
+		t.Fatalf("status codes = legacy %d, pane %d", legacy.Code, disambiguated.Code)
+	}
+	if legacy.Body.String() != disambiguated.Body.String() {
+		t.Fatalf("legacy body = %q, pane body = %q", legacy.Body.String(), disambiguated.Body.String())
+	}
+}
 
 func TestWaitImmediateAndErrors(t *testing.T) {
 	tests := []struct {
