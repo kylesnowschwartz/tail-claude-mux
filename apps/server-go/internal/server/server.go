@@ -132,6 +132,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /state", s.handleState)
 	mux.HandleFunc("GET /wait", s.handleWait)
+	mux.HandleFunc("GET /result", s.handleResult)
 	mux.HandleFunc("GET /explain", s.handleExplain)
 	mux.HandleFunc("POST /hook", s.handleHook)
 	mux.HandleFunc("POST /focus", s.handleFocus)

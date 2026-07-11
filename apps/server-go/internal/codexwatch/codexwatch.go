@@ -114,6 +114,13 @@ func (a *Adapter) RolloutForFollowup(cwd, trackedThreadID string) (path, threadI
 	return "", "", nil
 }
 
+// RolloutForThread resolves the rollout pinned to a tracked Codex thread.
+// It never falls back to cwd matching.
+func (a *Adapter) RolloutForThread(threadID string) (string, error) {
+	path, _, err := a.RolloutForFollowup("", threadID)
+	return path, err
+}
+
 func followupRolloutCwd(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
