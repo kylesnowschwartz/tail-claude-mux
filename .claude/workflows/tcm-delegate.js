@@ -112,9 +112,12 @@ if (!watch) {
   return { outcome: 'error', detail: 'nested watch returned nothing', sessionName: spawned.session_name, paneId: spawned.pane_id, dir: cfg.dir, resultSummary: '', watch }
 }
 // The rollout outlives the pane: attempt the result-read even on
-// session-dead/timeout, so a killed pane still yields the delegate's last
-// words (learned when a trial session was trimmed mid-run).
-const READABLE = watch.resolution === 'finished' || watch.resolution === 'session-dead' || watch.resolution === 'timeout'
+// session-dead/timeout (a killed pane still yields the delegate's last
+// words) and on waiting — GET /result never blocks, so a genuinely
+// blocked pane returns hasFinal=false while a false-waiting (finished
+// pane idling at the input prompt, seen 2/2 on 2026-07-11) still yields
+// the final message instead of stalling the run.
+const READABLE = watch.resolution === 'finished' || watch.resolution === 'session-dead' || watch.resolution === 'timeout' || watch.resolution === 'waiting'
 if (!READABLE) {
   return { outcome: watch.resolution, detail: watch.detail, sessionName: spawned.session_name, paneId: spawned.pane_id, dir: cfg.dir, resultSummary: '', watch }
 }
