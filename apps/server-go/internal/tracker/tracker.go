@@ -357,8 +357,9 @@ func (t *Tracker) GetState(session string) *wire.AgentEvent {
 	return &out
 }
 
-// GetEvent is the O(1) single-instance lookup by (agent, threadId) or
-// (agent, paneId).
+// GetEvent returns a single instance by threadId or paneId. Agent-qualified
+// lookups keep their O(1) keyed fast path; the fallback scan supports callers
+// that do not know the agent and keeps paneId durable after key graduation.
 func (t *Tracker) GetEvent(session, agent, threadID, paneID string) *wire.AgentEvent {
 	si := t.instances[session]
 	if si == nil {
@@ -366,9 +367,24 @@ func (t *Tracker) GetEvent(session, agent, threadID, paneID string) *wire.AgentE
 	}
 	var hit *wire.AgentEvent
 	if threadID != "" {
-		hit = si[InstanceKey(agent, threadID)]
+		if agent != "" {
+			hit = si[InstanceKey(agent, threadID)]
+		}
 	} else if paneID != "" {
-		hit = si[syntheticKey(agent, paneID)]
+		if agent != "" {
+			hit = si[syntheticKey(agent, paneID)]
+		}
+	}
+	if hit == nil {
+		for _, ev := range si {
+			if agent != "" && ev.Agent != agent {
+				continue
+			}
+			if threadID != "" && ev.ThreadID == threadID || threadID == "" && paneID != "" && ev.PaneID == paneID {
+				hit = ev
+				break
+			}
+		}
 	}
 	if hit == nil {
 		return nil

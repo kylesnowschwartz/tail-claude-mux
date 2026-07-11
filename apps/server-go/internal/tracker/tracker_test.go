@@ -83,6 +83,23 @@ func TestAgentTracker(t *testing.T) {
 		}
 	})
 
+	t.Run("pane lookup survives thread graduation", func(t *testing.T) {
+		tr := New(fixedNow())
+		tr.ApplyPanePresence("sess-1", []PanePresence{{Agent: "codex", PaneID: "%9", PID: 1234}})
+		if got := tr.GetEvent("sess-1", "codex", "", "%9"); got == nil {
+			t.Fatal("synthetic pane lookup returned nil")
+		}
+
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Agent: "codex", ThreadID: "thread-1", PID: 1234}), false)
+		got := tr.GetEvent("sess-1", "", "", "%9")
+		if got == nil || got.ThreadID != "thread-1" || got.PaneID != "%9" {
+			t.Fatalf("graduated pane lookup = %#v, want thread-1 on %%9", got)
+		}
+		if got := tr.GetEvent("sess-1", "claude-code", "", "%9"); got != nil {
+			t.Fatalf("agent-mismatched pane lookup = %#v, want nil", got)
+		}
+	})
+
 	t.Run("applyEvent overwrites previous state for same session", func(t *testing.T) {
 		tr := New(fixedNow())
 		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Status: wire.StatusRunning}), false)
