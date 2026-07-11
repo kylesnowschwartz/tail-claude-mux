@@ -56,6 +56,26 @@ func TestFollowupRefusals(t *testing.T) {
 	}
 }
 
+func TestFollowupSelectorMismatchIsJSON(t *testing.T) {
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "codex", ThreadID: "one", PaneID: "%1", Status: wire.StatusDone}, false)
+	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "codex", ThreadID: "two", PaneID: "%2", Status: wire.StatusDone}, false)
+	s := &Server{Tracker: tr}
+	response := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"session":"work","message":"more","thread":"one","pane":"%2"}`)
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", body))
+	if response.Code != http.StatusBadRequest || response.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("status = %d, content-type = %q", response.Code, response.Header().Get("Content-Type"))
+	}
+	var result map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["error"] != "pane and thread identify different agents" {
+		t.Fatalf("error = %q", result["error"])
+	}
+}
+
 func TestFollowupPinsThreadAndRespawnsPane(t *testing.T) {
 	sessionsDir := t.TempDir()
 	rolloutDir := filepath.Join(sessionsDir, "2026", "07", "11")

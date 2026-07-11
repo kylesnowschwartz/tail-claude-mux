@@ -77,3 +77,22 @@ func TestResultSelectsPaneInMultiAgentSession(t *testing.T) {
 		t.Fatalf("response = %+v", body)
 	}
 }
+
+func TestResultResolutionErrorIsJSON(t *testing.T) {
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "pi", ThreadID: "one", PaneID: "%1", Status: wire.StatusDone}, false)
+	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "pi", ThreadID: "two", PaneID: "%2", Status: wire.StatusDone}, false)
+	s := &Server{Tracker: tr}
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/result?session=work&thread=one&pane=%252", nil))
+	if response.Code != http.StatusBadRequest || response.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("status = %d, content-type = %q", response.Code, response.Header().Get("Content-Type"))
+	}
+	var body map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["error"] != "pane and thread identify different agents" {
+		t.Fatalf("error = %q", body["error"])
+	}
+}

@@ -47,7 +47,7 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 
 	state, resolveErr := s.followupState(req.Session, req.Thread, req.Pane)
 	if resolveErr != nil {
-		writeAgentResolutionError(w, resolveErr)
+		writeFollowupError(w, resolveErr.status, resolveErr.message)
 		return
 	}
 	if state == nil {
@@ -84,7 +84,7 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 	current, resolveErr := s.followupState(req.Session, req.Thread, req.Pane)
 	if resolveErr != nil {
 		_ = os.Remove(messageFile)
-		writeAgentResolutionError(w, resolveErr)
+		writeFollowupError(w, resolveErr.status, resolveErr.message)
 		return
 	}
 	if current == nil || current.ThreadID != state.ThreadID || current.PaneID != state.PaneID {

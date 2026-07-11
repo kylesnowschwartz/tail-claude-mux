@@ -45,13 +45,14 @@ func (s *Server) handleSetStatus(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Session string          `json:"session"`
 		Pane    string          `json:"pane,omitempty"`
+		Thread  string          `json:"thread,omitempty"`
 		Text    json.RawMessage `json:"text"` // string | null | absent
 		Tone    string          `json:"tone"`
 	}
 	if !decodeAPIBody(w, r, &body, &body.Session) {
 		return
 	}
-	if _, err := s.resolveTrackedEvent(body.Session, "", body.Pane); err != nil {
+	if _, err := s.resolveTrackedEvent(body.Session, body.Thread, body.Pane); err != nil {
 		writeAgentResolutionError(w, err)
 		return
 	}
@@ -75,6 +76,7 @@ func (s *Server) handleSetProgress(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Session string   `json:"session"`
 		Pane    string   `json:"pane,omitempty"`
+		Thread  string   `json:"thread,omitempty"`
 		Current *float64 `json:"current"`
 		Total   *float64 `json:"total"`
 		Percent *float64 `json:"percent"`
@@ -84,7 +86,7 @@ func (s *Server) handleSetProgress(w http.ResponseWriter, r *http.Request) {
 	if !decodeAPIBody(w, r, &body, &body.Session) {
 		return
 	}
-	if _, err := s.resolveTrackedEvent(body.Session, "", body.Pane); err != nil {
+	if _, err := s.resolveTrackedEvent(body.Session, body.Thread, body.Pane); err != nil {
 		writeAgentResolutionError(w, err)
 		return
 	}

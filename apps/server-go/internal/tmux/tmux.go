@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // sep is the field delimiter in tmux -F format strings (tab, universally
@@ -50,7 +51,8 @@ func ExecRunner(args ...string) (string, error) {
 
 // Tmux queries one tmux server through its Runner.
 type Tmux struct {
-	Run Runner
+	Run     Runner
+	spawnMu sync.Mutex
 }
 
 // New returns a Tmux backed by the real binary.

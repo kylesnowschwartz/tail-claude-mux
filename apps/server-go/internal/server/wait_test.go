@@ -36,6 +36,18 @@ func TestWaitDisambiguatesMultiAgentSession(t *testing.T) {
 	if body.Status != wire.StatusWaiting {
 		t.Fatalf("selected response = %+v", body)
 	}
+
+	consistent := httptest.NewRecorder()
+	s.Handler().ServeHTTP(consistent, httptest.NewRequest(http.MethodGet, "/wait?session=work&thread=two&pane=%252", nil))
+	if consistent.Code != http.StatusOK {
+		t.Fatalf("consistent selectors status = %d: %s", consistent.Code, consistent.Body.String())
+	}
+
+	mismatched := httptest.NewRecorder()
+	s.Handler().ServeHTTP(mismatched, httptest.NewRequest(http.MethodGet, "/wait?session=work&thread=one&pane=%252", nil))
+	if mismatched.Code != http.StatusBadRequest || !strings.Contains(mismatched.Body.String(), "pane and thread identify different agents") {
+		t.Fatalf("mismatched selectors response = %d %q", mismatched.Code, mismatched.Body.String())
+	}
 }
 
 func TestWaitSingleInstanceKeepsLegacyResponse(t *testing.T) {

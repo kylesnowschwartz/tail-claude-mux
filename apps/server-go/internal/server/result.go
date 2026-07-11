@@ -27,7 +27,7 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 
 	state, resolveErr := s.followupState(session, r.URL.Query().Get("thread"), r.URL.Query().Get("pane"))
 	if resolveErr != nil {
-		writeAgentResolutionError(w, resolveErr)
+		writeResultError(w, resolveErr.status, resolveErr.message)
 		return
 	}
 	if state == nil {

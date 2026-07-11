@@ -62,6 +62,8 @@ func (t *Tmux) SpawnAgent(req SpawnAgentRequest) (SpawnAgentResult, error) {
 	if err := validateSpawnAgentRequest(req); err != nil {
 		return SpawnAgentResult{}, err
 	}
+	t.spawnMu.Lock()
+	defer t.spawnMu.Unlock()
 
 	name, err := t.resolveSpawnAgentName(req)
 	if err != nil {

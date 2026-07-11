@@ -32,6 +32,17 @@ func (s *Server) resolveTrackedEvent(session, threadID, paneID string) (*wire.Ag
 		}
 		return nil, nil
 	}
+	if threadID != "" && paneID != "" {
+		threadState := s.Tracker.GetEvent(session, "", threadID, "")
+		paneState := s.Tracker.GetEvent(session, "", "", paneID)
+		if threadState == nil || paneState == nil {
+			return nil, &agentResolutionError{status: http.StatusNotFound, message: "agent not found"}
+		}
+		if threadState.Agent != paneState.Agent || threadState.ThreadID != paneState.ThreadID || threadState.PaneID != paneState.PaneID {
+			return nil, &agentResolutionError{status: http.StatusBadRequest, message: "pane and thread identify different agents"}
+		}
+		return threadState, nil
+	}
 	if threadID != "" || paneID != "" {
 		state := s.Tracker.GetEvent(session, "", threadID, paneID)
 		if state == nil {
