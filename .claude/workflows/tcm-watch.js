@@ -83,6 +83,7 @@ function deliveryScript(p) {
   // only the final receipt grep classifies the retry path.
   return `#!/bin/bash
 SESH='${p.session}'
+PANE='${p.pane}'
 SOURCE='${p.sourceMessageFile}'
 HTTP_CODE=''
 RECEIPTS=0
@@ -91,7 +92,11 @@ ROLLOUT=''
 REASON=''
 EVIDENCE=''
 post_followup() {
-  jq -n --arg s "$SESH" --rawfile m "$SOURCE" '{session:$s, message:$m}' | curl -sS -w '\\n%{http_code}' -X POST localhost:7391/followup -H 'Content-Type: application/json' -d @-
+  if [ -n "$PANE" ]; then
+    jq -n --arg s "$SESH" --arg p "$PANE" --rawfile m "$SOURCE" '{session:$s, message:$m, pane:$p}' | curl -sS -w '\\n%{http_code}' -X POST localhost:7391/followup -H 'Content-Type: application/json' -d @-
+  else
+    jq -n --arg s "$SESH" --rawfile m "$SOURCE" '{session:$s, message:$m}' | curl -sS -w '\\n%{http_code}' -X POST localhost:7391/followup -H 'Content-Type: application/json' -d @-
+  fi
 }
 RESP=$(post_followup 2>&1)
 POST_STATUS=$?
@@ -176,7 +181,10 @@ HARD RULES
 }
 
 function resultPrompt(p) {
-  return `Run this single command exactly once: curl -fsS 'localhost:7391/result?session=${encodeURIComponent(p.session)}'
+  const command = p.pane
+    ? `curl -fsS -G 'localhost:7391/result' --data-urlencode 'session=${p.session}' --data-urlencode 'pane=${p.pane}'`
+    : `curl -fsS 'localhost:7391/result?session=${encodeURIComponent(p.session)}'`
+  return `Run this single command exactly once: ${command}
 
 Map the JSON response to StructuredOutput: summary=finalMessage, rollout_path=rolloutPath, evidence=identification+"; status="+status. If curl fails, including HTTP 404, return summary="", rollout_path="", and put the curl failure in evidence. Do not read or scan rollout files. Do not run any other command.`
 }
@@ -198,7 +206,11 @@ UNREADABLE=0
 wait_status() {
   # one long-poll; prints "STATUS TIMEDOUT" iff the response is real /wait JSON
   local t=$1 resp
-  resp=$(curl -fsS "localhost:7391/wait?session=$SESH&timeout=$t" 2>/dev/null) || return 1
+  if [ -n "$PANE" ]; then
+    resp=$(curl -fsS -G 'localhost:7391/wait' --data-urlencode "session=$SESH" --data-urlencode "timeout=$t" --data-urlencode "pane=$PANE" 2>/dev/null) || return 1
+  else
+    resp=$(curl -fsS "localhost:7391/wait?session=$SESH&timeout=$t" 2>/dev/null) || return 1
+  fi
   printf '%s' "$resp" | jq -er '"\\(.status) \\(.timedOut)"' 2>/dev/null
 }
 while true; do
@@ -312,7 +324,7 @@ if (cfg.sourceMessageFile) {
   phase('Deliver')
   let delivered = null
   try {
-    delivered = await agent(deliveryPrompt({ session, sourceMessageFile: cfg.sourceMessageFile }), {
+    delivered = await agent(deliveryPrompt({ session, pane, sourceMessageFile: cfg.sourceMessageFile }), {
       label: `deliver:${session}`, phase: 'Deliver', model: 'haiku', effort: 'low', schema: DELIVERY_SCHEMA,
     })
   } catch (e) {
@@ -407,7 +419,7 @@ phase('Result')
 // follow-up whose real work already reached its watch outcome.
 let result = null
 try {
-  result = await agent(resultPrompt({ session }), {
+  result = await agent(resultPrompt({ session, pane }), {
     label: `result:${session}`, phase: 'Result', model: 'haiku', effort: 'low', schema: RESULT_SCHEMA,
   })
 } catch (e) {

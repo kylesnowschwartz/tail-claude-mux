@@ -8,10 +8,11 @@
 // Invoke via scriptPath with args:
 //   { dir: "/abs/workdir", name: "kebab-session-name", brief: "context-complete task brief",
 //     watchMinutes: 20 (optional), pollSeconds: 30 (optional),
+//     ownerSession: "tmux-session" (optional; defaults to current tmux session),
 //     watchScriptPath: "/abs/path/tcm-watch.js" (optional override) }
 // Returns:
 //   { outcome: finished|waiting|error|session-dead|timeout|spawn-failed,
-//     sessionName, paneId, dir, resultSummary, watch: {...}, detail }
+//     sessionName, paneId, windowId, ownerSession, dir, resultSummary, watch: {...}, detail }
 
 export const meta = {
   name: 'tcm-delegate',
@@ -29,11 +30,12 @@ const DEFAULT_WATCH = '/Users/kyle/Code/my-projects/tail-claude-mux/.claude/work
 
 const SPAWN_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['session_name', 'pane_id', 'window_id', 'alive', 'evidence'],
+  required: ['session_name', 'pane_id', 'window_id', 'owner_session', 'alive', 'evidence'],
   properties: {
     session_name: { type: 'string' },
     pane_id: { type: 'string' },
     window_id: { type: 'string' },
+    owner_session: { type: 'string' },
     alive: { type: 'boolean' },
     evidence: { type: 'string' },
   },
@@ -52,14 +54,17 @@ const RESULT_SCHEMA = {
 function spawnScript(p) {
   return `#!/bin/bash
 BRIEF='__BRIEF__'
-RESP=$(curl -fsS -X POST localhost:7391/spawn-agent -H 'Content-Type: application/json' -d "$(jq -n --arg dir '${p.dir}' --arg name '${p.name}' --rawfile pr "$BRIEF" '{dir:$dir, agent:"codex", prompt:$pr, name:$name, command:["codex","-c","mcp_servers.just.enabled=false"]}')")
-if [ -z "$RESP" ]; then echo "SESSION=none PANE=none WINDOW=none ALIVE=no NOTE=spawn-request-failed"; exit 0; fi
+OWNER='${p.ownerSession || ''}'
+if [ -z "$OWNER" ]; then OWNER=$(tmux display-message -p '#{session_name}' 2>/dev/null || true); fi
+RESP=$(curl -fsS -X POST localhost:7391/spawn-agent -H 'Content-Type: application/json' -d "$(jq -n --arg dir '${p.dir}' --arg name '${p.name}' --arg owner "$OWNER" --rawfile pr "$BRIEF" '{dir:$dir, agent:"codex", prompt:$pr, name:$name, command:["codex","-c","mcp_servers.just.enabled=false"]} + (if $owner != "" then {ownerSession:$owner} else {} end)')")
+if [ -z "$RESP" ]; then echo "SESSION=none PANE=none WINDOW=none OWNER=$OWNER ALIVE=no NOTE=spawn-request-failed"; exit 0; fi
 SESH=$(printf '%s' "$RESP" | jq -r .sessionName)
 PANE=$(printf '%s' "$RESP" | jq -r .paneId)
 WIN=$(printf '%s' "$RESP" | jq -r .windowId)
+if [ -n "$OWNER" ]; then OWNER="$SESH"; fi
 sleep 2
 if tmux has-session -t "=$SESH" 2>/dev/null; then ALIVE=yes; else ALIVE=no; fi
-echo "SESSION=$SESH PANE=$PANE WINDOW=$WIN ALIVE=$ALIVE NOTE=ok"`
+echo "SESSION=$SESH PANE=$PANE WINDOW=$WIN OWNER=$OWNER ALIVE=$ALIVE NOTE=ok"`
 }
 
 function spawnPrompt(p) {
@@ -75,13 +80,13 @@ STEP 2 — Write the following script to tcm-spawn-${p.name}.sh in your scratchp
 
 ${spawnScript(p)}
 
-STEP 3 — Run it with one Bash call (timeout 60000). Map its single output line to StructuredOutput: session_name=SESSION, pane_id=PANE, window_id=WINDOW, alive=(ALIVE=yes), evidence=NOTE. Use "" for none values.
+STEP 3 — Run it with one Bash call (timeout 60000). Map its single output line to StructuredOutput: session_name=SESSION, pane_id=PANE, window_id=WINDOW, owner_session=OWNER, alive=(ALIVE=yes), evidence=NOTE. Use "" for none values.
 
 HARD RULES: write only inside your scratchpad; do not send keys to, capture, or kill any tmux session; do not retry the POST yourself (the workflow decides); if the script fails, return alive=false with the failure in evidence.`
 }
 
 function resultPrompt(p) {
-  return `Run this single command exactly once: curl -fsS 'localhost:7391/result?session=${encodeURIComponent(p.session)}'
+  return `Run this single command exactly once: curl -fsS -G 'localhost:7391/result' --data-urlencode 'session=${p.session}' --data-urlencode 'pane=${p.pane}'
 
 Map the JSON response to StructuredOutput: summary=finalMessage, rollout_path=rolloutPath, evidence=identification+"; status="+status. If curl fails, including HTTP 404, return summary="", rollout_path="", and put the curl failure in evidence. Do not read or scan rollout files. Do not run any other command.`
 }
@@ -91,15 +96,15 @@ if (typeof cfg === 'string') {
   try { cfg = JSON.parse(cfg) } catch (e) { cfg = {} }
 }
 for (const k of ['dir', 'name', 'brief']) {
-  if (!cfg[k]) return { outcome: 'spawn-failed', detail: `args.${k} is required`, sessionName: '', paneId: '', dir: cfg.dir || '', resultSummary: '', watch: null }
+  if (!cfg[k]) return { outcome: 'spawn-failed', detail: `args.${k} is required`, sessionName: '', paneId: '', windowId: '', ownerSession: cfg.ownerSession || '', dir: cfg.dir || '', resultSummary: '', watch: null }
 }
 
 phase('Spawn')
-const spawned = await agent(spawnPrompt({ dir: cfg.dir, name: cfg.name, brief: cfg.brief }), {
+const spawned = await agent(spawnPrompt({ dir: cfg.dir, name: cfg.name, brief: cfg.brief, ownerSession: cfg.ownerSession || '' }), {
   label: `spawn:${cfg.name}`, phase: 'Spawn', model: 'haiku', effort: 'low', schema: SPAWN_SCHEMA,
 })
 if (!spawned || !spawned.alive || !spawned.session_name || spawned.session_name === 'none') {
-  return { outcome: 'spawn-failed', detail: spawned ? spawned.evidence : 'spawn leg died', sessionName: '', paneId: '', dir: cfg.dir, resultSummary: '', watch: null }
+  return { outcome: 'spawn-failed', detail: spawned ? spawned.evidence : 'spawn leg died', sessionName: '', paneId: '', windowId: spawned ? spawned.window_id : '', ownerSession: spawned ? spawned.owner_session : (cfg.ownerSession || ''), dir: cfg.dir, resultSummary: '', watch: null }
 }
 log(`tcm-delegate: spawned "${spawned.session_name}" (pane ${spawned.pane_id}) in ${cfg.dir}`)
 
@@ -109,7 +114,7 @@ const watch = await workflow(
   { session: spawned.session_name, pane: spawned.pane_id, watchMinutes: cfg.watchMinutes || 20, pollSeconds: cfg.pollSeconds || 30 }
 )
 if (!watch) {
-  return { outcome: 'error', detail: 'nested watch returned nothing', sessionName: spawned.session_name, paneId: spawned.pane_id, dir: cfg.dir, resultSummary: '', watch }
+  return { outcome: 'error', detail: 'nested watch returned nothing', sessionName: spawned.session_name, paneId: spawned.pane_id, windowId: spawned.window_id, ownerSession: spawned.owner_session, dir: cfg.dir, resultSummary: '', watch }
 }
 // The rollout outlives the pane: attempt the result-read even on
 // session-dead/timeout (a killed pane still yields the delegate's last
@@ -119,7 +124,7 @@ if (!watch) {
 // the final message instead of stalling the run.
 const READABLE = watch.resolution === 'finished' || watch.resolution === 'session-dead' || watch.resolution === 'timeout' || watch.resolution === 'waiting'
 if (!READABLE) {
-  return { outcome: watch.resolution, detail: watch.detail, sessionName: spawned.session_name, paneId: spawned.pane_id, dir: cfg.dir, resultSummary: '', watch }
+  return { outcome: watch.resolution, detail: watch.detail, sessionName: spawned.session_name, paneId: spawned.pane_id, windowId: spawned.window_id, ownerSession: spawned.owner_session, dir: cfg.dir, resultSummary: '', watch }
 }
 
 phase('Result')
@@ -129,7 +134,7 @@ phase('Result')
 // delegation whose real work already succeeded.
 let result = null
 try {
-  result = await agent(resultPrompt({ session: spawned.session_name }), {
+  result = await agent(resultPrompt({ session: spawned.session_name, pane: spawned.pane_id }), {
     label: `result:${spawned.session_name}`, phase: 'Result', model: 'haiku', effort: 'low', schema: RESULT_SCHEMA,
   })
 } catch (e) {
@@ -138,6 +143,6 @@ try {
 return {
   outcome: watch.resolution,
   detail: result ? result.evidence : `result leg failed; curl localhost:7391/result?session=${spawned.session_name}`,
-  sessionName: spawned.session_name, paneId: spawned.pane_id, dir: cfg.dir,
+  sessionName: spawned.session_name, paneId: spawned.pane_id, windowId: spawned.window_id, ownerSession: spawned.owner_session, dir: cfg.dir,
   resultSummary: result ? result.summary : '', watch,
 }
