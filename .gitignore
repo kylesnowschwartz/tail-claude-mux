@@ -9,6 +9,7 @@ tree/
 # Praxis install backups
 .ide_backup/
 SPECKY-ROUTING.md
+.playwright-cli
 
 # Re-include Claude workflow scripts; the global gitignore ignores .claude/
 # entirely, so un-ignore the dir, re-ignore its contents, then track only workflows/
