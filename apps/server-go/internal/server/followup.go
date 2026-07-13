@@ -102,7 +102,10 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 		writeFollowupError(w, http.StatusConflict, "session pane changed before follow-up delivery; refusing to interrupt it")
 		return
 	}
-	command := fmt.Sprintf(`codex -c mcp_servers.just.enabled=false resume %s "Read %s and address it"`, uuid, messageFile)
+	// --profile keeps the resumed thread on the same posture as the spawn leg
+	// (tcm-delegate profile in ~/.codex/config.toml); do not rely on codex
+	// resume inheriting it implicitly.
+	command := fmt.Sprintf(`codex --profile tcm-delegate -c mcp_servers.just.enabled=false resume %s "Read %s and address it"`, uuid, messageFile)
 	if _, err := s.Builder.Tmux.Run("respawn-pane", "-k", "-t", state.PaneID, command); err != nil {
 		_ = os.Remove(messageFile)
 		writeFollowupError(w, http.StatusInternalServerError, "tmux could not deliver the follow-up")

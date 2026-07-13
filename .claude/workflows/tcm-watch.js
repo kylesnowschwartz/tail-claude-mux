@@ -37,6 +37,11 @@ export const meta = {
 
 const LEG_SECONDS = 480 // in-script self-deadline; Bash hard cap is 600s
 
+// Committed, argument-driven shell scripts the delegate agents run verbatim
+// instead of transcribing a generated script to scratchpad. Sibling to
+// tcm-delegate.js's DEFAULT_WATCH constant (same main-checkout path shape).
+const LIB_DIR = '/Users/kyle/Code/my-projects/tail-claude-mux/.claude/workflows/lib'
+
 const LEG_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -77,105 +82,19 @@ const RESULT_SCHEMA = {
   },
 }
 
-function deliveryScript(p) {
-  // The first POST's 409 is a refusal. A retry 409 is not: the first POST
-  // already respawned the pane, so that conflict suggests the resume took;
-  // only the final receipt grep classifies the retry path.
-  return `#!/bin/bash
-SESH='${p.session}'
-PANE='${p.pane}'
-SOURCE='${p.sourceMessageFile}'
-HTTP_CODE=''
-RECEIPTS=0
-MSGFILE=''
-ROLLOUT=''
-REASON=''
-EVIDENCE=''
-post_followup() {
-  if [ -n "$PANE" ]; then
-    jq -n --arg s "$SESH" --arg p "$PANE" --rawfile m "$SOURCE" '{session:$s, message:$m, pane:$p}' | curl -sS -w '\\n%{http_code}' -X POST localhost:7391/followup -H 'Content-Type: application/json' -d @-
-  else
-    jq -n --arg s "$SESH" --rawfile m "$SOURCE" '{session:$s, message:$m}' | curl -sS -w '\\n%{http_code}' -X POST localhost:7391/followup -H 'Content-Type: application/json' -d @-
-  fi
-}
-RESP=$(post_followup 2>&1)
-POST_STATUS=$?
-if [ "$POST_STATUS" -ne 0 ] || [ -z "$RESP" ]; then
-  REASON='transport failure'
-  EVIDENCE="transport-failure: \${RESP:-empty response}"
-  printf 'RESOLUTION=error HTTP_CODE=%q RECEIPTS=0 MSGFILE=%q ROLLOUT=%q REASON=%q EVIDENCE=%q\\n' "$HTTP_CODE" "$MSGFILE" "$ROLLOUT" "$REASON" "$EVIDENCE"
-  exit 0
-fi
-HTTP_CODE=\${RESP##*$'\\n'}
-BODY=\${RESP%$'\\n'*}
-if [ "$HTTP_CODE" = '409' ]; then
-  REASON=$(printf '%s' "$BODY" | jq -r '.error // "follow-up refused"' 2>/dev/null)
-  EVIDENCE="first-post-409: $REASON"
-  printf 'RESOLUTION=refused-409 HTTP_CODE=%q RECEIPTS=0 MSGFILE=%q ROLLOUT=%q REASON=%q EVIDENCE=%q\\n' "$HTTP_CODE" "$MSGFILE" "$ROLLOUT" "$REASON" "$EVIDENCE"
-  exit 0
-fi
-if [ "$HTTP_CODE" != '200' ]; then
-  EXCERPT=$(printf '%s' "$BODY" | tr '\n' ' ' | cut -c1-240)
-  REASON="HTTP $HTTP_CODE"
-  EVIDENCE="unexpected-http-$HTTP_CODE: $EXCERPT"
-  printf 'RESOLUTION=error HTTP_CODE=%q RECEIPTS=0 MSGFILE=%q ROLLOUT=%q REASON=%q EVIDENCE=%q\\n' "$HTTP_CODE" "$MSGFILE" "$ROLLOUT" "$REASON" "$EVIDENCE"
-  exit 0
-fi
-MSGFILE=$(printf '%s' "$BODY" | jq -r '.messageFile // empty')
-ROLLOUT=$(printf '%s' "$BODY" | jq -r '.rolloutPath // empty')
-sleep 5
-RECEIPTS=$(grep -c "$MSGFILE" "$ROLLOUT" 2>/dev/null || true)
-RECEIPTS=\${RECEIPTS:-0}
-if [ "$RECEIPTS" -eq 0 ]; then
-  sleep 25
-  RECEIPTS=$(grep -c "$MSGFILE" "$ROLLOUT" 2>/dev/null || true)
-  RECEIPTS=\${RECEIPTS:-0}
-fi
-if [ "$RECEIPTS" -eq 0 ]; then
-  RETRY=$(post_followup 2>&1)
-  RETRY_STATUS=$?
-  if [ "$RETRY_STATUS" -eq 0 ] && [ -n "$RETRY" ]; then
-    HTTP_CODE=\${RETRY##*$'\\n'}
-    RETRY_BODY=\${RETRY%$'\\n'*}
-    if [ "$HTTP_CODE" = '200' ]; then
-      MSGFILE=$(printf '%s' "$RETRY_BODY" | jq -r '.messageFile // empty')
-      ROLLOUT=$(printf '%s' "$RETRY_BODY" | jq -r '.rolloutPath // empty')
-    fi
-  else
-    HTTP_CODE='transport-error'
-  fi
-  sleep 30
-  RECEIPTS=$(grep -c "$MSGFILE" "$ROLLOUT" 2>/dev/null || true)
-  RECEIPTS=\${RECEIPTS:-0}
-fi
-if [ "$RECEIPTS" -gt 0 ]; then
-  RESOLUTION='delivered'
-  REASON='receipt found'
-  EVIDENCE="rollout-receipts=$RECEIPTS"
-else
-  RESOLUTION='delivery-unverified'
-  REASON='no rollout receipt after retry'
-  EVIDENCE="final-receipt-grep-zero; retry-http=$HTTP_CODE"
-fi
-printf 'RESOLUTION=%s HTTP_CODE=%q RECEIPTS=%s MSGFILE=%q ROLLOUT=%q REASON=%q EVIDENCE=%q\\n' "$RESOLUTION" "$HTTP_CODE" "$RECEIPTS" "$MSGFILE" "$ROLLOUT" "$REASON" "$EVIDENCE"`
-}
-
 function deliveryPrompt(p) {
-  return `You are the delivery leg for follow-up session "${p.session}". You run one pre-written delivery script and report its result as structured output. You never compose your own tmux, curl, grep, or retry commands.
+  return `You are the delivery leg for follow-up session "${p.session}". You run one pre-written, already-committed delivery script and report its result as structured output. You never compose your own tmux, curl, grep, or retry commands.
 
-STEP 1 — Write the following script VERBATIM (byte-for-byte, no edits) to a file in your scratchpad directory named tcm-deliver-leg.sh:
+STEP 1 — Run this single command exactly (timeout 120000): bash ${LIB_DIR}/tcm-deliver.sh '${p.session}' '${p.pane}' '${p.sourceMessageFile}'
+It always prints exactly one RESOLUTION= line.
 
-${deliveryScript(p)}
-
-STEP 2 — Run it with ONE Bash call: bash <scratchpad>/tcm-deliver-leg.sh with timeout 120000. It always prints exactly one RESOLUTION= line.
-
-STEP 3 — Map the printed line to StructuredOutput: resolution=RESOLUTION, http_code=HTTP_CODE, receipt_count=RECEIPTS, message_file=MSGFILE, rollout_path=ROLLOUT, reason=REASON, evidence=EVIDENCE.
+STEP 2 — Map the printed line to StructuredOutput: resolution=RESOLUTION, http_code=HTTP_CODE, receipt_count=RECEIPTS, message_file=MSGFILE, rollout_path=ROLLOUT, reason=REASON, evidence=EVIDENCE.
 
 WHY THE SCRIPT IS SHAPED THIS WAY (do not "improve" it): the server writes its own copy of the source message and returns that path as messageFile. Receipt verification must grep for that returned path in rolloutPath. The first 409 is a refusal and stops delivery; a retry 409 can mean the first resume took, so the final grep remains authoritative.
 
 HARD RULES
 - Write ONLY inside your scratchpad directory — never ~/.claude, ~/.agents, or any project tree.
-- Transcribe the script verbatim. Do not compose or run any other tmux, curl, grep, or retry command.
+- Do not edit, copy, or "improve" ${LIB_DIR}/tcm-deliver.sh. Do not compose or run any other tmux, curl, grep, or retry command.
 - Never send-keys or kill anything. The POST calls already present in the script are the only state-changing calls allowed.
 - Return structured output even when the script fails or emits no RESOLUTION line; use resolution "error" and describe the failure in evidence.`
 }
@@ -189,111 +108,27 @@ function resultPrompt(p) {
 Map the JSON response to StructuredOutput: summary=finalMessage, rollout_path=rolloutPath, evidence=identification+"; status="+status. If curl fails, including HTTP 404, return summary="", rollout_path="", and put the curl failure in evidence. Do not read or scan rollout files. Do not run any other command.`
 }
 
-function legScript(p) {
+function legPrompt(p) {
   // Concrete values are baked in HERE, by code — the leg transcribes, it does
   // not compose tmux commands (a haiku leg mangled '%334' into an invalid
   // 'session:%334' target when given a placeholder; never again).
-  return `#!/bin/bash
-PANE='${p.pane}'
-SESH='${p.session}'
-INTERVAL=${p.pollSeconds}
-SELF_DEADLINE=$((SECONDS+${LEG_SECONDS}))
-POLLS=0
-QCOUNT=${p.seedCount}
-LAST_HASH='${p.seedHash || 'none'}'
-LAST_ST='none'
-UNREADABLE=0
-wait_status() {
-  # one long-poll; prints "STATUS TIMEDOUT" iff the response is real /wait JSON
-  local t=$1 resp
-  if [ -n "$PANE" ]; then
-    resp=$(curl -fsS -G 'localhost:7391/wait' --data-urlencode "session=$SESH" --data-urlencode "timeout=$t" --data-urlencode "pane=$PANE" 2>/dev/null) || return 1
-  else
-    resp=$(curl -fsS "localhost:7391/wait?session=$SESH&timeout=$t" 2>/dev/null) || return 1
-  fi
-  printf '%s' "$resp" | jq -er '"\\(.status) \\(.timedOut)"' 2>/dev/null
-}
-while true; do
-  if (( SECONDS >= SELF_DEADLINE )); then echo "RESOLUTION=continue POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$LAST_ST NOTE=deadline"; exit 0; fi
-  if ! tmux has-session -t "=$SESH" 2>/dev/null; then echo "RESOLUTION=session-dead POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$LAST_ST NOTE=session-gone"; exit 0; fi
-  REMAIN=$((SELF_DEADLINE-SECONDS)); (( REMAIN > 540 )) && REMAIN=540
-  if (( REMAIN >= 5 )) && wr=$(wait_status "$REMAIN"); then
-    POLLS=$((POLLS+1))
-    st=\${wr%% *}; to=\${wr##* }
-    LAST_ST="$st"
-    case "$st" in
-      done) echo "RESOLUTION=finished POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$st NOTE=wait-done"; exit 0;;
-      error) echo "RESOLUTION=error POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$st NOTE=wait-error"; exit 0;;
-      interrupted) echo "RESOLUTION=error POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$st NOTE=wait-interrupted"; exit 0;;
-      gone) echo "RESOLUTION=session-dead POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$st NOTE=wait-gone"; exit 0;;
-      waiting)
-        if [ "$to" = "true" ]; then continue; fi
-        # observed transient: an approval prompt can flash and self-resolve;
-        # confirm it holds for 5s before reporting
-        sleep 5
-        if wr2=$(wait_status 5); then
-          st2=\${wr2%% *}
-          if [ "$st2" = "waiting" ]; then echo "RESOLUTION=waiting POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=waiting NOTE=wait-waiting-confirmed"; exit 0; fi
-          LAST_ST="$st2"
-        fi
-        continue;;
-      *) continue;;
-    esac
-  fi
-  # fallback: /wait unusable (server down, pre-B2 binary, untracked session)
-  st=$(curl -fsS localhost:7391/state 2>/dev/null | jq -r --arg s "$SESH" '[.. | objects | select(.session? == $s) | .status] | first // empty' 2>/dev/null)
-  [ -n "$st" ] && LAST_ST="$st"
-  if [ "$st" = "error" ]; then echo "RESOLUTION=error POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$st NOTE=state-error"; exit 0; fi
-  if [ "$st" = "running" ]; then
-    QCOUNT=0
-  else
-    content=$(tmux capture-pane -p -t "$PANE" 2>/dev/null)
-    if [ -z "$content" ]; then
-      UNREADABLE=$((UNREADABLE+1))
-      if (( UNREADABLE >= 3 )); then echo "RESOLUTION=unverified POLLS=$POLLS QCOUNT=$QCOUNT HASH=none STATE=$LAST_ST NOTE=pane-unreadable"; exit 0; fi
-    else
-      UNREADABLE=0
-      h=$(printf '%s' "$content" | md5 -q)
-      if [ "$h" = "$LAST_HASH" ]; then
-        QCOUNT=$((QCOUNT+1))
-        if (( QCOUNT >= 3 )); then
-          tl=$(printf '%s' "$content" | grep -v '^[[:space:]]*$' | tail -4)
-          if printf '%s' "$tl" | grep -qiE 'press enter|y/n|approve|allow|permission|continue\\?|› *[0-9]\\.'; then
-            echo "RESOLUTION=waiting POLLS=$POLLS QCOUNT=$QCOUNT HASH=$h STATE=$LAST_ST NOTE=quiescent-at-prompt"
-          else
-            echo "RESOLUTION=finished POLLS=$POLLS QCOUNT=$QCOUNT HASH=$h STATE=$LAST_ST NOTE=pane-quiescent"
-          fi
-          exit 0
-        fi
-      else
-        QCOUNT=0
-        LAST_HASH="$h"
-      fi
-    fi
-  fi
-  POLLS=$((POLLS+1))
-  sleep $INTERVAL
-done`
-}
-
-function legPrompt(p) {
+  const seedHashArg = p.seedHash || 'none'
+  const paneArg = p.pane || '<RESOLVED_PANE>'
   const paneStep = p.pane
     ? ''
-    : `\nFIRST resolve the pane id with one command: tmux list-panes -s -t "=${p.session}" -F '#{pane_id}' (a spawned delegate session has one pane). Then set the script's PANE= line to that value (e.g. PANE='%42') — that is the ONLY edit you may make.\n`
-  return `You are one poll leg of a delegation watcher for tmux session "${p.session}". You run one pre-written poll script and report its result as structured output. You never summarize the delegate's work, never fix anything, and never compose your own tmux commands.
+    : `\nFIRST resolve the pane id with one command: tmux list-panes -s -t "=${p.session}" -F '#{pane_id}' (a spawned delegate session has one pane). Substitute that value for <RESOLVED_PANE> in the command below — that is the ONLY value you determine yourself.\n`
+  return `You are one poll leg of a delegation watcher for tmux session "${p.session}". You run one pre-written, already-committed poll script and report its result as structured output. You never summarize the delegate's work, never fix anything, and never compose your own tmux commands.
 ${paneStep}
-STEP 1 — Write the following script VERBATIM (byte-for-byte${p.pane ? ', no edits' : ', except the PANE= line as instructed above'}) to a file in your scratchpad directory named tcm-watch-leg.sh:
+STEP 1 — Run this single command exactly (timeout 600000)${p.pane ? '' : ', with <RESOLVED_PANE> replaced by the pane id you resolved above'}: bash ${LIB_DIR}/tcm-watch-leg.sh '${paneArg}' '${p.session}' '${p.pollSeconds}' '${LEG_SECONDS}' '${p.seedCount}' '${seedHashArg}'
+It self-limits to ${LEG_SECONDS}s and always prints exactly one RESOLUTION= line. It spends most of its time blocked on a long-poll curl to the local TCM server; that is by design. (Standalone sleep is blocked in your harness; the in-script sleep/curl is fine.)
 
-${legScript(p)}
-
-STEP 2 — Run it with ONE Bash call: bash <scratchpad>/tcm-watch-leg.sh with timeout 600000. It self-limits to ${LEG_SECONDS}s and always prints exactly one RESOLUTION= line. It spends most of its time blocked on a long-poll curl to the local TCM server; that is by design. (Standalone sleep is blocked in your harness; the in-script sleep/curl is fine. Do not inline the loop in the shell — the outer shell mangles multi-line commands.)
-
-STEP 3 — Map the printed line to StructuredOutput: resolution=RESOLUTION, polls=POLLS, quiescence_count=QCOUNT, last_pane_hash=HASH, last_state=STATE, resolved_pane=the PANE value used, evidence=NOTE.
+STEP 2 — Map the printed line to StructuredOutput: resolution=RESOLUTION, polls=POLLS, quiescence_count=QCOUNT, last_pane_hash=HASH, last_state=STATE, resolved_pane=the PANE value used, evidence=NOTE.
 
 WHY THE SCRIPT IS SHAPED THIS WAY (do not "improve" it): GET /wait is the primary signal — the server reconciles hook status against the codex thread's rollout evidence, so its done/error/interrupted are trustworthy and arrive with zero polling. The pane-quiescence branch only runs when /wait is unusable (server down or session untracked), and the seed QCOUNT/LAST_HASH continue the previous leg's quiescence streak. A "waiting" wake is confirmed 5s later before being reported, because approval prompts can flash and self-resolve.
 
 HARD RULES
 - Write ONLY inside your scratchpad directory — never ~/.claude, ~/.agents, or any project tree.
+- Do not edit, copy, or "improve" ${LIB_DIR}/tcm-watch-leg.sh.
 - Never interact with the delegate: no send-keys, no kill-session, no state-changing calls to TCM (the read-only GETs in the script are fine).
 - Never print pane content; the script reports hashes and one NOTE clause only.
 - If the script dies or emits no RESOLUTION line, return resolution "continue" with the failure described in evidence. Ending without structured output is a failed leg.`

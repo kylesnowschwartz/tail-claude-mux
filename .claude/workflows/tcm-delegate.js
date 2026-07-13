@@ -27,6 +27,9 @@ export const meta = {
 // Main-checkout default (workflows ship in the TCM repo); override via
 // args.watchScriptPath when running from another checkout.
 const DEFAULT_WATCH = '/Users/kyle/Code/my-projects/tail-claude-mux/.claude/workflows/tcm-watch.js'
+// Committed, argument-driven shell scripts the delegate agents run verbatim
+// instead of transcribing a generated script to scratchpad.
+const LIB_DIR = '/Users/kyle/Code/my-projects/tail-claude-mux/.claude/workflows/lib'
 
 const SPAWN_SCHEMA = {
   type: 'object', additionalProperties: false,
@@ -51,24 +54,9 @@ const RESULT_SCHEMA = {
   },
 }
 
-function spawnScript(p) {
-  return `#!/bin/bash
-BRIEF='__BRIEF__'
-OWNER='${p.ownerSession || ''}'
-if [ -z "$OWNER" ]; then OWNER=$(tmux display-message -p '#{session_name}' 2>/dev/null || true); fi
-RESP=$(curl -fsS -X POST localhost:7391/spawn-agent -H 'Content-Type: application/json' -d "$(jq -n --arg dir '${p.dir}' --arg name '${p.name}' --arg owner "$OWNER" --rawfile pr "$BRIEF" '{dir:$dir, agent:"codex", prompt:$pr, name:$name, command:["codex","--dangerously-bypass-approvals-and-sandbox","-c","mcp_servers.just.enabled=false"]} + (if $owner != "" then {ownerSession:$owner} else {} end)')")
-if [ -z "$RESP" ]; then echo "SESSION=none PANE=none WINDOW=none OWNER=$OWNER ALIVE=no NOTE=spawn-request-failed"; exit 0; fi
-SESH=$(printf '%s' "$RESP" | jq -r .sessionName)
-PANE=$(printf '%s' "$RESP" | jq -r .paneId)
-WIN=$(printf '%s' "$RESP" | jq -r .windowId)
-if [ -n "$OWNER" ] && [ "$SESH" != "$OWNER" ]; then OWNER=""; fi
-sleep 2
-if [ -n "$PANE" ] && [ "$PANE" != "none" ] && tmux display-message -p -t "$PANE" '#{pane_id}' >/dev/null 2>&1; then ALIVE=yes; else ALIVE=no; fi
-echo "SESSION=$SESH PANE=$PANE WINDOW=$WIN OWNER=$OWNER ALIVE=$ALIVE NOTE=ok"`
-}
-
 function spawnPrompt(p) {
-  return `You are a delegate spawner. Three steps, nothing else.
+  const owner = p.ownerSession || ''
+  return `You are a delegate spawner. Two steps, nothing else.
 
 STEP 1 — Write the following brief text EXACTLY to a file named delegate-brief-${p.name}.md in your scratchpad directory:
 ---BEGIN BRIEF---
@@ -76,13 +64,12 @@ ${p.brief}
 ---END BRIEF---
 (Do not include the BEGIN/END marker lines in the file.)
 
-STEP 2 — Write the following script to tcm-spawn-${p.name}.sh in your scratchpad directory, VERBATIM except for ONE edit: replace __BRIEF__ with the absolute path of the delegate-brief-${p.name}.md you just wrote.
+STEP 2 — Run this single command exactly (timeout 60000), replacing <brief-path> with the absolute path of the delegate-brief-${p.name}.md you just wrote:
+bash ${LIB_DIR}/tcm-spawn.sh '${p.dir}' '${p.name}' '<brief-path>' '${owner}'
 
-${spawnScript(p)}
+Map its single output line to StructuredOutput: session_name=SESSION, pane_id=PANE, window_id=WINDOW, owner_session=OWNER, alive=(ALIVE=yes), evidence=NOTE. Use "" for none values.
 
-STEP 3 — Run it with one Bash call (timeout 60000). Map its single output line to StructuredOutput: session_name=SESSION, pane_id=PANE, window_id=WINDOW, owner_session=OWNER, alive=(ALIVE=yes), evidence=NOTE. Use "" for none values.
-
-HARD RULES: write only inside your scratchpad; do not send keys to, capture, or kill any tmux session; do not retry the POST yourself (the workflow decides); if the script fails, return alive=false with the failure in evidence.`
+HARD RULES: write only inside your scratchpad; do not send keys to, capture, or kill any tmux session; do not retry the POST yourself (the workflow decides); do not edit or "improve" ${LIB_DIR}/tcm-spawn.sh; if the script fails, return alive=false with the failure in evidence.`
 }
 
 function resultPrompt(p) {
