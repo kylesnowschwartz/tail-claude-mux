@@ -1,6 +1,6 @@
 {
   "name": "tcm-delegation",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TCM (tail-claude-mux) codex delegation: the tcm-delegate-codex skill, the tidy-delegates cleanup skill, and the deterministic spawn/watch/result workflow scripts they drive.",
   "author": {
     "name": "kylesnowschwartz"

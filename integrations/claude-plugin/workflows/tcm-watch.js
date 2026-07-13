@@ -208,12 +208,19 @@ let watchOutcome = null
 
 for (let i = 1; i <= maxLegs; i++) {
   log(`tcm-watch "${session}": leg ${i}/${maxLegs} (polls so far: ${pollsTotal}, leg deaths: ${legDeaths})`)
-  const r = await agent(
-    legPrompt({ session, pane, pollSeconds, seedHash, seedCount, libDir }),
-    { label: `watch-leg-${i}:${session}`, phase: 'Watch', model: 'haiku', effort: 'low', schema: LEG_SCHEMA }
-  )
+  let r = null
+  try {
+    r = await agent(
+      legPrompt({ session, pane, pollSeconds, seedHash, seedCount, libDir }),
+      { label: `watch-leg-${i}:${session}`, phase: 'Watch', model: 'haiku', effort: 'low', schema: LEG_SCHEMA }
+    )
+  } catch (e) {
+    // A schema retry-cap inside agent() THROWS; without this catch one bad leg
+    // would abort the entire watch. Treat a throw exactly like a null return.
+    log(`tcm-watch "${session}": watch leg ${i} threw (${e && e.message ? e.message : e}); counting it as a leg death`)
+  }
   if (!r) {
-    // leg died at the harness level — a raw seam event; retry costs one leg slot
+    // leg died (null return) or threw at the harness level — a raw seam event; retry costs one leg slot
     legDeaths++
     continue
   }

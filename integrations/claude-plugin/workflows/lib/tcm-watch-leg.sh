@@ -43,6 +43,13 @@ while true; do
     echo "RESOLUTION=continue POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$LAST_ST NOTE=deadline"
     exit 0
   fi
+  # Under horizontal ownership the owner session is shared and outlives the
+  # delegate's pane, so check the specific pane first when we have one — else a
+  # dead pane keeps getting captured and ends as unverified, not session-dead.
+  if [ -n "$PANE" ] && ! tmux display-message -p -t "$PANE" '#{pane_id}' >/dev/null 2>&1; then
+    echo "RESOLUTION=session-dead POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$LAST_ST NOTE=pane-gone"
+    exit 0
+  fi
   if ! tmux has-session -t "=$SESH" 2>/dev/null; then
     echo "RESOLUTION=session-dead POLLS=$POLLS QCOUNT=$QCOUNT HASH=$LAST_HASH STATE=$LAST_ST NOTE=session-gone"
     exit 0

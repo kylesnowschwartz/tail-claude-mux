@@ -25,6 +25,14 @@ post_followup() {
     jq -n --arg s "$SESH" --rawfile m "$SOURCE" '{session:$s, message:$m}' | curl -sS -w '\n%{http_code}' -X POST localhost:7391/followup -H 'Content-Type: application/json' -d @-
   fi
 }
+count_receipts() {
+  # Exact-string match (grep -F), NOT regex: the server-returned message path
+  # contains '.' and other metacharacters that a regex would match loosely and
+  # fake a receipt. An empty MSGFILE/ROLLOUT yields 0 (an empty -F pattern would
+  # otherwise match every line).
+  if [ -z "$MSGFILE" ] || [ -z "$ROLLOUT" ]; then echo 0; return; fi
+  grep -F -c -- "$MSGFILE" "$ROLLOUT" 2>/dev/null || true
+}
 RESP=$(post_followup 2>&1)
 POST_STATUS=$?
 if [ "$POST_STATUS" -ne 0 ] || [ -z "$RESP" ]; then
@@ -51,11 +59,11 @@ fi
 MSGFILE=$(printf '%s' "$BODY" | jq -r '.messageFile // empty')
 ROLLOUT=$(printf '%s' "$BODY" | jq -r '.rolloutPath // empty')
 sleep 5
-RECEIPTS=$(grep -c "$MSGFILE" "$ROLLOUT" 2>/dev/null || true)
+RECEIPTS=$(count_receipts)
 RECEIPTS=${RECEIPTS:-0}
 if [ "$RECEIPTS" -eq 0 ]; then
   sleep 25
-  RECEIPTS=$(grep -c "$MSGFILE" "$ROLLOUT" 2>/dev/null || true)
+  RECEIPTS=$(count_receipts)
   RECEIPTS=${RECEIPTS:-0}
 fi
 if [ "$RECEIPTS" -eq 0 ]; then
@@ -72,7 +80,7 @@ if [ "$RECEIPTS" -eq 0 ]; then
     HTTP_CODE='transport-error'
   fi
   sleep 30
-  RECEIPTS=$(grep -c "$MSGFILE" "$ROLLOUT" 2>/dev/null || true)
+  RECEIPTS=$(count_receipts)
   RECEIPTS=${RECEIPTS:-0}
 fi
 if [ "$RECEIPTS" -gt 0 ]; then
