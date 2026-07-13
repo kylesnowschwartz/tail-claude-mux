@@ -21,7 +21,11 @@ default only closes ones whose TCM status is terminal (done/error/interrupted/
 gone). Running or approval-waiting delegates, and windows you opened yourself,
 are never touched.
 
-Arguments (pass through whatever Kyle supplied, as `$ARGUMENTS`):
+Arguments — pass ONLY the recognized flags below that Kyle actually supplied,
+each as its own literal token. Never splice raw `$ARGUMENTS` (or any free text,
+shell operator, `;`, `|`, `$(...)`, or glob) into the command line; if Kyle's
+request contains anything other than these flags, drop it and, if it looks
+intentional, ask him. `--keep`'s value must be a non-negative integer.
 
 - `--all-sessions` — sweep every tmux session, not just the current one
 - `--keep N` — preserve the N most-recent delegate windows
@@ -35,7 +39,7 @@ real sweep before inspecting this preview — the preview is the only thing
 standing between a done-but-unread delegate and a closed window.
 
 ```sh
-"${CLAUDE_PLUGIN_ROOT}"/scripts/tidy-delegates.sh --dry-run $ARGUMENTS
+"${CLAUDE_PLUGIN_ROOT}"/scripts/tidy-delegates.sh --dry-run [only the recognized flags Kyle supplied]
 ```
 
 ## Step 2 — review, then act
@@ -50,7 +54,7 @@ standing between a done-but-unread delegate and a closed window.
   scope):
 
   ```sh
-  "${CLAUDE_PLUGIN_ROOT}"/scripts/tidy-delegates.sh $ARGUMENTS
+  "${CLAUDE_PLUGIN_ROOT}"/scripts/tidy-delegates.sh [only the recognized flags Kyle supplied]
   ```
 
 Do not add `--all` or `--all-sessions` unless Kyle asked for them.
