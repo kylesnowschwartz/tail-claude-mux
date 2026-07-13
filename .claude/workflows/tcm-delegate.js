@@ -56,20 +56,19 @@ const RESULT_SCHEMA = {
 
 function spawnPrompt(p) {
   const owner = p.ownerSession || ''
-  return `You are a delegate spawner. Two steps, nothing else.
-
-STEP 1 — Write the following brief text EXACTLY to a file named delegate-brief-${p.name}.md in your scratchpad directory:
----BEGIN BRIEF---
-${p.brief}
----END BRIEF---
-(Do not include the BEGIN/END marker lines in the file.)
-
-STEP 2 — Run this single command exactly (timeout 60000), replacing <brief-path> with the absolute path of the delegate-brief-${p.name}.md you just wrote:
-bash ${LIB_DIR}/tcm-spawn.sh '${p.dir}' '${p.name}' '<brief-path>' '${owner}'
+  // JSON-encode the brief so it rides as ONE single-line, safely-quoted shell
+  // token: JSON.stringify escapes newlines to \n (no literal newlines for the
+  // agent's line-joining shell wrapper to mangle) and the single-quote wrap
+  // makes arbitrary content injection-safe. tcm-spawn.sh decodes it with jq.
+  // This replaces the old "write the brief to a scratchpad file first" step —
+  // the agent is now a pure executor of one exact, deterministic command.
+  const briefArg = "'" + JSON.stringify(p.brief).replace(/'/g, "'\\''") + "'"
+  return `You are a delegate spawner. Run this single command EXACTLY once (timeout 60000), and nothing else:
+bash ${LIB_DIR}/tcm-spawn.sh '${p.dir}' '${p.name}' ${briefArg} '${owner}'
 
 Map its single output line to StructuredOutput: session_name=SESSION, pane_id=PANE, window_id=WINDOW, owner_session=OWNER, alive=(ALIVE=yes), evidence=NOTE. Use "" for none values.
 
-HARD RULES: write only inside your scratchpad; do not send keys to, capture, or kill any tmux session; do not retry the POST yourself (the workflow decides); do not edit or "improve" ${LIB_DIR}/tcm-spawn.sh; if the script fails, return alive=false with the failure in evidence.`
+HARD RULES: do not write any files; do not modify the command; do not send keys to, capture, or kill any tmux session; do not retry the POST yourself (the workflow decides); do not edit or "improve" ${LIB_DIR}/tcm-spawn.sh; if the script fails, return alive=false with the failure in evidence.`
 }
 
 function resultPrompt(p) {
