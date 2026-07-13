@@ -2,29 +2,31 @@
 # tidy-delegates.sh — close finished TCM codex delegate windows.
 #
 # A delegate window is identified by the DURABLE spawn signature: its pane's
-# start command contains `codex --profile tcm-delegate` (set by
+# start command runs `codex --profile tcm-delegate` (set by
 # .claude/workflows/lib/tcm-spawn.sh). This never matches a codex shell you
 # opened yourself, so the sweep is safe to run at any time.
 #
-# "Finished" is decided locally, no server needed, and fails SAFE: the spawn
-# wrapper (tcm-spawn.sh) runs `... codex ...; exec "${SHELL:-sh}"`, so a
-# delegate is finished ONLY once its pane has dropped back to a login shell
-# (bash/zsh/sh/fish). While codex works the foreground process is `bun`/`node`
-# (codex ships as a node/bun wrapper, NOT a process literally named `codex`) or
-# whatever tool it spawned (git, etc.) — anything that is not a recognised login
-# shell is treated as still-active and left alone. So the default sweep closes a
-# window only when it is provably idle at a shell prompt; when in doubt it skips.
+# "Finished" is the TCM server's tracker status, NOT the pane's process: a
+# delegate's codex keeps idling interactively after finishing a turn, so
+# process state can't tell "done" from "still working". GET /result?session&pane
+# returns the authoritative status; a delegate is closeable when that status is
+# terminal — done, error, interrupted, or gone. Running or waiting (paused at an
+# approval prompt) delegates are left alone. Fails safe: if the status can't be
+# read (server down, untracked), the window is skipped, never killed — unless
+# --all is given. Requires the TCM server on localhost:7391.
 #
 # Usage:
-#   tidy-delegates.sh                 close every FINISHED delegate window
+#   tidy-delegates.sh                 close every delegate with a terminal status
 #   tidy-delegates.sh --keep N        keep the N most-recent delegate windows,
-#                                     close the rest of the finished ones
-#   tidy-delegates.sh --all           also close delegates still active
-#                                     (destructive — interrupts live work)
+#                                     close the rest of the terminal ones
+#   tidy-delegates.sh --all           close EVERY delegate window regardless of
+#                                     status (interrupts running/waiting work)
 #   tidy-delegates.sh --dry-run       print what would close, change nothing
 #
 # Exit status: 0 on success (including "nothing to close").
 set -euo pipefail
+
+BASE='http://localhost:7391'
 
 KEEP=0
 DRY=0
@@ -70,54 +72,41 @@ if ! tmux info >/dev/null 2>&1; then
   exit 0
 fi
 
-SIG='codex --profile tcm-delegate'
+# The spawn builds `sh -c` with each token individually quoted, so the
+# invocation reads as 'codex' '--profile' 'tcm-delegate' — the tokens never
+# appear space-separated in pane_start_command. Match with a regex that
+# tolerates the interleaved quotes rather than a literal substring.
+SIG_RE='codex.*--profile.*tcm-delegate'
+# TCM statuses that mean the delegate's turn is over and it is safe to close,
+# even if its codex process is still idling at the prompt.
+CLOSEABLE_RE='^(done|error|interrupted|gone)$'
 
-# Classify each delegate window as active or finished.
-#
-# We can't trust `pane_current_command`: tmux reports the wrapper shell for a
-# child process, so a running codex can read as `sh`/`bash` (verified) — a
-# name-based heuristic would misclassify live work as finished and kill it.
-#
-# Instead we read the wrapper contract directly. tcm-spawn.sh runs
-# `... codex ...; exec "${SHELL:-sh}"`, so while codex works the DELEGATE pane's
-# own tty carries a codex runtime process (codex ships as a bun/node wrapper);
-# once it exits, exec replaces the process with the bare login shell and no
-# runtime remains. So: active iff the delegate pane's tty has a bun/node/codex
-# process. We inspect ONLY the signature-matching pane's tty — a companion pane
-# in the same window runs the TCM TUI (also bun) and would otherwise pin every
-# window as active. This fails safe: if ps can't read the tty we assume active.
-declare -A ACT_OF ACTIVE_OF
-while IFS=$'\t' read -r wid wact ptty start; do
+# For each delegate pane, ask the server for its authoritative status and record
+# it against the window. STATUS_OF is the pane's status ("" if unreadable);
+# CLOSE_OF[wid]=1 once any delegate pane in the window is terminal.
+declare -A ACT_OF CLOSE_OF STATUS_OF
+UNKNOWN=0
+while IFS=$'\t' read -r wid wact sess pane start; do
   [ -z "$wid" ] && continue
-  case "$start" in
-  *"$SIG"*) ;;
-  *) continue ;;
-  esac
+  [[ "$start" =~ $SIG_RE ]] || continue
   if [ -z "${ACT_OF[$wid]:-}" ] || [ "$wact" -gt "${ACT_OF[$wid]}" ]; then
     ACT_OF[$wid]="$wact"
   fi
-  : "${ACTIVE_OF[$wid]:=0}"
-  # Default this pane to active; only prove it finished when ps positively
-  # reads the tty and finds no codex runtime. An empty tty or unreadable ps
-  # leaves it active — never kill on missing evidence.
-  active=1
-  tty=${ptty#/dev/}
-  if [ -n "$tty" ]; then
-    # pgrep -t is unreliable on macOS; ps -t is the portable read here.
-    # shellcheck disable=SC2009
-    comms=$(ps -t "$tty" -o comm= 2>/dev/null || true)
-    if [ -n "$comms" ] && ! printf '%s\n' "$comms" | grep -qiE '(^|/)(bun|node|codex)$'; then
-      active=0
-    fi
+  : "${CLOSE_OF[$wid]:=0}"
+  status=$(curl -fsS -G "$BASE/result" --data-urlencode "session=$sess" --data-urlencode "pane=$pane" 2>/dev/null | jq -r '.status // empty' 2>/dev/null || true)
+  STATUS_OF[$wid]="${status:-unknown}"
+  if [ -z "$status" ]; then
+    UNKNOWN=$((UNKNOWN + 1))
+  elif [[ "$status" =~ $CLOSEABLE_RE ]]; then
+    CLOSE_OF[$wid]=1
   fi
-  [ "$active" -eq 1 ] && ACTIVE_OF[$wid]=1
-done < <(tmux list-panes -a -F '#{window_id}	#{window_activity}	#{pane_tty}	#{pane_start_command}' 2>/dev/null)
+done < <(tmux list-panes -a -F '#{window_id}	#{window_activity}	#{session_name}	#{pane_id}	#{pane_start_command}' 2>/dev/null)
 
-# One line per delegate window, "<activity-epoch> <window_id> <active>", newest
-# first so --keep preserves the most-recent windows.
+# One line per delegate window, "<activity-epoch> <window_id> <closeable>",
+# newest first so --keep preserves the most-recent windows.
 WINDOWS=()
 for wid in "${!ACT_OF[@]}"; do
-  WINDOWS+=("${ACT_OF[$wid]} $wid ${ACTIVE_OF[$wid]}")
+  WINDOWS+=("${ACT_OF[$wid]} $wid ${CLOSE_OF[$wid]}")
 done
 if [ "${#WINDOWS[@]}" -gt 0 ]; then
   mapfile -t WINDOWS < <(printf '%s\n' "${WINDOWS[@]}" | sort -rn)
@@ -130,36 +119,35 @@ fi
 
 CLOSED=0
 KEPT=0
-SKIPPED_ACTIVE=0
+SKIPPED=0
 IDX=0
 for row in "${WINDOWS[@]}"; do
   wid="${row#* }"
   wid="${wid%% *}"
-  active="${row##* }"
+  closeable="${row##* }"
+  status="${STATUS_OF[$wid]:-unknown}"
   IDX=$((IDX + 1))
 
   # --keep N: preserve the N most-recent delegate windows (already sorted newest-first).
   if [ "$KEEP" -gt 0 ] && [ "$IDX" -le "$KEEP" ]; then
     KEPT=$((KEPT + 1))
-    echo "keep    $wid (most-recent #$IDX)"
+    echo "keep    $wid (most-recent #$IDX, status=$status)"
     continue
   fi
 
-  if [ "$active" -eq 1 ] && [ "$ALL" -eq 0 ]; then
-    SKIPPED_ACTIVE=$((SKIPPED_ACTIVE + 1))
-    echo "skip    $wid (not at a shell prompt — still active; pass --all to force)"
+  if [ "$closeable" -eq 0 ] && [ "$ALL" -eq 0 ]; then
+    SKIPPED=$((SKIPPED + 1))
+    echo "skip    $wid (status=$status; not terminal — pass --all to force)"
     continue
   fi
 
-  label="finished"
-  [ "$active" -eq 1 ] && label="ACTIVE"
   if [ "$DRY" -eq 1 ]; then
-    echo "would close $wid ($label)"
+    echo "would close $wid (status=$status)"
     CLOSED=$((CLOSED + 1))
     continue
   fi
   if tmux kill-window -t "$wid" 2>/dev/null; then
-    echo "closed  $wid ($label)"
+    echo "closed  $wid (status=$status)"
     CLOSED=$((CLOSED + 1))
   else
     echo "gone    $wid (already closed)"
@@ -168,4 +156,7 @@ done
 
 verb="closed"
 [ "$DRY" -eq 1 ] && verb="would close"
-echo "tidy-delegates: $verb $CLOSED, kept $KEPT, skipped-active $SKIPPED_ACTIVE."
+echo "tidy-delegates: $verb $CLOSED, kept $KEPT, skipped $SKIPPED."
+if [ "$UNKNOWN" -gt 0 ] && [ "$ALL" -eq 0 ]; then
+  echo "tidy-delegates: $UNKNOWN pane(s) had no readable status (TCM server on ${BASE}?); left untouched."
+fi
