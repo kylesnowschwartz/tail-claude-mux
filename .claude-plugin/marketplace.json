@@ -1,0 +1,13 @@
+{
+  "name": "tail-claude-mux",
+  "owner": {
+    "name": "kylesnowschwartz"
+  },
+  "plugins": [
+    {
+      "name": "tcm-delegation",
+      "source": "./integrations/claude-plugin",
+      "description": "TCM codex delegation: the tcm-delegate skill, the tidy-delegates cleanup skill, and the deterministic spawn/watch/result workflow scripts they drive."
+    }
+  ]
+}
