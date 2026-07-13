@@ -6,20 +6,21 @@
 # .claude/workflows/lib/tcm-spawn.sh). This never matches a codex shell you
 # opened yourself, so the sweep is safe to run at any time.
 #
-# "Finished" is the TCM server's tracker status, NOT the pane's process: a
-# delegate's codex keeps idling interactively after finishing a turn, so
-# process state can't tell "done" from "still working". GET /result?session&pane
-# returns the authoritative status; a delegate is closeable when that status is
-# terminal — done, error, interrupted, or gone. Running or waiting (paused at an
-# approval prompt) delegates are left alone. Fails safe: if the status can't be
-# read (server down, untracked), the window is skipped, never killed — unless
+# Scope: the CURRENT tmux session by default; pass --all-sessions to sweep every
+# session. "Finished" is the TCM server's tracker status, NOT the pane's
+# process: a delegate's codex keeps idling interactively after finishing a turn,
+# so process state can't tell "done" from "still working". GET /result?session&
+# pane returns the authoritative status; a delegate is closeable when that
+# status is terminal — done, error, interrupted, or gone. Running or waiting
+# (paused at an approval prompt) delegates are left alone. Fails safe: an
+# unreadable status (server down, untracked) is skipped, never killed, unless
 # --all is given. Requires the TCM server on localhost:7391.
 #
 # Usage:
-#   tidy-delegates.sh                 close every delegate with a terminal status
-#   tidy-delegates.sh --keep N        keep the N most-recent delegate windows,
-#                                     close the rest of the terminal ones
-#   tidy-delegates.sh --all           close EVERY delegate window regardless of
+#   tidy-delegates.sh                 close terminal-status delegates in this session
+#   tidy-delegates.sh --all-sessions  sweep every tmux session, not just this one
+#   tidy-delegates.sh --keep N        keep the N most-recent delegate windows
+#   tidy-delegates.sh --all           close EVERY matched delegate regardless of
 #                                     status (interrupts running/waiting work)
 #   tidy-delegates.sh --dry-run       print what would close, change nothing
 #
@@ -31,6 +32,7 @@ BASE='http://localhost:7391'
 KEEP=0
 DRY=0
 ALL=0
+ALL_SESSIONS=0
 while [ $# -gt 0 ]; do
   case "$1" in
   --keep)
@@ -45,8 +47,12 @@ while [ $# -gt 0 ]; do
     ALL=1
     shift
     ;;
+  --all-sessions)
+    ALL_SESSIONS=1
+    shift
+    ;;
   -h | --help)
-    sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
   *)
@@ -72,6 +78,18 @@ if ! tmux info >/dev/null 2>&1; then
   exit 0
 fi
 
+# Default scope is the current session. Resolve it the same way tcm-spawn.sh
+# resolves the owning session; if we can't (not attached to tmux), the caller
+# must opt into a global sweep explicitly.
+CURRENT=""
+if [ "$ALL_SESSIONS" -eq 0 ]; then
+  CURRENT=$(tmux display-message -p '#{session_name}' 2>/dev/null || true)
+  if [ -z "$CURRENT" ]; then
+    echo "tidy-delegates: can't determine the current tmux session; pass --all-sessions to sweep every session" >&2
+    exit 2
+  fi
+fi
+
 # The spawn builds `sh -c` with each token individually quoted, so the
 # invocation reads as 'codex' '--profile' 'tcm-delegate' — the tokens never
 # appear space-separated in pane_start_command. Match with a regex that
@@ -81,14 +99,17 @@ SIG_RE='codex.*--profile.*tcm-delegate'
 # even if its codex process is still idling at the prompt.
 CLOSEABLE_RE='^(done|error|interrupted|gone)$'
 
-# For each delegate pane, ask the server for its authoritative status and record
-# it against the window. STATUS_OF is the pane's status ("" if unreadable);
-# CLOSE_OF[wid]=1 once any delegate pane in the window is terminal.
+# For each delegate pane (in scope), ask the server for its authoritative status
+# and record it against the window. STATUS_OF is the pane's status ("unknown" if
+# unreadable); CLOSE_OF[wid]=1 once any delegate pane in the window is terminal.
 declare -A ACT_OF CLOSE_OF STATUS_OF
 UNKNOWN=0
 while IFS=$'\t' read -r wid wact sess pane start; do
   [ -z "$wid" ] && continue
   [[ "$start" =~ $SIG_RE ]] || continue
+  if [ "$ALL_SESSIONS" -eq 0 ] && [ "$sess" != "$CURRENT" ]; then
+    continue
+  fi
   if [ -z "${ACT_OF[$wid]:-}" ] || [ "$wact" -gt "${ACT_OF[$wid]}" ]; then
     ACT_OF[$wid]="$wact"
   fi
@@ -112,8 +133,10 @@ if [ "${#WINDOWS[@]}" -gt 0 ]; then
   mapfile -t WINDOWS < <(printf '%s\n' "${WINDOWS[@]}" | sort -rn)
 fi
 
+SCOPE="session '$CURRENT'"
+[ "$ALL_SESSIONS" -eq 1 ] && SCOPE="all sessions"
 if [ "${#WINDOWS[@]}" -eq 0 ]; then
-  echo "tidy-delegates: no TCM codex delegate windows found."
+  echo "tidy-delegates: no TCM codex delegate windows found in $SCOPE."
   exit 0
 fi
 
@@ -156,7 +179,7 @@ done
 
 verb="closed"
 [ "$DRY" -eq 1 ] && verb="would close"
-echo "tidy-delegates: $verb $CLOSED, kept $KEPT, skipped $SKIPPED."
+echo "tidy-delegates: $verb $CLOSED, kept $KEPT, skipped $SKIPPED (scope: $SCOPE)."
 if [ "$UNKNOWN" -gt 0 ] && [ "$ALL" -eq 0 ]; then
   echo "tidy-delegates: $UNKNOWN pane(s) had no readable status (TCM server on ${BASE}?); left untouched."
 fi

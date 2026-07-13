@@ -1,24 +1,31 @@
 ---
-description: Close finished TCM codex delegate windows (safe sweep by spawn signature)
-argument-hint: "[--keep N] [--all] [--dry-run]"
+description: Close finished TCM codex delegate windows in this session (safe sweep by spawn signature)
+argument-hint: "[--all-sessions] [--keep N] [--all] [--dry-run]"
 allowed-tools: Bash(scripts/tidy-delegates.sh:*)
 ---
 Close the finished TCM codex delegate windows left over from `tcm-delegate` runs.
 
-The sweep is deterministic and fails safe: it only targets tmux windows whose
-pane start command carries the `codex --profile tcm-delegate` spawn signature,
-and by default only closes ones where codex has already exited (pane dropped
-back to a login shell). A delegate still working — or paused at an approval
-prompt — has a non-shell foreground process and is never touched. Windows you
-opened yourself are never matched.
+Scope is the current tmux session by default (`--all-sessions` widens it). The
+sweep is deterministic and fails safe: it only targets windows whose pane start
+command carries the `codex --profile tcm-delegate` spawn signature, and by
+default only closes ones whose TCM status is terminal (done/error/interrupted/
+gone). Running or approval-waiting delegates, and windows you opened yourself,
+are never touched.
 
 Arguments (`$ARGUMENTS`):
-- `--keep N` — preserve the N most-recent delegate windows, close the older finished ones
-- `--all` — also close delegates that are still active (interrupts live work)
+- `--all-sessions` — sweep every tmux session, not just the current one
+- `--keep N` — preserve the N most-recent delegate windows
+- `--all` — close every matched delegate regardless of status (interrupts live work)
 - `--dry-run` — print what would close, change nothing
 
-Running the sweep:
+**Step 1 — preview (changes nothing).** This lists exactly what the sweep would close:
 
-!`scripts/tidy-delegates.sh $ARGUMENTS`
+!`scripts/tidy-delegates.sh --dry-run $ARGUMENTS`
 
-Report the result to me in one line: how many windows closed, kept, and skipped-running.
+**Step 2 — review, then act.**
+- If any window in the preview is one I likely still need — a delegate whose output hasn't been read yet, or one worth keeping for reference — do NOT close anything. Name that window, say why you're holding fire, and ask me first.
+- Otherwise run the sweep for real and report the one-line result (closed / kept / skipped, and the scope):
+
+  `scripts/tidy-delegates.sh $ARGUMENTS`
+
+Do not add `--all` or `--all-sessions` unless I asked for them.
