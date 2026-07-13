@@ -1,5 +1,5 @@
 ---
-name: tcm-delegate
+name: tcm-delegate-codex
 description: >
   Delegate a coding task to a visible Codex agent running in a tmux pane via
   TCM, driven end-to-end by workflow scripts (spawn → watch → result as one
@@ -11,7 +11,7 @@ description: >
   or tmux-less contexts: fall back to /codex:rescue.
 ---
 
-# tcm-delegate — visible Codex delegation via TCM workflows
+# tcm-delegate-codex — visible Codex delegation via TCM workflows
 
 The delegation seams (watching, follow-up delivery, result reading) are
 deterministic workflow scripts, not prose steps. A/B-validated 2026-07-10

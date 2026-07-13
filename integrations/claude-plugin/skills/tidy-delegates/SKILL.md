@@ -2,16 +2,16 @@
 name: tidy-delegates
 description: >
   Close the finished TCM codex delegate tmux windows left over from
-  tcm-delegate runs. Use ONLY when Kyle explicitly asks to tidy up / clean up /
+  tcm-delegate-codex runs. Use ONLY when Kyle explicitly asks to tidy up / clean up /
   close the delegate windows (or "TCM codex shells"). Do NOT invoke proactively
-  just because a delegation finished — tcm-delegate leaves windows open until
+  just because a delegation finished — tcm-delegate-codex leaves windows open until
   Kyle says otherwise. Scoped to the current tmux session by default;
   --all-sessions widens it. Requires the TCM server on localhost:7391.
 ---
 
 # tidy-delegates — sweep finished delegate windows
 
-Close the finished TCM codex delegate windows left over from `tcm-delegate`
+Close the finished TCM codex delegate windows left over from `tcm-delegate-codex`
 runs.
 
 Scope is the current tmux session by default (`--all-sessions` widens it). The
@@ -60,4 +60,4 @@ standing between a done-but-unread delegate and a closed window.
 Do not add `--all` or `--all-sessions` unless Kyle asked for them.
 
 This closes windows only — it does not remove any worktree the delegate ran in.
-Sweep those separately per `tcm-delegate` §4 (`git worktree remove` / `prune`).
+Sweep those separately per `tcm-delegate-codex` §4 (`git worktree remove` / `prune`).
