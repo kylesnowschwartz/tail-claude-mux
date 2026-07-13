@@ -3,6 +3,9 @@
   "owner": {
     "name": "kylesnowschwartz"
   },
+  "metadata": {
+    "description": "Personal marketplace for tail-claude-mux (TCM) tooling: the tcm-delegation plugin."
+  },
   "plugins": [
     {
       "name": "tcm-delegation",

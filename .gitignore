@@ -10,11 +10,3 @@ tree/
 .ide_backup/
 SPECKY-ROUTING.md
 .playwright-cli
-
-# Re-include committed Claude tooling; the global gitignore ignores .claude/
-# entirely, so un-ignore the dir, re-ignore its contents, then track only the
-# shared bits (workflows + project slash commands).
-!.claude/
-.claude/*
-!.claude/workflows/
-!.claude/commands/
