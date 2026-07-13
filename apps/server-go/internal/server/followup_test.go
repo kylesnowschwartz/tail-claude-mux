@@ -77,7 +77,7 @@ func TestFollowupSelectorMismatchIsJSON(t *testing.T) {
 }
 
 func TestFollowupPinsThreadAndRespawnsPane(t *testing.T) {
-	sessionsDir := t.TempDir()
+	sessionsDir := resolvedTempDir(t)
 	rolloutDir := filepath.Join(sessionsDir, "2026", "07", "11")
 	if err := os.MkdirAll(rolloutDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -121,14 +121,14 @@ func TestFollowupPinsThreadAndRespawnsPane(t *testing.T) {
 	if len(respawnArgs) != 5 || !slices.Equal(respawnArgs[:4], wantPrefix) {
 		t.Fatalf("respawn args = %#v", respawnArgs)
 	}
-	wantCommand := fmt.Sprintf(`codex -c mcp_servers.just.enabled=false resume %s "Read %s and address it"`, uuid, body.MessageFile)
+	wantCommand := fmt.Sprintf(`codex --profile tcm-delegate -c mcp_servers.just.enabled=false resume %s "Read %s and address it"`, uuid, body.MessageFile)
 	if respawnArgs[4] != wantCommand {
 		t.Fatalf("command = %q, want %q", respawnArgs[4], wantCommand)
 	}
 }
 
 func TestFollowupRevalidatesBeforeRespawn(t *testing.T) {
-	sessionsDir := t.TempDir()
+	sessionsDir := resolvedTempDir(t)
 	rolloutDir := filepath.Join(sessionsDir, "2026", "07", "11")
 	if err := os.MkdirAll(rolloutDir, 0o755); err != nil {
 		t.Fatal(err)

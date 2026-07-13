@@ -9,7 +9,7 @@ import (
 )
 
 func TestRolloutForFollowup(t *testing.T) {
-	root := t.TempDir()
+	root := resolvedTempDir(t)
 	dir := filepath.Join(root, "2026", "07", "11")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

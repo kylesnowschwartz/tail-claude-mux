@@ -67,6 +67,15 @@ type Adapter struct {
 }
 
 func New(sessionsDir, sessionIndexPath string) *Adapter {
+	// lsof reports each rollout's real path with symlinks resolved (e.g. when
+	// ~/.codex is a dotfiles symlink to ~/Code/dotfiles/codex). SessionsDir
+	// arrives as the pre-resolution path, so isRolloutPath's filepath.Rel
+	// against it rejects every lsof rollout path — ownership never resolves,
+	// the terminal Stop hook is dropped, and delegate status is stuck at idle.
+	// Resolve once here so the comparison base matches lsof's output.
+	if resolved, err := filepath.EvalSymlinks(sessionsDir); err == nil {
+		sessionsDir = resolved
+	}
 	return &Adapter{
 		SessionsDir:      sessionsDir,
 		SessionIndexPath: sessionIndexPath,

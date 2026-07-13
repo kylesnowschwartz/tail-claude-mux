@@ -13,8 +13,23 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
+// resolvedTempDir returns a canonical (symlink-resolved) temp dir so it matches
+// what codexwatch.New produces after normalizing its SessionsDir. On macOS
+// t.TempDir() sits under /var, a symlink to /private/var; production rollout
+// paths arrive already resolved, so a SessionsDir passed to codexwatch.New must
+// start from the resolved form or the rollout paths it returns won't equal the
+// ones the test wrote.
+func resolvedTempDir(t *testing.T) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
+}
+
 func TestResultReturnsPinnedRolloutFinalMessage(t *testing.T) {
-	sessionsDir := t.TempDir()
+	sessionsDir := resolvedTempDir(t)
 	rolloutDir := filepath.Join(sessionsDir, "2026", "07", "11")
 	if err := os.MkdirAll(rolloutDir, 0o755); err != nil {
 		t.Fatal(err)

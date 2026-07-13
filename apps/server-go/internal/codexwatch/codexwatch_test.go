@@ -75,6 +75,20 @@ func writeIndexName(t *testing.T, path, threadID, name string) {
 	}
 }
 
+// resolvedTempDir returns a canonical (symlink-resolved) temp dir. On macOS
+// t.TempDir() sits under /var, a symlink to /private/var; production rollout
+// paths come from lsof already resolved, so tests that build both SessionsDir
+// and rollout paths from the same root must start from the resolved form or
+// New's EvalSymlinks normalization diverges from the written rollouts.
+func resolvedTempDir(t *testing.T) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
+}
+
 func writeRollout(t *testing.T, dir, threadID, source, entries string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -458,7 +472,7 @@ func TestSeedNestedRecentRollout(t *testing.T) {
 }
 
 func TestSessionInfoForPidResolvesPrimaryRollout(t *testing.T) {
-	dir := t.TempDir()
+	dir := resolvedTempDir(t)
 	sessions := filepath.Join(dir, "sessions", "2026", "07", "10")
 	primaryID := "12345678-1234-1234-1234-123456789abc"
 	subagentID := "87654321-4321-4321-4321-cba987654321"
@@ -481,8 +495,39 @@ func TestSessionInfoForPidResolvesPrimaryRollout(t *testing.T) {
 	}
 }
 
+// New must resolve a symlinked SessionsDir (e.g. ~/.codex -> ~/Code/dotfiles/codex)
+// so isRolloutPath matches the resolved real paths lsof reports. Without this,
+// filepath.Rel rejects every rollout, ownership never resolves, and delegate
+// status is stuck at idle.
+func TestNewResolvesSymlinkedSessionsDir(t *testing.T) {
+	// EvalSymlinks the temp root so the canonical rollout path is unaffected by
+	// macOS's /var -> /private/var symlink (mimics lsof's fully resolved output).
+	realRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	realSessions := filepath.Join(realRoot, "sessions")
+	threadID := "12345678-1234-1234-1234-123456789abc"
+	rollout := writeRollout(t, realSessions, threadID, `"cli"`, "")
+
+	link := filepath.Join(t.TempDir(), "dotlink")
+	if err := os.Symlink(realRoot, link); err != nil {
+		t.Fatal(err)
+	}
+	symlinkSessions := filepath.Join(link, "sessions")
+
+	a := New(symlinkSessions, filepath.Join(realRoot, "index.jsonl"))
+	if !a.isRolloutPath(rollout) {
+		t.Fatalf("isRolloutPath(%q) = false; New must resolve symlinked SessionsDir %q to the real path so lsof's rollout paths match", rollout, symlinkSessions)
+	}
+	a.openFilesForPID = func(int) []string { return []string{rollout} }
+	if got := a.rolloutPathForPID(4242, threadID); got != rollout {
+		t.Fatalf("rolloutPathForPID = %q, want %q (ownership must resolve through the symlink)", got, rollout)
+	}
+}
+
 func TestScanStateForPidReusesRolloutLookup(t *testing.T) {
-	dir := t.TempDir()
+	dir := resolvedTempDir(t)
 	threadID := "12345678-1234-1234-1234-123456789abc"
 	path := writeRollout(t, filepath.Join(dir, "sessions"), threadID, `"cli"`,
 		`{"type":"response_item","payload":{"type":"reasoning"}}`+"\n")
@@ -506,7 +551,7 @@ func TestScanStateForPidReusesRolloutLookup(t *testing.T) {
 }
 
 func TestScanStateForPidClassifiesCompletedRollout(t *testing.T) {
-	dir := t.TempDir()
+	dir := resolvedTempDir(t)
 	threadID := "12345678-1234-1234-1234-123456789abc"
 	path := writeRollout(t, filepath.Join(dir, "sessions"), threadID, `"cli"`,
 		`{"type":"event_msg","payload":{"type":"task_complete"}}`+"\n")
@@ -542,7 +587,7 @@ func TestProbeLiveStatusFromRollout(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
+			dir := resolvedTempDir(t)
 			threadID := "12345678-1234-1234-1234-123456789abc"
 			path := writeRollout(t, filepath.Join(dir, "sessions"), threadID, `"cli"`, tc.entries)
 			a := New(filepath.Join(dir, "sessions"), filepath.Join(dir, "index.jsonl"))
