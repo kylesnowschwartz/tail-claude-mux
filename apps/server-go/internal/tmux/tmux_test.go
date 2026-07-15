@@ -15,11 +15,12 @@ func fake(outputs map[string]string) Runner {
 	}
 }
 
-func TestListSessions_ParsesAndFiltersStash(t *testing.T) {
+func TestListSessions_ParsesAndFiltersStashAndIgnored(t *testing.T) {
 	tm := &Tmux{Run: fake(map[string]string{
-		"list-sessions": "$1\tproj\t1781731808\t1\t3\t/Users/u/proj\n" +
-			"$2\t_tcm_stash\t1781731809\t0\t1\t/\n" +
-			"$3\tother\t1781731810\t0\t2\t/Users/u/other",
+		"list-sessions": "$1\tproj\t1781731808\t1\t3\t/Users/u/proj\t0\n" +
+			"$2\t_tcm_stash\t1781731809\t0\t1\t/\t0\n" +
+			"$3\tother\t1781731810\t0\t2\t/Users/u/other\t0\n" +
+			"$4\trevdiff-42\t1781731811\t1\t1\t/Users/u/proj\t1",
 	})}
 	got := tm.ListSessions()
 	want := []Session{
@@ -28,6 +29,68 @@ func TestListSessions_ParsesAndFiltersStash(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+	// The private listing keeps ignored rows: spawn-agent name dedupe must
+	// still collide with them.
+	all, err := tm.listSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 || all[2].Name != "revdiff-42" || !all[2].Ignored {
+		t.Errorf("private listing = %+v, want revdiff-42 kept with Ignored=true", all)
+	}
+}
+
+// The ignore field must render via the #{?,1,0} conditional, never the
+// raw #{@tcm-ignore}. The raw form expands empty when the option is
+// unset, and ExecRunner's TrimSpace eats the final row's trailing tab —
+// the field-count check then drops whichever session sorts last (found
+// live: the last-sorting session flapped in and out of the dashboard).
+func TestListingFormats_IgnoreFieldNeverEmpty(t *testing.T) {
+	formats := map[string]string{}
+	tm := &Tmux{Run: func(args ...string) (string, error) {
+		for i, a := range args {
+			if a == "-F" && i+1 < len(args) {
+				formats[args[0]] = args[i+1]
+			}
+		}
+		return "", nil
+	}}
+	tm.ListSessions()
+	tm.ListAllPanes()
+
+	conditional := "#{?" + IgnoreOption + ",1,0}"
+	if f := formats["list-sessions"]; !strings.HasSuffix(f, conditional) {
+		t.Errorf("list-sessions format = %q, want ignore as final field via %q", f, conditional)
+	}
+	if f := formats["list-panes"]; !strings.Contains(f, conditional) {
+		t.Errorf("list-panes format = %q, want ignore field via %q", f, conditional)
+	}
+	for cmd, f := range formats {
+		if strings.Contains(f, "#{"+IgnoreOption+"}") {
+			t.Errorf("%s format uses raw #{%s}, which renders empty when unset: %q", cmd, IgnoreOption, f)
+		}
+	}
+}
+
+func TestSessionIgnored_ExactNameMatch(t *testing.T) {
+	tm := &Tmux{Run: fake(map[string]string{
+		"list-sessions": "$1\trevdiff\t100\t1\t1\t/p\t0\n" +
+			"$2\trevdiff-42\t200\t1\t1\t/p\t1",
+	})}
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"revdiff-42", true},
+		{"revdiff", false},   // exact match only, no prefix bleed
+		{"revdiff-4", false}, // not a prefix match either
+		{"missing", false},
+	}
+	for _, tc := range cases {
+		if got := tm.SessionIgnored(tc.name); got != tc.want {
+			t.Errorf("SessionIgnored(%q) = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 
@@ -63,6 +126,7 @@ func TestListAllPanes_Parses(t *testing.T) {
 			tmuxtest.PaneSpec{Session: "proj", ID: "%6", PID: "104", Dir: "/Users/u/proj", WindowActive: "1", Companion: "1", WindowIndex: "0", PaneIndex: "2", WindowID: "@1", Left: "120", Right: "152", Width: "33", WindowWidth: "153", Height: "8", WindowHeight: "41", Title: "companion via option"}.Row(),
 			tmuxtest.PaneSpec{Session: "proj", ID: "%7", PID: "105", Dir: "/Users/u/proj", WindowActive: "0", WindowIndex: "1", PaneIndex: "1", WindowID: "@2", Left: "0", Right: "80", Width: "81", WindowWidth: "81", Height: "8", WindowHeight: "24", Title: "tcm-companion"}.Row(),
 			tmuxtest.PaneSpec{Session: "other", ID: "%4", PID: "103", Dir: "/tmp", WindowActive: "0", WindowIndex: "x", PaneIndex: "y", WindowID: "@3", Left: "a", Right: "b", Width: "c", WindowWidth: "d", Height: "e", WindowHeight: "f", Title: "title\twith\ttabs"}.Row(),
+			tmuxtest.PaneSpec{Session: "revdiff-42", ID: "%8", PID: "106", Dir: "/tmp", WindowActive: "1", WindowIndex: "0", PaneIndex: "0", WindowID: "@5", Left: "0", Right: "80", Width: "81", WindowWidth: "81", Height: "24", WindowHeight: "24", Ignored: "1", Title: "revdiff"}.Row(),
 			tmuxtest.PaneSpec{Session: "bad", ID: "%5", PID: "notapid", Dir: "/", WindowActive: "0", WindowIndex: "0", PaneIndex: "0", WindowID: "@4", Left: "0", Right: "0", Width: "0", WindowWidth: "0", Height: "0", WindowHeight: "0", Title: "t"}.Row(),
 			"malformed",
 		),
@@ -75,6 +139,7 @@ func TestListAllPanes_Parses(t *testing.T) {
 		{Session: "proj", ID: "%6", PID: 104, Dir: "/Users/u/proj", WindowActive: true, Companion: true, WindowIndex: 0, PaneIndex: 2, WindowID: "@1", Left: 120, Right: 152, Width: 33, WindowWidth: 153, Height: 8, WindowHeight: 41, Title: "companion via option"},
 		{Session: "proj", ID: "%7", PID: 105, Dir: "/Users/u/proj", Companion: true, WindowIndex: 1, PaneIndex: 1, WindowID: "@2", Left: 0, Right: 80, Width: 81, WindowWidth: 81, Height: 8, WindowHeight: 24, Title: "tcm-companion"},
 		{Session: "other", ID: "%4", PID: 103, Dir: "/tmp", WindowIndex: -1, PaneIndex: -1, WindowID: "@3", Left: -1, Right: -1, Width: -1, WindowWidth: -1, Height: -1, WindowHeight: -1, Title: "title\twith\ttabs"},
+		{Session: "revdiff-42", ID: "%8", PID: 106, Dir: "/tmp", WindowActive: true, WindowIndex: 0, PaneIndex: 0, WindowID: "@5", Left: 0, Right: 80, Width: 81, WindowWidth: 81, Height: 24, WindowHeight: 24, Ignored: true, Title: "revdiff"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)

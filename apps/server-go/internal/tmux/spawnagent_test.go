@@ -109,7 +109,7 @@ func TestResolveSpawnAgentName(t *testing.T) {
 				sort.Strings(names)
 				rows := make([]string, 0, len(names))
 				for i, name := range names {
-					rows = append(rows, fmt.Sprintf("$%d\t%s\t0\t0\t1\t/tmp", i, name))
+					rows = append(rows, fmt.Sprintf("$%d\t%s\t0\t0\t1\t/tmp\t0", i, name))
 				}
 				return strings.Join(rows, "\n"), nil
 			}}
@@ -147,7 +147,7 @@ func TestResolveSpawnAgentWindowName(t *testing.T) {
 		commands = append(commands, append([]string(nil), args...))
 		switch args[0] {
 		case "list-sessions":
-			return "$1\towner\t0\t0\t2\t/tmp\n$2\tother\t0\t0\t1\t/tmp", nil
+			return "$1\towner\t0\t0\t2\t/tmp\t0\n$2\tother\t0\t0\t1\t/tmp\t0", nil
 		case "list-windows":
 			return "agent\nagent-2", nil
 		default:
@@ -287,7 +287,7 @@ func TestSpawnAgentWindowTmuxArguments(t *testing.T) {
 	tm := &Tmux{Run: func(args ...string) (string, error) {
 		switch args[0] {
 		case "list-sessions":
-			return "$1\towner\t0\t0\t1\t/tmp", nil
+			return "$1\towner\t0\t0\t1\t/tmp\t0", nil
 		case "list-windows":
 			return "shell", nil
 		default:

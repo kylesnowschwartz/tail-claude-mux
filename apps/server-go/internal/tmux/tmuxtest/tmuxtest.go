@@ -31,6 +31,7 @@ type PaneSpec struct {
 	WindowWidth  string
 	Height       string
 	WindowHeight string
+	Ignored      string // "1" for the @tcm-ignore session option
 	Title        string // last on purpose: the only field that may contain the separator
 }
 
@@ -40,7 +41,7 @@ func (s PaneSpec) Row() string {
 		s.Session, s.ID, s.PID, s.Dir, s.WindowActive, s.Sidebar,
 		s.Companion, s.WindowIndex, s.PaneIndex, s.WindowID, s.Left,
 		s.Right, s.Width, s.WindowWidth, s.Height, s.WindowHeight,
-		s.Title,
+		s.Ignored, s.Title,
 	}, "\t")
 }
 

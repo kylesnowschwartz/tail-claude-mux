@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/gitinfo"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/sessionorder"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
@@ -36,6 +37,36 @@ func TestSetStatusDisambiguatesByThread(t *testing.T) {
 	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/set-status", body))
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+}
+
+// A focus hook for an @tcm-ignore'd session (transient popup like a
+// revdiff review) must not steal the dashboard focus; a normal session
+// still follows focus.
+func TestHandleFocus_IgnoredSessionKeepsFocus(t *testing.T) {
+	tm := &tmux.Tmux{Run: func(args ...string) (string, error) {
+		if args[0] == "list-sessions" {
+			return "$1\tproj\t100\t1\t1\t/p\t0\n" +
+				"$2\tother\t150\t0\t1\t/p\t0\n" +
+				"$3\trevdiff-42\t200\t1\t1\t/p\t1", nil
+		}
+		return "", nil
+	}}
+	s := New(&state.Builder{Tmux: tm, Git: gitinfo.NewCache(), Order: sessionorder.Load("")}, nil, nil, nil, nil, nil)
+	s.Builder.SetFocused("proj")
+
+	resp := httptest.NewRecorder()
+	s.handleFocus(resp, httptest.NewRequest(http.MethodPost, "/focus", strings.NewReader("/dev/ttys001|revdiff-42|@5")))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusOK)
+	}
+	if got := s.Builder.Focused(); got != "proj" {
+		t.Errorf("focused = %q, want proj (ignored session must not steal focus)", got)
+	}
+
+	s.handleFocus(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/focus", strings.NewReader("/dev/ttys001|other|@6")))
+	if got := s.Builder.Focused(); got != "other" {
+		t.Errorf("focused = %q, want other (normal session must follow focus)", got)
 	}
 }
 

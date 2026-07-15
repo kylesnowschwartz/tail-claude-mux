@@ -46,7 +46,7 @@ func testBuilder(outputs map[string]string) *Builder {
 
 func TestBuild_SessionAssemblyAndFocus(t *testing.T) {
 	b := testBuilder(map[string]string{
-		"list-sessions": "$1\tbeta\t200\t0\t2\t/tmp\n$2\talpha\t100\t1\t3\t/tmp",
+		"list-sessions": "$1\tbeta\t200\t0\t2\t/tmp\t0\n$2\talpha\t100\t1\t3\t/tmp\t0",
 		"list-clients":  "c0\t/dev/ttys001\t42\talpha\t120\t40",
 		"list-panes":    "alpha\t/tmp", // serves both dirs and counts calls
 	})
@@ -82,7 +82,7 @@ func TestBuild_SessionAssemblyAndFocus(t *testing.T) {
 
 func TestBuild_FocusSurvivesWhileSessionExists(t *testing.T) {
 	outputs := map[string]string{
-		"list-sessions": "$1\ta\t100\t0\t1\t/tmp\n$2\tb\t200\t0\t1\t/tmp",
+		"list-sessions": "$1\ta\t100\t0\t1\t/tmp\t0\n$2\tb\t200\t0\t1\t/tmp\t0",
 		"list-clients":  "c0\t/dev/ttys001\t42\ta\t120\t40",
 		"list-panes":    "",
 	}
@@ -94,9 +94,26 @@ func TestBuild_FocusSurvivesWhileSessionExists(t *testing.T) {
 	}
 
 	// When the focused session disappears, fall back to current-or-first.
-	outputs["list-sessions"] = "$1\ta\t100\t0\t1\t/tmp"
+	outputs["list-sessions"] = "$1\ta\t100\t0\t1\t/tmp\t0"
 	if st := b.Build(); st.FocusedSession == nil || *st.FocusedSession != "a" {
 		t.Errorf("focus fallback = %v", st.FocusedSession)
+	}
+}
+
+// An @tcm-ignore'd session gets no dashboard card, and focus never falls
+// back to it — even when it is the lone client's current session.
+func TestBuild_IgnoredSessionGetsNoCardOrFocus(t *testing.T) {
+	b := testBuilder(map[string]string{
+		"list-sessions": "$1\tproj\t100\t0\t1\t/tmp\t0\n$2\trevdiff-42\t200\t1\t1\t/tmp\t1",
+		"list-clients":  "c0\t/dev/ttys001\t42\trevdiff-42\t120\t40",
+		"list-panes":    "",
+	})
+	st := b.Build()
+	if len(st.Sessions) != 1 || st.Sessions[0].Name != "proj" {
+		t.Fatalf("sessions = %+v, want only proj", st.Sessions)
+	}
+	if st.FocusedSession == nil || *st.FocusedSession != "proj" {
+		t.Errorf("focusedSession = %v, want proj (never an ignored session)", st.FocusedSession)
 	}
 }
 

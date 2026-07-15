@@ -120,7 +120,7 @@ func (s *Server) spawnInActiveWindows() {
 
 	seen := map[string]bool{}
 	for _, p := range panes {
-		if !p.WindowActive || p.Session == tmux.StashSession || seen[p.WindowID] {
+		if !p.WindowActive || p.Session == tmux.StashSession || p.Ignored || seen[p.WindowID] {
 			continue
 		}
 		seen[p.WindowID] = true
@@ -203,6 +203,13 @@ func (s *Server) ensureSidebarInWindow(windowID string) {
 		if windowID == "" {
 			return
 		}
+	}
+
+	// @tcm-ignore'd sessions never get managed panes. The deferred
+	// enforceGeometry still runs: a switch INTO an ignored session should
+	// still repair other windows' drift.
+	if windowIgnored(panes, windowID) {
+		return
 	}
 
 	hasSidebar := false
@@ -291,6 +298,17 @@ func (s *Server) ensureCompanionInWindow(windowID string, panes []tmux.Pane, fre
 	}
 	id := s.Builder.Tmux.SpawnCompanion(sidebarID, rows, s.CompanionPane.Command)
 	log.Printf("companion: spawn window=%s pane=%s", windowID, id)
+}
+
+// windowIgnored reports whether windowID belongs to an @tcm-ignore'd
+// session (any of its panes carries the session-scoped option).
+func windowIgnored(panes []tmux.Pane, windowID string) bool {
+	for _, p := range panes {
+		if p.WindowID == windowID {
+			return p.Ignored
+		}
+	}
+	return false
 }
 
 // windowHeightIn finds the window's height from any of its panes in the

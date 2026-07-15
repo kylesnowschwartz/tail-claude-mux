@@ -21,6 +21,9 @@ func sidebarRow() string {
 func companionRow() string {
 	return tmuxtest.PaneSpec{Session: "proj", ID: "%3", PID: "102", Dir: "/p", WindowActive: "1", Companion: "1", WindowID: "@1", Left: "120", Right: "152", Width: "33", WindowWidth: "153", Height: "8", WindowHeight: "41", Title: "tcm-companion"}.Row()
 }
+func ignoredMainRow() string {
+	return tmuxtest.PaneSpec{Session: "revdiff-42", ID: "%4", PID: "104", Dir: "/p", WindowActive: "1", WindowID: "@2", Left: "0", Right: "152", Width: "153", WindowWidth: "153", Height: "41", WindowHeight: "41", Ignored: "1", Title: "revdiff"}.Row()
+}
 func stashSidebarRow() string {
 	return tmuxtest.PaneSpec{Session: tmux.StashSession, ID: "%8", PID: "108", Dir: "/p", WindowActive: "1", Sidebar: "1", WindowID: "@9", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "40", WindowHeight: "41", Title: "tcm-sidebar"}.Row()
 }
@@ -142,6 +145,42 @@ func TestEnsureCompanionInWindow_NoSidebar_NoSpawn(t *testing.T) {
 	s.ensureCompanionInWindow("@1", []tmux.Pane{mainPane()}, "")
 	if got := only(cmds, "split-window", "join-pane"); len(got) != 0 {
 		t.Errorf("companion must target an existing sidebar, got %v", got)
+	}
+}
+
+func TestSpawnInActiveWindows_SkipsIgnoredSession(t *testing.T) {
+	var cmds [][]string
+	s := newTestServer(
+		sequencedRunner([]string{rows(mainRow(), ignoredMainRow())}, map[string]string{"split-window": "%9"}, &cmds),
+		state.CompanionPaneConfig{},
+	)
+	s.SidebarPosition = "right"
+	s.spawnInActiveWindows()
+	want := [][]string{
+		{"split-window", "-d", "-h", "-f", "-l", "33", "-t", "%1", "-P", "-F", "#{pane_id}", "exec /scripts/start.sh"},
+	}
+	if got := only(cmds, "split-window", "join-pane"); !reflect.DeepEqual(got, want) {
+		t.Errorf("spawns = %v\nwant only the normal window's sidebar %v", got, want)
+	}
+}
+
+func TestEnsureSidebarInWindow_IgnoredWindow_NoSpawnButGeometryEnforced(t *testing.T) {
+	// The sidebar in the NORMAL window @1 has drifted to width 40: the
+	// deferred enforceGeometry must still repair it even when the ensure
+	// targets the ignored session's window.
+	drifted := tmuxtest.PaneSpec{Session: "proj", ID: "%2", PID: "101", Dir: "/p", WindowActive: "1", Sidebar: "1", WindowID: "@1", Left: "113", Right: "152", Width: "40", WindowWidth: "153", Height: "33", WindowHeight: "41", Title: "tcm-sidebar"}.Row()
+	var cmds [][]string
+	s := newTestServer(
+		sequencedRunner([]string{rows(mainRow(), drifted, ignoredMainRow())}, nil, &cmds),
+		state.CompanionPaneConfig{Command: "watch date", Rows: 8},
+	)
+	s.ensureSidebarInWindow("@2")
+	if got := only(cmds, "split-window", "join-pane", "kill-pane"); len(got) != 0 {
+		t.Errorf("ignored window must get no managed panes, got %v", got)
+	}
+	wantResize := [][]string{{"resize-pane", "-t", "%2", "-x", "33"}}
+	if got := only(cmds, "resize-pane"); !reflect.DeepEqual(got, wantResize) {
+		t.Errorf("resize-pane = %v\nwant %v (geometry enforcement must survive the ignore gate)", got, wantResize)
 	}
 }
 

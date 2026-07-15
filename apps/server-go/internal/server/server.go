@@ -306,6 +306,14 @@ func (s *Server) handleFocus(w http.ResponseWriter, r *http.Request) {
 	// echo, not a drag (index.ts: /focus sets pendingEnforcement).
 	s.setPendingEnforcement()
 	if session := parseFocusContext(string(body)); session != "" {
+		// @tcm-ignore'd sessions (transient popups like revdiff) must not
+		// steal dashboard focus — the previous focus survives the attach.
+		// Fresh query on purpose: the 5s pane cache can miss a session
+		// created moments ago.
+		if s.Builder.Tmux.SessionIgnored(session) {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		s.mu.Lock()
 		s.Builder.SetFocused(session)
 		if s.Tracker != nil {

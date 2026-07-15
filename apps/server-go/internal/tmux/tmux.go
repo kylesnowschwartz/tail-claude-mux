@@ -19,6 +19,13 @@ const sep = "\t"
 // excluded from every listing (matches provider.ts STASH_SESSION).
 const StashSession = "_tcm_stash"
 
+// IgnoreOption is the session-scoped user option external tools set on
+// transient utility sessions (e.g. revdiff popup sessions) to keep tcm's
+// hands off entirely: no sidebar/companion spawn, no dashboard card, no
+// focus-follow. Set it immediately after new-session, before any client
+// attaches.
+const IgnoreOption = "@tcm-ignore"
+
 // Session is one row of `tmux list-sessions` (client.ts SESSION_SPEC).
 type Session struct {
 	ID        string
@@ -27,6 +34,7 @@ type Session struct {
 	Attached  int
 	Windows   int
 	Dir       string
+	Ignored   bool // @tcm-ignore session option
 }
 
 // Client is one row of `tmux list-clients` (client.ts CLIENT_SPEC).
@@ -58,20 +66,37 @@ type Tmux struct {
 // New returns a Tmux backed by the real binary.
 func New() *Tmux { return &Tmux{Run: ExecRunner} }
 
-// ListSessions returns all sessions except the sidebar stash, in tmux
-// order. An unreachable tmux server yields an empty list, not an error —
-// the sidebar renders empty, same as the TS provider.
+// ListSessions returns all sessions except the sidebar stash and
+// @tcm-ignore'd sessions, in tmux order. Central exclusion, like the
+// stash: dashboard cards, focus fallback, and dir→session hook routing
+// all see the filtered view. An unreachable tmux server yields an empty
+// list, not an error — the sidebar renders empty, same as the TS
+// provider.
 func (t *Tmux) ListSessions() []Session {
 	sessions, _ := t.listSessions()
-	return sessions
+	var out []Session
+	for _, s := range sessions {
+		if !s.Ignored {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // listSessions is the error-reporting form used by operations that cannot
-// safely treat an unreachable tmux server as an empty listing.
+// safely treat an unreachable tmux server as an empty listing. Unlike the
+// public ListSessions it keeps @tcm-ignore'd rows — spawn-agent name
+// dedupe must still see them.
 func (t *Tmux) listSessions() ([]Session, error) {
+	// The ignore flag is the LAST field and must never render empty:
+	// ExecRunner TrimSpace-trims the output, so a bare #{@tcm-ignore}
+	// (empty when unset) would lose its tab on the final row and the
+	// 7-field parse would drop that session. The conditional pins it to
+	// "1"/"0".
 	out, err := t.Run("list-sessions", "-F",
 		"#{session_id}"+sep+"#{session_name}"+sep+"#{session_created}"+sep+
-			"#{session_attached}"+sep+"#{session_windows}"+sep+"#{session_path}")
+			"#{session_attached}"+sep+"#{session_windows}"+sep+"#{session_path}"+sep+
+			"#{?"+IgnoreOption+",1,0}")
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +106,7 @@ func (t *Tmux) listSessions() ([]Session, error) {
 	var sessions []Session
 	for line := range strings.SplitSeq(out, "\n") {
 		f := strings.Split(line, sep)
-		if len(f) != 6 || f[1] == StashSession {
+		if len(f) != 7 || f[1] == StashSession {
 			continue
 		}
 		sessions = append(sessions, Session{
@@ -91,9 +116,24 @@ func (t *Tmux) listSessions() ([]Session, error) {
 			Attached:  atoi(f[3]),
 			Windows:   atoi(f[4]),
 			Dir:       f[5],
+			Ignored:   f[6] == "1",
 		})
 	}
 	return sessions, nil
+}
+
+// SessionIgnored reports whether the exactly-named session carries the
+// @tcm-ignore option. Deliberately a scan of the unfiltered listing, NOT
+// `show-options -t "=name"`: tmux 3.7b rejects the `=` exact-match prefix
+// for set-option/show-options, and plain `-t name` prefix-matches.
+func (t *Tmux) SessionIgnored(name string) bool {
+	sessions, _ := t.listSessions()
+	for _, s := range sessions {
+		if s.Name == name {
+			return s.Ignored
+		}
+	}
+	return false
 }
 
 // ListClients returns all attached clients (client.ts listClients).
@@ -198,6 +238,7 @@ type Pane struct {
 	WindowWidth  int    // window_width columns, -1 when unparseable
 	Height       int    // pane_height rows, -1 when unparseable
 	WindowHeight int    // window_height rows, -1 when unparseable
+	Ignored      bool   // @tcm-ignore option on the pane's session
 	Title        string
 }
 
@@ -219,7 +260,9 @@ func ManagedPanes(panes []Pane) []Pane {
 }
 
 // ListAllPanes lists every pane on the server. Title is the last field on
-// purpose: it is the only one that can contain the separator.
+// purpose: it is the only one that can contain the separator. The ignore
+// field uses the same #{?,1,0} conditional as listSessions so both parsers
+// agree on 1/0 whatever value the option was set to.
 func (t *Tmux) ListAllPanes() []Pane {
 	out, err := t.Run("list-panes", "-a", "-F",
 		"#{session_name}"+sep+"#{pane_id}"+sep+"#{pane_pid}"+sep+
@@ -228,14 +271,14 @@ func (t *Tmux) ListAllPanes() []Pane {
 			"#{window_index}"+sep+"#{pane_index}"+sep+"#{window_id}"+sep+
 			"#{pane_left}"+sep+"#{pane_right}"+sep+"#{pane_width}"+sep+
 			"#{window_width}"+sep+"#{pane_height}"+sep+"#{window_height}"+sep+
-			"#{pane_title}")
+			"#{?"+IgnoreOption+",1,0}"+sep+"#{pane_title}")
 	if err != nil || out == "" {
 		return nil
 	}
 	var panes []Pane
 	for line := range strings.SplitSeq(out, "\n") {
-		f := strings.SplitN(line, sep, 17)
-		if len(f) != 17 || f[0] == "" {
+		f := strings.SplitN(line, sep, 18)
+		if len(f) != 18 || f[0] == "" {
 			continue
 		}
 		pid, err := strconv.Atoi(f[2])
@@ -248,8 +291,8 @@ func (t *Tmux) ListAllPanes() []Pane {
 			PID:          pid,
 			Dir:          f[3],
 			WindowActive: f[4] == "1",
-			Sidebar:      f[5] == "1" || f[16] == SidebarPaneTitle,
-			Companion:    f[6] == "1" || f[16] == CompanionPaneTitle,
+			Sidebar:      f[5] == "1" || f[17] == SidebarPaneTitle,
+			Companion:    f[6] == "1" || f[17] == CompanionPaneTitle,
 			WindowIndex:  atoiOr(f[7], -1),
 			PaneIndex:    atoiOr(f[8], -1),
 			WindowID:     f[9],
@@ -259,7 +302,8 @@ func (t *Tmux) ListAllPanes() []Pane {
 			WindowWidth:  atoiOr(f[13], -1),
 			Height:       atoiOr(f[14], -1),
 			WindowHeight: atoiOr(f[15], -1),
-			Title:        f[16],
+			Ignored:      f[16] == "1",
+			Title:        f[17],
 		})
 	}
 	return panes

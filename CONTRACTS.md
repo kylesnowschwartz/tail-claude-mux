@@ -151,6 +151,29 @@ agent that fired it.
   immediately (a dead process has no pane to navigate to). Unknown
   liveness is never pruned — no scan has confirmed the exit.
 
+## Session Opt-Out
+
+Tools that create transient utility sessions (for example revdiff's
+popup review sessions) can keep tcm away entirely by setting the
+session-scoped user option `@tcm-ignore`:
+
+```sh
+tmux set-option -t "$SESSION_ID" @tcm-ignore 1
+```
+
+Set it immediately after `new-session`, before any client attaches. An
+ignored session gets no sidebar or companion panes, no dashboard card,
+and does not steal dashboard focus when a client attaches to it.
+Sessions marked after tcm has already spawned panes in them are not
+retro-cleaned.
+
+revdiff's launcher exposes a generic per-session option passthrough;
+wire tcm's marker through it with:
+
+```sh
+export REVDIFF_TMUX_SESSION_OPTIONS="@tcm-ignore=1"
+```
+
 ## Runtime Notes
 
 - tmux is the only supported mux. The Go server shells out to tmux
