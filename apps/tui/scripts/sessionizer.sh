@@ -35,8 +35,21 @@ if [ ${#valid_dirs[@]} -eq 0 ]; then
   exit 1
 fi
 
-selected=$(find "${valid_dirs[@]}" -mindepth 1 -maxdepth 3 -type d 2>/dev/null | fzf \
+# Walk each root to completion before the next so SESSIONIZER_DIR order is the
+# list order; a single multi-root find interleaves depth levels across roots.
+list_dirs() {
+  local dir
+  for dir in "${valid_dirs[@]}"; do
+    # Prune hidden dirs (.git, .bin, ...) and their subtrees; mindepth keeps
+    # the prune off the root, so a hidden root like ~/.config still descends.
+    find "$dir" -mindepth 1 -maxdepth 3 -name '.*' -prune -o -type d -print 2>/dev/null
+  done
+}
+
+selected=$(list_dirs | fzf \
   --reverse \
+  --scheme=path \
+  --tiebreak=index \
   --header="Pick a directory for new session" \
   --preview=':' \
   --preview-window=hidden \
