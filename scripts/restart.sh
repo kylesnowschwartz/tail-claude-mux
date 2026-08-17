@@ -32,7 +32,7 @@ wait_for_server_gone() {
 }
 
 # restart_decision figures out whether POST /restart would actually land the
-# binary we just built. restartInPlace (apps/server-go/cmd/tcm-server/main.go)
+# binary we just built. restartInPlace (apps/server-go/cmd/tcm/main.go)
 # re-execs os.Executable() — the path the LIVE server was originally launched
 # from. If that's a different checkout (e.g. you ran `just restart` from a
 # worktree other than the one that launched the live server), /restart
@@ -57,7 +57,7 @@ restart_decision() {
     REASON="couldn't identify the live server's build; cold-starting to be safe"
     return
   fi
-  live_exe="$(lsof -p "$live_pid" -a -d txt -Fn 2>/dev/null | sed -n 's/^n//p' | grep -F "/tcm-server" | head -n1 || true)"
+  live_exe="$(lsof -p "$live_pid" -a -d txt -Fn 2>/dev/null | sed -n 's/^n//p' | grep -F "/apps/server-go/bin/tcm" | head -n1 || true)"
   if [[ -z "$live_exe" ]]; then
     DECISION="cold-start"
     REASON="couldn't identify the live server's build; cold-starting to be safe"
@@ -77,9 +77,9 @@ echo "==> Building TUI..."
 cd "$ROOT/apps/tui" && "$BUN" run build
 
 # 1b. Build the Go server (the only backend — bun server retired).
-GO_BIN="$ROOT/apps/server-go/bin/tcm-server"
+GO_BIN="$ROOT/apps/server-go/bin/tcm"
 echo "==> Building Go server..."
-(cd "$ROOT/apps/server-go" && GOWORK=off go build -o bin/tcm-server ./cmd/tcm-server)
+(cd "$ROOT/apps/server-go" && GOWORK=off go build -o bin/tcm ./cmd/tcm)
 
 # 2. Restart or cold-start the server
 if server_alive; then
@@ -91,7 +91,7 @@ if server_alive; then
       echo "error: old server did not stop within 3s" >&2
       exit 1
     fi
-    "$GO_BIN" >>/tmp/tcm-server-go.log 2>&1 &
+    "$GO_BIN" server >>/tmp/tcm-server-go.log 2>&1 &
   else
     [[ -n "$REASON" ]] && echo "==> ${REASON}"
     echo "==> Restarting server..."
@@ -99,7 +99,7 @@ if server_alive; then
   fi
 else
   echo "==> Server not running, starting fresh..."
-  "$GO_BIN" >>/tmp/tcm-server-go.log 2>&1 &
+  "$GO_BIN" server >>/tmp/tcm-server-go.log 2>&1 &
 fi
 
 # 3. Wait for the new server

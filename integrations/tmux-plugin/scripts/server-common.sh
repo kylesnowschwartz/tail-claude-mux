@@ -5,7 +5,7 @@ HOST="${TCM_HOST:-127.0.0.1}"
 
 PLUGIN_DIR="$(tmux show-environment -g TCM_DIR 2>/dev/null | cut -d= -f2)"
 PLUGIN_DIR="${PLUGIN_DIR:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
-SERVER_BIN="$PLUGIN_DIR/apps/server-go/bin/tcm-server"
+SERVER_BIN="$PLUGIN_DIR/apps/server-go/bin/tcm"
 
 server_alive() {
   curl -s -o /dev/null -m 0.2 "http://${HOST}:${PORT}/" 2>/dev/null
@@ -20,7 +20,7 @@ ensure_server() {
   # binary is a build error — scripts/restart.sh builds it.
   [ -x "$SERVER_BIN" ] || return 1
 
-  "$SERVER_BIN" >>/tmp/tcm-server-go.log 2>&1 &
+  "$SERVER_BIN" server >>/tmp/tcm-server-go.log 2>&1 &
 
   attempt=0
   while [ "$attempt" -lt 30 ]; do

@@ -1,16 +1,16 @@
-// tcm-server is the Go tcm backend (see .agent-history/SCOPING-go-backend.md
+// tcm is the Go tcm backend (see .agent-history/SCOPING-go-backend.md
 // at the repo root).
 //
 // Tooling contract: the TUI launcher, restart.sh, and the tmux plugin all
-// spawn this binary directly — it binds the tcm port, writes /tmp/tcm.pid
-// after a successful bind, and answers POST /restart by re-exec'ing itself
-// in place (same pid, so the pid file stays true; sockets are CLOEXEC so
-// the port frees for the fresh image).
+// spawn this binary directly as `tcm server` — it binds the tcm port,
+// writes /tmp/tcm.pid after a successful bind, and answers POST /restart by
+// re-exec'ing itself in place (same pid, so the pid file stays true;
+// sockets are CLOEXEC so the port frees for the fresh image).
 // The -refresh flag sets the server refresh loop interval (default 2s).
 //
 // A/B usage against a live instance:
 //
-//	go run ./cmd/tcm-server -port 7392
+//	go run ./cmd/tcm server -port 7392
 //	curl -s localhost:7392/state | jq .sessions[].name
 package main
 
@@ -49,7 +49,34 @@ var (
 	commit  = "unknown"
 )
 
+// main dispatches to the `tcm <subcommand>` argv shape. `server` is the only
+// subcommand today; sibling subcommands (delegation, etc.) land as
+// additional cases here in later bites.
 func main() {
+	if len(os.Args) < 2 {
+		usage()
+		os.Exit(2)
+	}
+	switch os.Args[1] {
+	case "server":
+		runServer(os.Args[2:])
+	default:
+		usage()
+		os.Exit(2)
+	}
+}
+
+func usage() {
+	fmt.Fprintf(os.Stderr, "usage: %s <command> [flags]\n\ncommands:\n  server    run the tcm backend server\n", filepath.Base(os.Args[0]))
+}
+
+// runServer is the tcm backend's entry point. args is the argv tail after
+// the `server` subcommand — reslicing
+// os.Args here keeps flag.Parse (which reads the global flag.CommandLine
+// against os.Args[1:]) working unmodified.
+func runServer(args []string) {
+	os.Args = append([]string{os.Args[0]}, args...)
+
 	port := flag.Int("port", wire.ServerPort, "listen port (use a non-default port to A/B against a live instance)")
 	refresh := flag.Duration("refresh", 2*time.Second, "state refresh interval")
 	doRegisterHooks := flag.Bool("register-hooks", false, "register tcm's Claude Code and Codex lifecycle hooks and exit")
@@ -57,7 +84,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("tcm-server %s\n", buildInfo())
+		fmt.Printf("tcm %s\n", buildInfo())
 		return
 	}
 
@@ -168,7 +195,10 @@ func cleanupOnSignal() {
 // restartInPlace re-execs the current binary with the same argv — the
 // POST /restart contract. Same pid (pid file stays valid); Go sockets are
 // CLOEXEC, so the listener closes at exec and the fresh image binds anew.
-// reloadTUI rides the environment into the next incarnation.
+// reloadTUI rides the environment into the next incarnation. os.Args here
+// is the reslice runServer made (["tcm", ...server flags]) rather than the
+// original process argv, so the re-exec must reassemble the `server`
+// subcommand argv explicitly.
 func restartInPlace(reloadTUI bool) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -178,8 +208,9 @@ func restartInPlace(reloadTUI bool) {
 	if reloadTUI {
 		_ = os.Setenv("TCM_RELOAD_TUI", "1")
 	}
+	argv := append([]string{exe, "server"}, os.Args[1:]...)
 	log.Printf("restart: re-exec %s (reload-tui=%v)", exe, reloadTUI)
-	if err := syscall.Exec(exe, os.Args, os.Environ()); err != nil {
+	if err := syscall.Exec(exe, argv, os.Environ()); err != nil {
 		log.Printf("restart: exec failed: %v", err)
 	}
 }
@@ -282,7 +313,7 @@ func resolveHookScript() string {
 
 // resolveScriptsDir locates apps/tui/scripts (the sidebar TUI launcher):
 // TCM_DIR when it actually holds start.sh, else relative to this binary
-// (apps/server-go/bin/tcm-server → repo root is three levels up). The
+// (apps/server-go/bin/tcm → repo root is three levels up). The
 // exe-relative fallback also covers a stale TCM_DIR — a dangling tpm
 // symlink after a repo move burned us once. Empty disables sidebar
 // bootstrap rather than spawning panes with a broken command.

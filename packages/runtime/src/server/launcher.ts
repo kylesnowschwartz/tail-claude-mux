@@ -12,21 +12,21 @@ async function isPortOpen(host: string, port: number, timeoutMs = 200): Promise<
   });
 }
 
-/** Resolve the Go server binary (apps/server-go, built to bin/tcm-server by
+/** Resolve the Go server binary (apps/server-go, built to bin/tcm by
  *  restart.sh). The bun server is retired — there is no fallback; a missing
  *  binary is a build error to surface, not to paper over. */
 function resolveServerBin(): string {
   const candidates = [
     process.env.TCM_DIR
-      ? join(process.env.TCM_DIR, "apps", "server-go", "bin", "tcm-server")
+      ? join(process.env.TCM_DIR, "apps", "server-go", "bin", "tcm")
       : "",
-    new URL("../../../../apps/server-go/bin/tcm-server", import.meta.url).pathname,
+    new URL("../../../../apps/server-go/bin/tcm", import.meta.url).pathname,
   ];
   for (const bin of candidates) {
     if (bin && existsSync(bin)) return bin;
   }
   throw new Error(
-    "tcm-server binary not found — build it with: cd apps/server-go && go build -o bin/tcm-server ./cmd/tcm-server (or run scripts/restart.sh)",
+    "tcm binary not found — build it with: cd apps/server-go && go build -o bin/tcm ./cmd/tcm (or run scripts/restart.sh)",
   );
 }
 
@@ -35,7 +35,7 @@ export async function ensureServer(): Promise<void> {
   // spawn gate (a hand-started A/B server may not have written one).
   if (await isPortOpen(SERVER_HOST, SERVER_PORT)) return;
 
-  const proc = Bun.spawn([resolveServerBin()], {
+  const proc = Bun.spawn([resolveServerBin(), "server"], {
     stdio: ["ignore", "ignore", "ignore"],
     env: { ...process.env },
   });

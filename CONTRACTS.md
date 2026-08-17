@@ -48,7 +48,7 @@ agent that fired it.
   `PermissionRequest`, `PostToolUse`, `Stop`, `StopFailure`,
   `Notification`, `SessionEnd`. It injects `event`, `pid`, and
   `process_snapshot` into the hook's stdin JSON and POSTs it.
-  Register with `tcm-server -register-hooks` (idempotent; entries are
+  Register with `tcm server -register-hooks` (idempotent; entries are
   async so hooks never block a turn).
 - Status mapping: `SessionStart` → `idle`;
   `UserPromptSubmit`/`PreToolUse`/`PostToolUse` → `running`;
@@ -77,7 +77,7 @@ agent that fired it.
 - `scripts/hook.sh <Event> codex` is registered additively in
   `~/.codex/hooks.json` for `SessionStart`, `UserPromptSubmit`,
   `PreToolUse`, `PostToolUse`, `PermissionRequest`, and `Stop`. Run
-  `tcm-server -register-hooks`, then choose `Hooks need review` and
+  `tcm server -register-hooks`, then choose `Hooks need review` and
   `Trust all and continue` on the next Codex launch. Registration preserves
   foreign hooks and unknown configuration keys, and repeated runs do not
   add duplicate TCM groups.

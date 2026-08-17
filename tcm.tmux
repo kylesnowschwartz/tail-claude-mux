@@ -61,7 +61,7 @@ bind_global_index_keys() {
 tmux set-environment -g TCM_DIR "$CURRENT_DIR"
 tmux set-environment -g TCM_WIDTH "$WIDTH"
 
-# --- Bootstrap: tie tcm-server lifetime to tmux-server lifetime (1:1) ---
+# --- Bootstrap: tie the tcm server's lifetime to tmux-server lifetime (1:1) ---
 #
 # Why unconditional: the server holds in-memory caches (palette diff,
 # sidebar visibility, metadata store) that are only valid for the tmux
@@ -79,7 +79,7 @@ tmux set-environment -g TCM_WIDTH "$WIDTH"
 # /tmp is per-boot on macOS, but Linux keeps it around — a stale PID file
 # from a previous crash could now point at someone else's process whose PID
 # was reused. Match against the binary path so we only kill our own.
-SERVER_BIN="$CURRENT_DIR/apps/server-go/bin/tcm-server"
+SERVER_BIN="$CURRENT_DIR/apps/server-go/bin/tcm"
 if [ -f /tmp/tcm.pid ]; then
   OLD_PID="$(cat /tmp/tcm.pid 2>/dev/null)"
   if [ -n "$OLD_PID" ] && ps -p "$OLD_PID" -o command= 2>/dev/null | grep -qF "$SERVER_BIN"; then
@@ -126,9 +126,9 @@ sh "$SCRIPTS_DIR/install-hooks.sh" >/dev/null 2>&1 || true
 # install), spawning once the build lands; otherwise scripts/restart.sh is
 # the manual path.
 if [ -x "$SERVER_BIN" ]; then
-  "$SERVER_BIN" >>/tmp/tcm-server-go.log 2>&1 &
+  "$SERVER_BIN" server >>/tmp/tcm-server-go.log 2>&1 &
 elif command -v go >/dev/null 2>&1; then
-  (cd "$CURRENT_DIR/apps/server-go" && go build -o bin/tcm-server ./cmd/tcm-server 2>>/tmp/tcm-install.log && exec "$SERVER_BIN" >>/tmp/tcm-server-go.log 2>&1) &
+  (cd "$CURRENT_DIR/apps/server-go" && go build -o bin/tcm ./cmd/tcm 2>>/tmp/tcm-install.log && exec "$SERVER_BIN" server >>/tmp/tcm-server-go.log 2>&1) &
 fi
 
 # --- Bind tmux shortcuts ---
