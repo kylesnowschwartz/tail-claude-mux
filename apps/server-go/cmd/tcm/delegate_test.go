@@ -215,3 +215,18 @@ func TestDelegate_ContractPin(t *testing.T) {
 		}
 	}
 }
+
+// tmux display-message exits 0 with an empty line for an unknown -t target
+// on tmux 3.7b, so exit status alone cannot prove a pane is alive.
+func TestPaneAlive_EmptyOutputWithZeroExitIsDead(t *testing.T) {
+	restore := tmuxOutput
+	defer func() { tmuxOutput = restore }()
+	tmuxOutput = func(args ...string) (string, error) { return "\n", nil }
+	if paneAlive("%214") {
+		t.Fatal("paneAlive must be false when tmux echoes an empty line for the target")
+	}
+	tmuxOutput = func(args ...string) (string, error) { return "%214\n", nil }
+	if !paneAlive("%214") {
+		t.Fatal("paneAlive must be true when tmux echoes the pane id back")
+	}
+}

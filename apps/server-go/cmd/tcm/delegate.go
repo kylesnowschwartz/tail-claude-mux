@@ -139,15 +139,15 @@ func detectOwnerSession() string {
 	return strings.TrimSpace(out)
 }
 
-// paneAlive probes whether the spawned pane is still present, 2 seconds
-// after the spawn request returned. tmux errors (dead pane, dead session)
-// count as not alive.
+// paneAlive probes whether a pane is present. tmux display-message exits 0
+// even for an unknown -t target (it renders an empty line), so liveness is
+// the echoed pane id matching, not the exit status.
 func paneAlive(paneID string) bool {
 	if paneID == "" {
 		return false
 	}
-	_, err := tmuxOutput("display-message", "-p", "-t", paneID, "#{pane_id}")
-	return err == nil
+	out, err := tmuxOutput("display-message", "-p", "-t", paneID, "#{pane_id}")
+	return err == nil && strings.TrimSpace(out) == paneID
 }
 
 func emitDelegate(stdout io.Writer, outcome delegateOutcome) int {
