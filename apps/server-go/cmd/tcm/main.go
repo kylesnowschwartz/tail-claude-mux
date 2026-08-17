@@ -50,8 +50,8 @@ var (
 )
 
 // main dispatches to the `tcm <subcommand>` argv shape. `server` runs the
-// backend; `delegate` and `result` are client subcommands that talk to a
-// running server over HTTP. Sibling subcommands (wait, followup, tidy) land
+// backend; `delegate`, `result`, and `wait` are client subcommands that talk
+// to a running server over HTTP. Sibling subcommands (followup, tidy) land
 // as additional cases here in later bites.
 func main() {
 	if len(os.Args) < 2 {
@@ -65,6 +65,8 @@ func main() {
 		os.Exit(runDelegate(os.Args[2:], os.Stdout))
 	case "result":
 		os.Exit(runResult(os.Args[2:], os.Stdout))
+	case "wait":
+		os.Exit(runWait(os.Args[2:], os.Stdout))
 	default:
 		usage()
 		os.Exit(2)
@@ -72,7 +74,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s <command> [flags]\n\ncommands:\n  server     run the tcm backend server\n  delegate   spawn a codex delegate in a tmux window\n  result     fetch a delegate's result\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "usage: %s <command> [flags]\n\ncommands:\n  server     run the tcm backend server\n  delegate   spawn a codex delegate in a tmux window\n  result     fetch a delegate's result\n  wait       watch a delegate until it reaches a terminal outcome\n", filepath.Base(os.Args[0]))
 }
 
 // runServer is the tcm backend's entry point. args is the argv tail after
