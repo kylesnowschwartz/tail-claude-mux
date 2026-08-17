@@ -7,9 +7,18 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
+
+// requestTimeout bounds an ordinary (non-long-poll) call to the tcm server:
+// every HTTP call here must time out rather than hang forever if the server
+// stops responding.
+const requestTimeout = 30 * time.Second
+
+// httpClient is shared by postJSON and getURL for ordinary calls.
+var httpClient = &http.Client{Timeout: requestTimeout}
 
 // tmuxOutput runs a tmux command and returns its stdout. Tests stub this to
 // avoid depending on a real tmux server.
@@ -34,7 +43,7 @@ func writeJSON(w io.Writer, v any) error {
 // the response status and body. A non-nil error means the request never
 // reached the server (connection refused, DNS, etc.).
 func postJSON(url string, body []byte) (status int, respBody []byte, err error) {
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	resp, err := httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, err
 	}
@@ -50,7 +59,14 @@ func postJSON(url string, body []byte) (status int, respBody []byte, err error) 
 // status and body. A non-nil error means the request never reached the
 // server.
 func getURL(url string) (status int, respBody []byte, err error) {
-	resp, err := http.Get(url)
+	return getURLWithClient(httpClient, url)
+}
+
+// getURLWithClient performs a GET using the given client, so a caller doing
+// a long-poll (tcm wait's /wait request) can supply a timeout wider than
+// requestTimeout instead of sharing the ordinary-call client.
+func getURLWithClient(client *http.Client, url string) (status int, respBody []byte, err error) {
+	resp, err := client.Get(url)
 	if err != nil {
 		return 0, nil, err
 	}

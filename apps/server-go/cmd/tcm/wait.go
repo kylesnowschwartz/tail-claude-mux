@@ -7,16 +7,25 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
 // sleep is time.Sleep behind a seam so tests exercise backoff and the 5s
 // waiting re-confirm without actually sleeping.
 var sleep = time.Sleep
+
+// waitClientGrace is added on top of a /wait long-poll's requested timeout
+// to build the HTTP client's own deadline, so a hung server still fails the
+// request instead of blocking forever. Tests shrink this to keep a
+// stub-server-never-responds case fast.
+var waitClientGrace = 30 * time.Second
 
 // waitOutcome is the JSON shape tcm wait prints to stdout. State is the last
 // server-reported status this run observed (empty when /wait was never
@@ -54,7 +63,8 @@ type stateResponse struct {
 }
 
 // promptPattern matches a pane's tail when it is sitting at an approval
-// prompt, ported verbatim from tcm-watch-leg.sh's grep -qiE pattern.
+// prompt: press-enter/y-n/approve/allow/permission/continue/numbered-choice
+// text in the pane's last few non-blank lines.
 var promptPattern = regexp.MustCompile(`(?i)press enter|y/n|approve|allow|permission|continue\?|› *[0-9]\.`)
 
 // waitConfig is runWait's parsed flags plus the seams tests substitute.
@@ -74,7 +84,7 @@ type waitConfig struct {
 func runWait(args []string, stdout io.Writer) int {
 	fs := flag.NewFlagSet("wait", flag.ContinueOnError)
 	session := fs.String("session", "", "TCM session name to watch")
-	pane := fs.String("pane", "", "pane id to watch (recommended; disambiguates multi-agent sessions)")
+	pane := fs.String("pane", "", "pane id to watch (required; disambiguates multi-agent sessions)")
 	port := fs.Int("port", 7391, "tcm server port")
 	minutes := fs.Int("minutes", 20, "overall watch budget in minutes")
 	pollSeconds := fs.Int("poll-seconds", 30, "fallback poll interval in seconds, and backoff delay on a bad /wait response")
@@ -85,19 +95,24 @@ func runWait(args []string, stdout io.Writer) int {
 		fmt.Fprintln(os.Stderr, "wait: -session is required")
 		return 2
 	}
+	if *pane == "" {
+		fmt.Fprintln(os.Stderr, "wait: -pane is required")
+		return 2
+	}
 
 	cfg := waitConfig{session: *session, pane: *pane, port: *port, minutes: *minutes, pollSeconds: *pollSeconds}
-	outcome := watchToTerminal(cfg)
+	deadline := time.Now().Add(time.Duration(cfg.minutes) * time.Minute)
+	outcome := watchToTerminal(cfg, deadline)
 	_ = writeJSON(stdout, outcome)
 	return 0
 }
 
 // watchToTerminal drives the poll loop: /wait long-poll primary, pane/session
 // liveness checked before each round, /state + pane-quiescence fallback when
-// /wait itself is unreachable. minutes budget exceeded without a terminal
-// state yields "timeout".
-func watchToTerminal(cfg waitConfig) waitOutcome {
-	deadline := time.Now().Add(time.Duration(cfg.minutes) * time.Minute)
+// /wait itself is unreachable. The budget expiring (deadline reached, or
+// less than 5s of it left — too little to make a long-poll worthwhile)
+// without a terminal state yields "timeout".
+func watchToTerminal(cfg waitConfig, deadline time.Time) waitOutcome {
 	polls := 0
 	lastState := ""
 	lastHash := ""
@@ -109,7 +124,7 @@ func watchToTerminal(cfg waitConfig) waitOutcome {
 			return waitOutcome{Outcome: "timeout", Polls: polls, State: lastState}
 		}
 
-		if cfg.pane != "" && !paneAlive(cfg.pane) {
+		if !paneAlive(cfg.pane) {
 			return waitOutcome{Outcome: "session-dead", Detail: "pane-gone", Polls: polls, State: lastState}
 		}
 		if !sessionExists(cfg.session) {
@@ -122,15 +137,14 @@ func watchToTerminal(cfg waitConfig) waitOutcome {
 			timeoutSeconds = 540
 		}
 		if timeoutSeconds < 5 {
-			sleep(time.Duration(cfg.pollSeconds) * time.Second)
-			continue
+			return waitOutcome{Outcome: "timeout", Polls: polls, State: lastState}
 		}
 
 		resp, ok := pollWait(cfg, timeoutSeconds)
 		if !ok {
 			// /wait itself is unreachable (non-200/transport/unparseable):
-			// the spike's 10.6M hot-loop regression was this branch treating
-			// a bad response as "poll again" with no sleep.
+			// a failed poll must sleep before retrying; an instant re-poll
+			// with no sleep busy-loops.
 			outcome, done := pollStateFallback(cfg, &lastState, &lastHash, &quiescenceCount, &unreadable)
 			polls++
 			if done {
@@ -144,13 +158,13 @@ func watchToTerminal(cfg waitConfig) waitOutcome {
 		lastState = resp.Status
 
 		switch resp.Status {
-		case "done":
+		case wire.StatusDone:
 			return waitOutcome{Outcome: "finished", Polls: polls, State: resp.Status}
-		case "error", "interrupted":
+		case wire.StatusError, wire.StatusInterrupted:
 			return waitOutcome{Outcome: "error", Polls: polls, State: resp.Status}
-		case "gone":
+		case wire.StatusGone:
 			return waitOutcome{Outcome: "session-dead", Polls: polls, State: resp.Status}
-		case "waiting":
+		case wire.StatusWaiting:
 			if resp.TimedOut {
 				continue
 			}
@@ -161,12 +175,19 @@ func watchToTerminal(cfg waitConfig) waitOutcome {
 			polls++
 			if confirmOK {
 				lastState = confirm.Status
-				if confirm.Status == "waiting" {
+				if confirm.Status == wire.StatusWaiting {
 					return waitOutcome{Outcome: "waiting", Polls: polls, State: "waiting"}
 				}
 			}
 			continue
 		default:
+			// resp.Terminal is the server's own verdict (wire.IsTerminalStatus)
+			// on whether the turn is over; a status this switch doesn't
+			// recognize but the server still marked terminal is an error
+			// outcome rather than an infinite "keep polling".
+			if resp.Terminal {
+				return waitOutcome{Outcome: "error", Polls: polls, State: resp.Status}
+			}
 			// idle/running (or a timed-out non-terminal poll): keep looping.
 			continue
 		}
@@ -180,10 +201,12 @@ func pollWait(cfg waitConfig, timeoutSeconds int) (waitResponse, bool) {
 	values := url.Values{}
 	values.Set("session", cfg.session)
 	values.Set("timeout", fmt.Sprintf("%d", timeoutSeconds))
-	if cfg.pane != "" {
-		values.Set("pane", cfg.pane)
-	}
-	status, body, err := getURL(baseURL(cfg.port) + "/wait?" + values.Encode())
+	values.Set("pane", cfg.pane)
+	// The server's long-poll can legitimately run up to timeoutSeconds; the
+	// client's own timeout adds a 30s grace on top so a hung server still
+	// fails the request instead of blocking forever.
+	client := &http.Client{Timeout: time.Duration(timeoutSeconds)*time.Second + waitClientGrace}
+	status, body, err := getURLWithClient(client, baseURL(cfg.port)+"/wait?"+values.Encode())
 	if err != nil || status != 200 {
 		return waitResponse{}, false
 	}
@@ -252,7 +275,7 @@ func statePaneStatus(cfg waitConfig) (string, bool) {
 			continue
 		}
 		for _, agent := range session.Agents {
-			if cfg.pane == "" || agent.PaneID == cfg.pane {
+			if agent.PaneID == cfg.pane {
 				return agent.Status, true
 			}
 		}
@@ -280,10 +303,9 @@ func hashContent(content string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// sessionExists checks tmux session liveness through the tmuxOutput seam.
-// tmuxOutput only returns stdout, so has-session (which prints nothing) is
-// probed with display-message instead — any tmux error means the session
-// is gone.
+// sessionExists checks tmux session liveness with has-session. has-session
+// prints nothing on success, so tmuxOutput's stdout return is unused here —
+// any tmux error means the session is gone.
 func sessionExists(session string) bool {
 	_, err := tmuxOutput("has-session", "-t", "="+session)
 	return err == nil

@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
 // delegateSignature matches a pane's start command against the durable
@@ -19,16 +21,24 @@ import (
 // sweep is safe to run at any time.
 var delegateSignature = regexp.MustCompile(`codex.*--profile.*tcm-delegate`)
 
-// tidyTerminalStatus is the set of GET /result statuses that mean a
-// delegate's turn is over and its window is safe to close, even if its
-// codex process is still idling at the prompt: a delegate's codex keeps
-// running interactively after finishing a turn, so process state alone
-// can't tell "done" from "still working".
+// statusUntracked marks a delegate window whose pane GET /result 404s for
+// ("session not found") — the tracker has nothing recorded for it, most
+// often because the server restarted after the delegate finished. It is
+// not one of wire's tracked AgentStatus values; resultStatus assigns it
+// from the HTTP status, never from a server-emitted status field.
+const statusUntracked = "untracked"
+
+// tidyTerminalStatus is the set of statuses that mean a delegate's window
+// is safe to close without -all, even if its codex process is still idling
+// at the prompt: a delegate's codex keeps running interactively after
+// finishing a turn, so process state alone can't tell "done" from "still
+// working". An untracked window is also safe to close on its own — nothing
+// is tracking it, so there is no live turn -all would be needed to override.
 var tidyTerminalStatus = map[string]bool{
-	"done":        true,
-	"error":       true,
-	"interrupted": true,
-	"gone":        true,
+	wire.StatusDone:        true,
+	wire.StatusError:       true,
+	wire.StatusInterrupted: true,
+	statusUntracked:        true,
 }
 
 // tidyCandidate is one matched delegate window in tcm tidy's stdout JSON.
@@ -59,8 +69,8 @@ type tidyWindow struct {
 	closeable   bool
 }
 
-// runTidy closes finished TCM codex delegate tmux windows, a port of
-// tidy-delegates.sh. It returns the process exit code.
+// runTidy closes finished TCM codex delegate tmux windows. It returns the
+// process exit code.
 func runTidy(args []string, stdout io.Writer) int {
 	fs := flag.NewFlagSet("tidy", flag.ContinueOnError)
 	allSessions := fs.Bool("all-sessions", false, "sweep every tmux session, not just the current one")
@@ -185,14 +195,21 @@ func scanDelegateWindows(scope string, allSessions bool, port int) ([]tidyWindow
 }
 
 // resultStatus asks the server for one pane's authoritative status via GET
-// /result. Any transport failure, non-200, or unparseable body yields "" —
+// /result. A 404 means the session isn't tracked, mapped to statusUntracked.
+// Any other transport failure, non-200, or unparseable body yields "" —
 // treated as "unknown" and never closed unless -all is given.
 func resultStatus(port int, session, pane string) string {
 	values := url.Values{}
 	values.Set("session", session)
 	values.Set("pane", pane)
 	status, body, err := getURL(baseURL(port) + "/result?" + values.Encode())
-	if err != nil || status != 200 {
+	if err != nil {
+		return ""
+	}
+	if status == 404 {
+		return statusUntracked
+	}
+	if status != 200 {
 		return ""
 	}
 	var decoded struct {

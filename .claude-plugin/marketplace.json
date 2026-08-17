@@ -10,7 +10,7 @@
     {
       "name": "tcm-delegation",
       "source": "./integrations/claude-plugin",
-      "description": "TCM codex delegation: the tcm-delegate skill, the tidy-delegates cleanup skill, and the deterministic spawn/watch/result workflow scripts they drive."
+      "description": "TCM codex delegation: the tcm-delegate-codex skill and the tidy-delegates cleanup skill, both driven by the tcm CLI's delegate/wait/followup/result/tidy subcommands."
     }
   ]
 }

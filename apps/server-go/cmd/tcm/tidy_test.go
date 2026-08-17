@@ -159,6 +159,53 @@ func TestTidy_NonTerminalStatusExcludedWithoutAll(t *testing.T) {
 	}
 }
 
+// tidy404Handler answers /result 404 for panes in notFoundPanes and 200/done
+// for everything else.
+func tidy404Handler(t *testing.T, notFoundPanes map[string]bool) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/result" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		pane := r.URL.Query().Get("pane")
+		if notFoundPanes[pane] {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "session not found"})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "done"})
+	}))
+}
+
+// TestTidy_UntrackedSessionIsCloseableWithoutAll pins that a 404 from
+// /result ("session not found") maps to "untracked" and is closeable
+// without -all — a post-restart finished delegate must be sweepable on its
+// own.
+func TestTidy_UntrackedSessionIsCloseableWithoutAll(t *testing.T) {
+	withStubTmux(t, func(args ...string) (string, error) {
+		switch args[0] {
+		case "list-panes":
+			return "@1\t100\ttest-session\t%1\tsh -c 'codex' '--profile' 'tcm-delegate' --\n", nil
+		case "display-message":
+			return "test-session\n", nil
+		}
+		return "", nil
+	})
+	srv := tidy404Handler(t, map[string]bool{"%1": true})
+	defer srv.Close()
+
+	var out bytes.Buffer
+	code := runTidy([]string{"-port", strconv.Itoa(portOf(srv))}, &out)
+	if code != 0 {
+		t.Fatalf("exit code = %d", code)
+	}
+	var got tidyOutcome
+	_ = json.Unmarshal(out.Bytes(), &got)
+	if len(got.Candidates) != 1 || got.Candidates[0].Status != "untracked" || got.Candidates[0].Action != "closed" {
+		t.Fatalf("untracked pane must close without -all: %+v", got.Candidates)
+	}
+}
+
 func TestTidy_KeepSparesMostRecent(t *testing.T) {
 	withStubTmux(t, func(args ...string) (string, error) {
 		switch args[0] {

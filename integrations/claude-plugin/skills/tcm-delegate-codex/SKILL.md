@@ -48,7 +48,9 @@ RESULT:, then stop.` — the result you read back keys off that final message.
 "$TCM" delegate -dir /abs/worktree -name kebab-window-name -brief "<context-complete per MO-002>"
 ```
 
-Long briefs go in a file instead: `-brief-file /abs/brief.md`.
+Any multiline brief goes in a file instead: `-brief-file /abs/brief.md`. Claude
+Code's shell wrapper can join embedded newlines, so `-brief` is only safe for
+a genuine one-liner.
 
 Output:
 
@@ -60,6 +62,12 @@ or, with no tmux context:
 
 ```json
 {"outcome":"spawn-failed","detail":"no-tmux-owner"}
+```
+
+or, when the pane dies within the 2s post-spawn survival check:
+
+```json
+{"outcome":"spawn-failed","detail":"pane-died-after-spawn","sessionName":"kyle","paneId":"%42","windowId":"@7","ownerSession":"kyle","alive":false}
 ```
 
 Codex posture (approval policy, sandbox mode) lives in the `tcm-delegate`

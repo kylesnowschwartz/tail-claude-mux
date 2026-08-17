@@ -38,8 +38,10 @@ type followupResponse struct {
 
 // runFollowup delivers a follow-up message to a waiting delegate and
 // verifies delivery by grepping the delegate's rollout for a receipt of the
-// message file path, a verbatim port of tcm-deliver.sh. It returns the
-// process exit code (always 0 — the JSON "outcome" field is the signal).
+// message file path. It returns the process exit code: 1 when the outcome
+// is "error" (a usage or transport failure), 0 for every other delegation
+// outcome (delivered, refused-409, delivery-unverified) — those describe
+// what the delegate did, not a CLI failure.
 func runFollowup(args []string, stdout io.Writer) int {
 	fs := flag.NewFlagSet("followup", flag.ContinueOnError)
 	session := fs.String("session", "", "TCM session name to deliver the follow-up to")
@@ -62,6 +64,9 @@ func runFollowup(args []string, stdout io.Writer) int {
 
 	outcome := deliverFollowup(*port, *session, *pane, string(source))
 	_ = writeJSON(stdout, outcome)
+	if outcome.Outcome == "error" {
+		return 1
+	}
 	return 0
 }
 
@@ -70,7 +75,10 @@ func runFollowup(args []string, stdout io.Writer) int {
 // final grep 30s later. A 409 on the FIRST post is a refusal — the server
 // is declining to interrupt an active delegate. A 409 on the retry is not:
 // the first POST already respawned the pane, so that conflict means the
-// resume took; only the final receipt grep classifies the retry path.
+// resume took; only the final receipt grep classifies the retry path. The
+// ladder trades latency for certainty: a delivered message can take up to
+// a minute to confirm because the server only writes a rollout receipt
+// once the delegate's turn actually reads the resumed prompt.
 func deliverFollowup(port int, session, pane, message string) followupOutcome {
 	body, err := json.Marshal(followupBody{Session: session, Message: message, Pane: pane})
 	if err != nil {

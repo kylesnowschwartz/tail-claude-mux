@@ -18,7 +18,7 @@ type delegateOutcome struct {
 	PaneID       string `json:"paneId,omitempty"`
 	WindowID     string `json:"windowId,omitempty"`
 	OwnerSession string `json:"ownerSession,omitempty"`
-	Alive        bool   `json:"alive,omitempty"`
+	Alive        bool   `json:"alive"`
 }
 
 // spawnAgentBody is the POST /spawn-agent request body tcm delegate sends.
@@ -95,6 +95,17 @@ func runDelegate(args []string, stdout io.Writer) int {
 
 	time.Sleep(2 * time.Second)
 	alive := paneAlive(spawned.PaneID)
+	if !alive {
+		return emitDelegate(stdout, delegateOutcome{
+			Outcome:      "spawn-failed",
+			Detail:       "pane-died-after-spawn",
+			SessionName:  spawned.SessionName,
+			PaneID:       spawned.PaneID,
+			WindowID:     spawned.WindowID,
+			OwnerSession: ownerSession,
+			Alive:        false,
+		})
+	}
 
 	return emitDelegate(stdout, delegateOutcome{
 		Outcome:      "spawned",

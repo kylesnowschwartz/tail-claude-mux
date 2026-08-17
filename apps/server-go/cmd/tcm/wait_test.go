@@ -57,6 +57,14 @@ func waitHandler(t *testing.T, waitResponses []waitResponse, waitStatus []int, s
 	}))
 }
 
+func TestWait_PaneIsRequired(t *testing.T) {
+	var out bytes.Buffer
+	code := runWait([]string{"-session", "s"}, &out)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2 (usage error)", code)
+	}
+}
+
 func TestWait_TerminalStatusesMapToOutcomes(t *testing.T) {
 	cases := []struct {
 		status  string
@@ -75,7 +83,7 @@ func TestWait_TerminalStatusesMapToOutcomes(t *testing.T) {
 			defer srv.Close()
 
 			var out bytes.Buffer
-			code := runWait([]string{"-session", "s", "-port", portArg(srv), "-minutes", "1"}, &out)
+			code := runWait([]string{"-session", "s", "-pane", "%1", "-port", portArg(srv), "-minutes", "1"}, &out)
 			if code != 0 {
 				t.Fatalf("exit code = %d", code)
 			}
@@ -102,7 +110,7 @@ func TestWait_WaitingRequiresFiveSecondReconfirm(t *testing.T) {
 	defer srv.Close()
 
 	var out bytes.Buffer
-	code := runWait([]string{"-session", "s", "-port", portArg(srv), "-minutes", "1"}, &out)
+	code := runWait([]string{"-session", "s", "-pane", "%1", "-port", portArg(srv), "-minutes", "1"}, &out)
 	if code != 0 {
 		t.Fatalf("exit code = %d", code)
 	}
@@ -126,7 +134,7 @@ func TestWait_WaitingThenRunningKeepsLooping(t *testing.T) {
 	defer srv.Close()
 
 	var out bytes.Buffer
-	code := runWait([]string{"-session", "s", "-port", portArg(srv), "-minutes", "1"}, &out)
+	code := runWait([]string{"-session", "s", "-pane", "%1", "-port", portArg(srv), "-minutes", "1"}, &out)
 	if code != 0 {
 		t.Fatalf("exit code = %d", code)
 	}
@@ -142,9 +150,9 @@ func TestWait_BackoffOnBadResponses(t *testing.T) {
 	withStubTmux(t, func(args ...string) (string, error) { return "%1\n", nil })
 	// The first three /wait calls 400 (the fallback /state also has no
 	// matching pane, so it can't resolve either); the fourth succeeds. Each
-	// failed poll must sleep before retrying — the spike's 10.6M hot-loop
-	// regression was this branch treating a bad response as "poll again"
-	// with no sleep. The loop terminating at exactly 4 polls is the bound.
+	// failed poll must sleep before retrying — an instant re-poll after a
+	// bad response busy-loops. The loop terminating at exactly 4 polls is
+	// the bound.
 	srv := waitHandler(t,
 		[]waitResponse{{}, {}, {}, {Session: "s", Status: "done", Terminal: true}},
 		[]int{400, 400, 400, 200},
@@ -167,6 +175,47 @@ func TestWait_BackoffOnBadResponses(t *testing.T) {
 	}
 	if atomic.LoadInt32(sleepCalls) < 3 {
 		t.Errorf("expected sleep to be called once per failed poll (>=3), got %d calls", *sleepCalls)
+	}
+}
+
+// TestWait_HangingServerTimesOutRatherThanBlockingForever pins that the
+// /wait long-poll HTTP client carries its own deadline: a server that never
+// responds must not hang the CLI forever.
+func TestWait_HangingServerTimesOutRatherThanBlockingForever(t *testing.T) {
+	withStubSleep(t)
+	withStubTmux(t, func(args ...string) (string, error) { return "%1\n", nil })
+
+	prevGrace := waitClientGrace
+	waitClientGrace = 200 * time.Millisecond
+	t.Cleanup(func() { waitClientGrace = prevGrace })
+
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/wait" {
+			<-block
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"sessions":[]}`))
+	}))
+	// Cleanups run last-registered-first: the handler must be unblocked
+	// before srv.Close waits on in-flight requests, or Close deadlocks.
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(block) })
+
+	cfg := waitConfig{session: "s", pane: "%1", port: portOf(srv), pollSeconds: 0}
+	deadline := time.Now().Add(5500 * time.Millisecond)
+
+	done := make(chan waitOutcome, 1)
+	go func() { done <- watchToTerminal(cfg, deadline) }()
+
+	select {
+	case got := <-done:
+		if got.Outcome != "timeout" {
+			t.Fatalf("outcome = %q, want timeout", got.Outcome)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("tcm wait blocked past its client timeout against a hanging /wait server")
 	}
 }
 
@@ -246,7 +295,7 @@ func TestWait_SessionGoneYieldsSessionDead(t *testing.T) {
 	defer srv.Close()
 
 	var out bytes.Buffer
-	code := runWait([]string{"-session", "s", "-port", portArg(srv), "-minutes", "1"}, &out)
+	code := runWait([]string{"-session", "s", "-pane", "%1", "-port", portArg(srv), "-minutes", "1"}, &out)
 	if code != 0 {
 		t.Fatalf("exit code = %d", code)
 	}
@@ -257,6 +306,25 @@ func TestWait_SessionGoneYieldsSessionDead(t *testing.T) {
 	}
 }
 
+// TestWait_NearlyExhaustedBudgetTimesOutImmediately pins that the endgame
+// branch (less than 5 seconds of budget left) returns "timeout" directly
+// instead of sleeping first — a run right at the edge of its budget must not
+// pay for one more poll-interval sleep before reporting.
+func TestWait_NearlyExhaustedBudgetTimesOutImmediately(t *testing.T) {
+	sleepCalls := withStubSleep(t)
+	withStubTmux(t, func(args ...string) (string, error) { return "%1\n", nil })
+
+	cfg := waitConfig{session: "s", pane: "%1", port: 1, pollSeconds: 30}
+	deadline := time.Now().Add(3 * time.Second)
+	got := watchToTerminal(cfg, deadline)
+	if got.Outcome != "timeout" {
+		t.Fatalf("outcome = %q, want timeout", got.Outcome)
+	}
+	if atomic.LoadInt32(sleepCalls) != 0 {
+		t.Errorf("sleep calls = %d, want 0 (immediate timeout, no sleep)", *sleepCalls)
+	}
+}
+
 func TestWait_MinutesBudgetExceededYieldsTimeout(t *testing.T) {
 	withStubSleep(t)
 	withStubTmux(t, func(args ...string) (string, error) { return "%1\n", nil })
@@ -264,7 +332,7 @@ func TestWait_MinutesBudgetExceededYieldsTimeout(t *testing.T) {
 	defer srv.Close()
 
 	var out bytes.Buffer
-	code := runWait([]string{"-session", "s", "-port", portArg(srv), "-minutes", "0", "-poll-seconds", "0"}, &out)
+	code := runWait([]string{"-session", "s", "-pane", "%1", "-port", portArg(srv), "-minutes", "0", "-poll-seconds", "0"}, &out)
 	if code != 0 {
 		t.Fatalf("exit code = %d", code)
 	}
@@ -306,7 +374,7 @@ func TestWait_StdoutContractPin(t *testing.T) {
 	defer srv.Close()
 
 	var out bytes.Buffer
-	code := runWait([]string{"-session", "s", "-port", portArg(srv), "-minutes", "1"}, &out)
+	code := runWait([]string{"-session", "s", "-pane", "%1", "-port", portArg(srv), "-minutes", "1"}, &out)
 	if code != 0 {
 		t.Fatalf("exit code = %d", code)
 	}

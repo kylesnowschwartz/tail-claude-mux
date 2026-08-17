@@ -78,6 +78,51 @@ func TestDelegate_HappyPath(t *testing.T) {
 	}
 }
 
+func TestDelegate_DeadPaneAfterSpawnReportsSpawnFailed(t *testing.T) {
+	t.Setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
+	withStubTmux(t, func(args ...string) (string, error) {
+		if args[0] == "display-message" && args[1] == "-p" && len(args) == 3 && args[2] == "#{session_name}" {
+			return "owner-session\n", nil
+		}
+		// pane liveness probe: tmux echoes an empty line for a dead pane.
+		return "\n", nil
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{
+			"sessionName": "delegate-1",
+			"paneId":      "%154",
+			"windowId":    "@39",
+		})
+	}))
+	defer srv.Close()
+
+	var out bytes.Buffer
+	code := runDelegate([]string{
+		"-dir", "/tmp",
+		"-name", "spike-dead",
+		"-brief", "do the thing",
+		"-port", strconv.Itoa(portOf(srv)),
+	}, &out)
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; output: %s", code, out.String())
+	}
+	var got delegateOutcome
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("output not valid JSON: %v (%s)", err, out.String())
+	}
+	if got.Outcome != "spawn-failed" || got.Detail != "pane-died-after-spawn" {
+		t.Errorf("unexpected outcome: %+v", got)
+	}
+	if got.SessionName != "delegate-1" || got.PaneID != "%154" || got.WindowID != "@39" {
+		t.Errorf("diagnostic fields must survive the dead-pane path: %+v", got)
+	}
+	if got.Alive {
+		t.Errorf("alive = true, want false")
+	}
+}
+
 func TestDelegate_NoOwnerWithoutTmux(t *testing.T) {
 	t.Setenv("TMUX", "")
 	withStubTmux(t, func(args ...string) (string, error) {

@@ -36,9 +36,9 @@ func TestResult_HappyPath(t *testing.T) {
 	}
 }
 
-// TestResult_PaneQueryEncoding pins the spike finding: a pane id starting
-// with "%" must arrive at the server decoded to the literal value, not
-// mangled by percent-escaping.
+// TestResult_PaneQueryEncoding pins that a pane id starting with "%" must
+// arrive at the server decoded to the literal value, not mangled by
+// percent-escaping.
 func TestResult_PaneQueryEncoding(t *testing.T) {
 	var gotPane string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

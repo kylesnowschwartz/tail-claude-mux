@@ -184,13 +184,30 @@ func TestFollowup_TransportErrorYieldsError(t *testing.T) {
 	sourceFile := writeTempFile(t, "hello")
 	var out bytes.Buffer
 	code := runFollowup([]string{"-session", "s", "-message-file", sourceFile, "-port", "1"}, &out)
-	if code != 0 {
-		t.Fatalf("exit code = %d", code)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 (error outcome is a CLI failure)", code)
 	}
 	var got followupOutcome
 	_ = json.Unmarshal(out.Bytes(), &got)
 	if got.Outcome != "error" {
 		t.Fatalf("outcome = %q, want error (full: %+v)", got.Outcome, got)
+	}
+}
+
+func TestFollowup_DeliveredYieldsExitZero(t *testing.T) {
+	withStubSleep(t)
+	messageFile := "/tmp/followup-msg-exit0.txt"
+	rollout := writeTempFile(t, "mentions "+messageFile+"\n")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(followupResponse{MessageFile: messageFile, RolloutPath: rollout})
+	}))
+	defer srv.Close()
+
+	sourceFile := writeTempFile(t, "hello")
+	var out bytes.Buffer
+	code := runFollowup([]string{"-session", "s", "-message-file", sourceFile, "-port", strconv.Itoa(portOf(srv))}, &out)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
 	}
 }
 
