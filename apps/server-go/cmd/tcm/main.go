@@ -50,9 +50,9 @@ var (
 )
 
 // main dispatches to the `tcm <subcommand>` argv shape. `server` runs the
-// backend; `delegate`, `result`, and `wait` are client subcommands that talk
-// to a running server over HTTP. Sibling subcommands (followup, tidy) land
-// as additional cases here in later bites.
+// backend; `delegate`, `result`, `wait`, `followup`, and `tidy` are client
+// subcommands that talk to a running server (and, for tidy, tmux directly)
+// over HTTP.
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -67,6 +67,10 @@ func main() {
 		os.Exit(runResult(os.Args[2:], os.Stdout))
 	case "wait":
 		os.Exit(runWait(os.Args[2:], os.Stdout))
+	case "followup":
+		os.Exit(runFollowup(os.Args[2:], os.Stdout))
+	case "tidy":
+		os.Exit(runTidy(os.Args[2:], os.Stdout))
 	default:
 		usage()
 		os.Exit(2)
@@ -74,7 +78,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s <command> [flags]\n\ncommands:\n  server     run the tcm backend server\n  delegate   spawn a codex delegate in a tmux window\n  result     fetch a delegate's result\n  wait       watch a delegate until it reaches a terminal outcome\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "usage: %s <command> [flags]\n\ncommands:\n  server     run the tcm backend server\n  delegate   spawn a codex delegate in a tmux window\n  result     fetch a delegate's result\n  wait       watch a delegate until it reaches a terminal outcome\n  followup   deliver a follow-up message to a waiting delegate\n  tidy       close finished delegate windows\n", filepath.Base(os.Args[0]))
 }
 
 // runServer is the tcm backend's entry point. args is the argv tail after
