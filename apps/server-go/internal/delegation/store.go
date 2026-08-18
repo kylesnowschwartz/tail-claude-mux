@@ -44,6 +44,11 @@ type CreateParams struct {
 	WindowID     string
 }
 
+// NewID mints a delegation ID without persisting a record.
+func NewID() (string, error) {
+	return newUUID()
+}
+
 // Store persists each record as a separate JSON file in dir.
 type Store struct {
 	dir string
@@ -61,15 +66,23 @@ func New(dir string) (*Store, error) {
 
 // Create mints and persists a new delegation record.
 func (s *Store) Create(params CreateParams) (Record, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	id, err := newUUID()
+	id, err := NewID()
 	if err != nil {
 		return Record{}, fmt.Errorf("mint delegation ID: %w", err)
 	}
+	return s.CreateWithID(id, params)
+}
+
+// CreateWithID persists a new delegation record with a previously minted ID.
+func (s *Store) CreateWithID(delegationID string, params CreateParams) (Record, error) {
+	if !validUUID(delegationID) {
+		return Record{}, errors.New("delegation ID is not a UUID")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	record := Record{
-		DelegationID: id,
+		DelegationID: delegationID,
 		Agent:        params.Agent,
 		Cwd:          params.Cwd,
 		OwnerSession: params.OwnerSession,

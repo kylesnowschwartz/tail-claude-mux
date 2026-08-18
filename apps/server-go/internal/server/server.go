@@ -30,6 +30,7 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/config"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/explain"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/metadata"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
@@ -51,6 +52,7 @@ type Server struct {
 	CodexWatcher *codexwatch.Adapter
 	Scanner      *panescan.Scanner
 	Metadata     *metadata.Store
+	Delegations  *delegation.Store
 	BuildInfo    string
 
 	// Restart is invoked ~50ms after answering POST /restart (the dev

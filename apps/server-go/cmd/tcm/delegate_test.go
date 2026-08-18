@@ -50,9 +50,10 @@ func TestDelegate_HappyPath(t *testing.T) {
 			t.Fatalf("spawn body command must end with \"--\": %v", cmd)
 		}
 		json.NewEncoder(w).Encode(map[string]string{
-			"sessionName": "delegate-1",
-			"paneId":      "%154",
-			"windowId":    "@39",
+			"sessionName":  "delegate-1",
+			"paneId":       "%154",
+			"windowId":     "@39",
+			"delegationId": "123e4567-e89b-42d3-a456-426614174000",
 		})
 	}))
 	defer srv.Close()
@@ -73,7 +74,8 @@ func TestDelegate_HappyPath(t *testing.T) {
 		t.Fatalf("output not valid JSON: %v (%s)", err, out.String())
 	}
 	if got.Outcome != "spawned" || got.SessionName != "delegate-1" || got.PaneID != "%154" ||
-		got.WindowID != "@39" || got.OwnerSession != "owner-session" || !got.Alive {
+		got.WindowID != "@39" || got.OwnerSession != "owner-session" ||
+		got.DelegationID != "123e4567-e89b-42d3-a456-426614174000" || !got.Alive {
 		t.Errorf("unexpected outcome: %+v", got)
 	}
 }
@@ -90,9 +92,10 @@ func TestDelegate_DeadPaneAfterSpawnReportsSpawnFailed(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{
-			"sessionName": "delegate-1",
-			"paneId":      "%154",
-			"windowId":    "@39",
+			"sessionName":  "delegate-1",
+			"paneId":       "%154",
+			"windowId":     "@39",
+			"delegationId": "123e4567-e89b-42d3-a456-426614174000",
 		})
 	}))
 	defer srv.Close()
@@ -243,6 +246,7 @@ func TestDelegate_ContractPin(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{
 			"sessionName": "delegate-1", "paneId": "%154", "windowId": "@39",
+			"delegationId": "123e4567-e89b-42d3-a456-426614174000",
 		})
 	}))
 	defer srv.Close()
@@ -254,7 +258,7 @@ func TestDelegate_ContractPin(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &raw); err != nil {
 		t.Fatalf("output not valid JSON: %v", err)
 	}
-	for _, key := range []string{"outcome", "sessionName", "paneId", "windowId", "ownerSession", "alive"} {
+	for _, key := range []string{"outcome", "sessionName", "paneId", "windowId", "ownerSession", "delegationId", "alive"} {
 		if _, ok := raw[key]; !ok {
 			t.Errorf("missing key %q in output: %v", key, raw)
 		}

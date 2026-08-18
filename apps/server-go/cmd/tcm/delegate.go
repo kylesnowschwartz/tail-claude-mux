@@ -18,6 +18,7 @@ type delegateOutcome struct {
 	PaneID       string `json:"paneId,omitempty"`
 	WindowID     string `json:"windowId,omitempty"`
 	OwnerSession string `json:"ownerSession,omitempty"`
+	DelegationID string `json:"delegationId,omitempty"`
 	Alive        bool   `json:"alive"`
 }
 
@@ -34,9 +35,10 @@ type spawnAgentBody struct {
 // spawnAgentResponse is the subset of POST /spawn-agent's 200 response tcm
 // delegate reads.
 type spawnAgentResponse struct {
-	SessionName string `json:"sessionName"`
-	PaneID      string `json:"paneId"`
-	WindowID    string `json:"windowId"`
+	SessionName  string `json:"sessionName"`
+	PaneID       string `json:"paneId"`
+	WindowID     string `json:"windowId"`
+	DelegationID string `json:"delegationId"`
 }
 
 // runDelegate starts a codex delegate in a new tmux window inside the
@@ -103,6 +105,7 @@ func runDelegate(args []string, stdout io.Writer) int {
 			PaneID:       spawned.PaneID,
 			WindowID:     spawned.WindowID,
 			OwnerSession: ownerSession,
+			DelegationID: spawned.DelegationID,
 			Alive:        false,
 		})
 	}
@@ -113,6 +116,7 @@ func runDelegate(args []string, stdout io.Writer) int {
 		PaneID:       spawned.PaneID,
 		WindowID:     spawned.WindowID,
 		OwnerSession: ownerSession,
+		DelegationID: spawned.DelegationID,
 		Alive:        alive,
 	})
 }

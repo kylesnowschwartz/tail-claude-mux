@@ -33,6 +33,7 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexhooks"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/gitinfo"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/server"
@@ -109,6 +110,17 @@ func runServer(args []string) {
 		log.Fatalf("home dir: %v", err)
 	}
 	configDir := filepath.Join(home, ".config", "tcm")
+	delegationStore, err := delegation.New(filepath.Join(configDir, "delegations"))
+	if err != nil {
+		log.Fatalf("delegation store: %v", err)
+	}
+	removedDelegations, err := delegationStore.Sweep(7 * 24 * time.Hour)
+	if err != nil {
+		log.Fatalf("sweep delegation store: %v", err)
+	}
+	if removedDelegations != 0 {
+		log.Printf("delegation store: removed %d expired records", removedDelegations)
+	}
 
 	builder := &state.Builder{
 		Tmux:         tmux.New(),
@@ -132,6 +144,7 @@ func runServer(args []string) {
 	}
 
 	srv := server.New(builder, tracker.New(), watcher, codexWatcher, panescan.New())
+	srv.Delegations = delegationStore
 	srv.BuildInfo = buildInfo()
 	srv.Restart = restartInPlace
 	srv.Quit = func() {

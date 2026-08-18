@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 )
 
@@ -22,6 +23,12 @@ func (s *Server) handleSpawnAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	delegationID, err := delegation.NewID()
+	if err != nil {
+		writeSpawnAgentError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	req.DelegationID = delegationID
 	result, err := s.Builder.Tmux.SpawnAgent(req)
 	if err != nil {
 		var validationErr *tmux.SpawnAgentValidationError
@@ -32,6 +39,23 @@ func (s *Server) handleSpawnAgent(w http.ResponseWriter, r *http.Request) {
 		writeSpawnAgentError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if s.Delegations == nil {
+		writeSpawnAgentError(w, http.StatusInternalServerError, "delegation store is unavailable")
+		return
+	}
+	record, err := s.Delegations.CreateWithID(delegationID, delegation.CreateParams{
+		Agent:        req.Agent,
+		Cwd:          req.Dir,
+		OwnerSession: req.OwnerSession,
+		SessionName:  result.SessionName,
+		PaneID:       result.PaneID,
+		WindowID:     result.WindowID,
+	})
+	if err != nil {
+		writeSpawnAgentError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	result.DelegationID = record.DelegationID
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
