@@ -1,6 +1,6 @@
 {
   "name": "tcm-delegation",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "TCM (tail-claude-mux) codex delegation: the tcm-delegate-codex skill, driving the full delegate lifecycle — spawn, wait, follow-up, result, and window tidy — through the tcm CLI subcommands (delegate/wait/followup/result/tidy).",
   "author": {
     "name": "kylesnowschwartz"
