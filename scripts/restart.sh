@@ -31,6 +31,22 @@ wait_for_server_gone() {
   return 1
 }
 
+# wait_for_new_server polls the root banner until it carries this build's
+# nonce. POST /restart answers 200 on the OLD process and re-execs ~50ms
+# later, so a bare liveness poll can pass against the old server and report
+# ready while the socket is about to drop. Matching the banner closes that
+# race deterministically.
+wait_for_new_server() {
+  for i in {1..50}; do
+    if curl -s -m 0.3 "${BASE}/" 2>/dev/null | grep -qF "dev-${BUILD_NONCE}"; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  echo "error: new server did not come up within 5s" >&2
+  return 1
+}
+
 # restart_decision figures out whether POST /restart would actually land the
 # binary we just built. restartInPlace (apps/server-go/cmd/tcm/main.go)
 # re-execs os.Executable() — the path the LIVE server was originally launched
@@ -79,7 +95,14 @@ cd "$ROOT/apps/tui" && "$BUN" run build
 # 1b. Build the Go server (the only backend — bun server retired).
 GO_BIN="$ROOT/apps/server-go/bin/tcm"
 echo "==> Building Go server..."
-(cd "$ROOT/apps/server-go" && GOWORK=off go build -o bin/tcm ./cmd/tcm)
+# Stamp the build with commit + a per-build nonce so wait_for_new_server can
+# tell the freshly exec'd server apart from the old one still answering on
+# the port during the /restart re-exec window.
+BUILD_COMMIT="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+BUILD_NONCE="$(date +%s)-$$"
+(cd "$ROOT/apps/server-go" && GOWORK=off go build \
+  -ldflags "-X main.version=dev-${BUILD_NONCE} -X main.commit=${BUILD_COMMIT}" \
+  -o bin/tcm ./cmd/tcm)
 
 # 2. Restart or cold-start the server
 if server_alive; then
@@ -102,8 +125,9 @@ else
   "$GO_BIN" server >>/tmp/tcm-server-go.log 2>&1 &
 fi
 
-# 3. Wait for the new server
-wait_for_server
+# 3. Wait for the new server (banner nonce, not bare liveness — see
+#    wait_for_new_server)
+wait_for_new_server
 
 # 4. Focus the sidebar pane (server respawns sidebars async, so poll)
 WINDOW_ID="$(tmux display-message -p '#{window_id}' 2>/dev/null || true)"
