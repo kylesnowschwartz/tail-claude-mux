@@ -36,7 +36,12 @@ Fails → TCM isn't running; fall back to /codex:rescue and say why.
 ## 1. Delegate
 
 For parallel or long work, create the git worktree FIRST (MO-002) and pass
-its path — TCM does no git writes; the orchestrator owns all git. Codex trust
+its path — TCM does no git writes; the orchestrator owns all git. When the
+delegate shares the orchestrator's checkout, its brief must scope git to
+reads and require `git --no-optional-locks` for `status`/`diff` — a plain
+`git status` refreshes the index and its `index.lock` collides with the
+orchestrator's own commits (observed: a delegate's leftover lock blocking
+`git commit` mid-pipeline). Codex trust
 follows the worktree's MAIN repository: a worktree of a trusted repo is
 trusted anywhere on disk. Only a genuinely fresh non-worktree dir hits the
 interactive trust prompt and stalls the run (see the idle gotcha below).
