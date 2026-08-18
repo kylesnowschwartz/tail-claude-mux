@@ -152,6 +152,23 @@ func (s *Store) FindUnboundByPane(sessionName, paneID string) (Record, error) {
 	return Record{}, ErrNotFound
 }
 
+// HasUnbound reports whether the store contains any unbound records.
+func (s *Store) HasUnbound() (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	records, err := s.list()
+	if err != nil {
+		return false, err
+	}
+	for _, record := range records {
+		if record.ThreadID == "" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // List returns all records ordered by creation time and delegation ID.
 func (s *Store) List() ([]Record, error) {
 	s.mu.Lock()

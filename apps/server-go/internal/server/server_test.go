@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/gitinfo"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/sessionorder"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
@@ -23,6 +24,63 @@ func TestRootIncludesBuildInfo(t *testing.T) {
 
 	if got, want := response.Body.String(), "tcm server (go) dev (commit unknown)"; got != want {
 		t.Fatalf("GET / response = %q, want %q", got, want)
+	}
+}
+
+func TestHandleHookBindsDelegation(t *testing.T) {
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Create(delegation.CreateParams{
+		Agent:       "claude-code",
+		SessionName: "work",
+		PaneID:      "%7",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{Delegations: store}
+	body := `{"event":"Stop","session_id":"thread-123","cwd":"/project","delegation_id":"` + record.DelegationID + `"}`
+	response := httptest.NewRecorder()
+
+	s.handleHook(response, httptest.NewRequest(http.MethodPost, "/hook", strings.NewReader(body)))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	bound, err := store.Get(record.DelegationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.ThreadID != "thread-123" || bound.BoundAt == nil {
+		t.Fatalf("binding = (%q, %v), want thread-123 with bound time", bound.ThreadID, bound.BoundAt)
+	}
+}
+
+func TestHandleHookWithoutDelegationLeavesStoreUnchanged(t *testing.T) {
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Create(delegation.CreateParams{Agent: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{Delegations: store}
+	response := httptest.NewRecorder()
+
+	s.handleHook(response, httptest.NewRequest(http.MethodPost, "/hook", strings.NewReader(`{"event":"Stop","session_id":"thread-123","cwd":"/project","agent":"codex"}`)))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	unchanged, err := store.Get(record.DelegationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.ThreadID != "" || unchanged.BoundAt != nil {
+		t.Fatalf("binding = (%q, %v), want unbound", unchanged.ThreadID, unchanged.BoundAt)
 	}
 }
 

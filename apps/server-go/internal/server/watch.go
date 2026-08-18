@@ -5,6 +5,7 @@
 package server
 
 import (
+	"errors"
 	"log"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/kylesnowschwartz/agent-ouija/claude/claudedir"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
@@ -81,6 +83,48 @@ func scanStateForPane(pa tracker.PanePresence, sources ...agentStateSource) (tra
 	var verdict tracker.ProbeVerdict
 	pa.ThreadID, pa.ThreadName, verdict = source.ScanStateForPid(pa.PID, pa.PaneTitle)
 	return pa, verdict
+}
+
+func (s *Server) bindDelegation(delegationID, agent, threadID string) {
+	if s.Delegations == nil {
+		return
+	}
+	if _, err := s.Delegations.Bind(delegationID, agent, threadID); err != nil {
+		if _, loaded := s.delegationBindLog.LoadOrStore(delegationID, struct{}{}); !loaded {
+			log.Printf("delegation bind failed: delegation_id=%s: %v", delegationID, err)
+		}
+	}
+}
+
+func (s *Server) bindDelegationsFromPaneScan(presences map[string][]tracker.PanePresence) {
+	if s.Delegations == nil {
+		return
+	}
+	hasUnbound, err := s.Delegations.HasUnbound()
+	if err != nil {
+		log.Printf("delegation scan failed: %v", err)
+		return
+	}
+	if !hasUnbound {
+		return
+	}
+
+	for session, paneAgents := range presences {
+		for _, presence := range paneAgents {
+			if presence.ThreadID == "" {
+				continue
+			}
+			record, err := s.Delegations.FindUnboundByPane(session, presence.PaneID)
+			if errors.Is(err, delegation.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				log.Printf("delegation pane lookup failed: session=%s pane_id=%s: %v", session, presence.PaneID, err)
+				continue
+			}
+			s.bindDelegation(record.DelegationID, presence.Agent, presence.ThreadID)
+		}
+	}
 }
 
 // StartWatchers binds the Claude watcher context, runs its cold-start seed,
@@ -289,6 +333,7 @@ func (s *Server) paneScanLoop() {
 				}
 			}
 		}
+		s.bindDelegationsFromPaneScan(next)
 
 		s.mu.Lock()
 		changed := false

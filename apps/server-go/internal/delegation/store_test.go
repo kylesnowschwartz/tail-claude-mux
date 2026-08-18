@@ -99,6 +99,25 @@ func TestStore(t *testing.T) {
 			},
 		},
 		{
+			name: "has unbound",
+			run: func(t *testing.T) {
+				store := newTestStore(t, createdAt)
+				if has, err := store.HasUnbound(); err != nil || has {
+					t.Fatalf("empty HasUnbound() = (%v, %v), want (false, nil)", has, err)
+				}
+				record := createTestRecord(t, store, params)
+				if has, err := store.HasUnbound(); err != nil || !has {
+					t.Fatalf("created HasUnbound() = (%v, %v), want (true, nil)", has, err)
+				}
+				if _, err := store.Bind(record.DelegationID, record.Agent, "thread-123"); err != nil {
+					t.Fatal(err)
+				}
+				if has, err := store.HasUnbound(); err != nil || has {
+					t.Fatalf("bound HasUnbound() = (%v, %v), want (false, nil)", has, err)
+				}
+			},
+		},
+		{
 			name: "sweep age boundary",
 			run: func(t *testing.T) {
 				now := createdAt.Add(8 * 24 * time.Hour)

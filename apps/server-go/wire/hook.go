@@ -9,6 +9,7 @@ import "encoding/json"
 const (
 	maxEventLen            = 128
 	maxSessionIDLen        = 256
+	maxDelegationIDLen     = 128
 	maxAgentLen            = 64
 	maxToolNameLen         = 128
 	maxNotificationTypeLen = 64
@@ -33,6 +34,7 @@ type HookPayload struct {
 	Event            string                     `json:"event"`
 	SessionID        string                     `json:"session_id"`
 	Cwd              string                     `json:"cwd"`
+	DelegationID     string                     `json:"delegation_id,omitempty"`
 	Agent            string                     `json:"agent,omitempty"`
 	ToolName         string                     `json:"tool_name,omitempty"`
 	Prompt           string                     `json:"prompt,omitempty"`
@@ -86,6 +88,7 @@ func ParseHookPayload(body []byte) (HookPayload, bool) {
 		Event:            event,
 		SessionID:        sessionID,
 		Cwd:              cwd,
+		DelegationID:     optBoundedString(raw["delegation_id"], maxDelegationIDLen),
 		Agent:            optBoundedString(raw["agent"], maxAgentLen),
 		ToolName:         optBoundedString(raw["tool_name"], maxToolNameLen),
 		Prompt:           optBoundedString(raw["prompt"], maxStringLen),

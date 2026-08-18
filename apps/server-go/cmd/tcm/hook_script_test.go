@@ -30,10 +30,10 @@ exit 1
 		t.Fatal(err)
 	}
 
-	run := func(args ...string) map[string]json.RawMessage {
+	run := func(delegationID string, args ...string) map[string]json.RawMessage {
 		t.Helper()
 		cmd := exec.Command(script, args...)
-		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "CAPTURE="+capture)
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "CAPTURE="+capture, "TCM_DELEGATION_ID="+delegationID)
 		cmd.Stdin = bytes.NewBufferString(`{"session_id":"s1","cwd":"/project"}`)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("hook.sh: %v: %s", err, out)
@@ -49,13 +49,18 @@ exit 1
 		return body
 	}
 
-	withAgent := run("Stop", "codex")
+	withAgent := run("", "Stop", "codex")
 	if string(withAgent["event"]) != `"Stop"` || string(withAgent["agent"]) != `"codex"` {
 		t.Fatalf("agent invocation body = %s", mustJSON(t, withAgent))
 	}
-	withoutAgent := run("Stop")
+	withoutAgent := run("", "Stop")
 	if _, ok := withoutAgent["agent"]; ok {
 		t.Fatalf("single-argument invocation added agent: %s", mustJSON(t, withoutAgent))
+	}
+
+	withDelegation := run("123e4567-e89b-42d3-a456-426614174000", "Stop", "codex")
+	if string(withDelegation["delegation_id"]) != `"123e4567-e89b-42d3-a456-426614174000"` {
+		t.Fatalf("delegation invocation body = %s", mustJSON(t, withDelegation))
 	}
 }
 

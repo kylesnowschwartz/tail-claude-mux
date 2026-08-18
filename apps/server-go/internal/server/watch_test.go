@@ -4,6 +4,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
@@ -105,6 +106,34 @@ func TestScanStateForPaneResolvesIdentityAndWorkingStatus(t *testing.T) {
 	}
 	if claude.scanCalls != 1 || claude.calls != 0 {
 		t.Fatalf("claude calls = scan %d, live probe %d; want identity-only scan", claude.scanCalls, claude.calls)
+	}
+}
+
+func TestPaneScanBindsDelegation(t *testing.T) {
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Create(delegation.CreateParams{
+		Agent:       "codex",
+		SessionName: "work",
+		PaneID:      "%7",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{Delegations: store}
+
+	s.bindDelegationsFromPaneScan(map[string][]tracker.PanePresence{
+		"work": {{Agent: "codex", PaneID: "%7", ThreadID: "thread-123"}},
+	})
+
+	bound, err := store.Get(record.DelegationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.ThreadID != "thread-123" || bound.BoundAt == nil {
+		t.Fatalf("binding = (%q, %v), want thread-123 with bound time", bound.ThreadID, bound.BoundAt)
 	}
 }
 

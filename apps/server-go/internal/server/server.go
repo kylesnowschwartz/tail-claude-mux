@@ -94,6 +94,7 @@ type Server struct {
 	panesCache        []tmux.Pane
 	panesCacheAt      time.Time
 	waitPollInterval  time.Duration // tests shorten the in-memory /wait poll.
+	delegationBindLog sync.Map      // delegation ID -> struct{}, suppresses repeated bind errors
 
 	// Sidebar lifecycle + width enforcement state (see sidebar.go).
 	ensureSidebarTimer      *time.Timer
@@ -281,6 +282,13 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 	// 1 MiB bound matches the bun server's tolerance for big ps snapshots.
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if p, ok := wire.ParseHookPayload(body); ok {
+		if p.DelegationID != "" && p.SessionID != "" {
+			agent := p.Agent
+			if agent == "" {
+				agent = "claude-code"
+			}
+			s.bindDelegation(p.DelegationID, agent, p.SessionID)
+		}
 		s.mu.Lock()
 		if s.Watcher != nil {
 			s.Watcher.HandleHook(p)

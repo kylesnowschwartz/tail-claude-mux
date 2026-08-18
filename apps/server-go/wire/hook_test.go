@@ -81,6 +81,40 @@ func TestParseHookPayload_OptionalFieldsDropIndividually(t *testing.T) {
 	}
 }
 
+func TestParseHookPayload_DelegationID(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "present",
+			body: `{"event":"E","session_id":"s","cwd":"/p","delegation_id":"123e4567-e89b-42d3-a456-426614174000"}`,
+			want: "123e4567-e89b-42d3-a456-426614174000",
+		},
+		{
+			name: "absent",
+			body: `{"event":"E","session_id":"s","cwd":"/p"}`,
+		},
+		{
+			name: "oversized",
+			body: fmt.Sprintf(`{"event":"E","session_id":"s","cwd":"/p","delegation_id":"%s"}`, strings.Repeat("d", maxDelegationIDLen+1)),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			payload, ok := ParseHookPayload([]byte(test.body))
+			if !ok {
+				t.Fatal("delegation_id must not reject the event")
+			}
+			if payload.DelegationID != test.want {
+				t.Errorf("DelegationID = %q, want %q", payload.DelegationID, test.want)
+			}
+		})
+	}
+}
+
 func TestParseHookPayload_PidEdgeCases(t *testing.T) {
 	cases := []struct {
 		pidJSON string
