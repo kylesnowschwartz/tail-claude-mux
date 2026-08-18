@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
@@ -26,6 +27,103 @@ func resolvedTempDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return resolved
+}
+
+func TestResultReturnsBoundDelegationFromDiskWithoutTracker(t *testing.T) {
+	sessionsDir := resolvedTempDir(t)
+	rolloutDir := filepath.Join(sessionsDir, "2026", "07", "11")
+	if err := os.MkdirAll(rolloutDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	threadID := "44444444-4444-4444-4444-444444444444"
+	rolloutPath := filepath.Join(rolloutDir, "rollout-2026-07-11T00-00-00-"+threadID+".jsonl")
+	fixture := `{"type":"session_meta","payload":{"id":"` + threadID + `","cwd":"/project"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"durable answer"}]}}` + "\n"
+	if err := os.WriteFile(rolloutPath, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	delegationID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	if _, err := store.CreateWithID(delegationID, delegation.CreateParams{
+		Agent: "codex", Cwd: "/project", SessionName: "work", PaneID: "%7",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Bind(delegationID, "codex", threadID); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{Tracker: tracker.New(), Delegations: store, CodexWatcher: codexwatch.New(sessionsDir, "")}
+	for _, path := range []string{"/result?delegation=" + delegationID, "/result?thread=" + threadID} {
+		t.Run(path, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+			}
+			var body resultResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.ThreadID != threadID || body.RolloutPath != rolloutPath || body.Status != wire.StatusDone {
+				t.Fatalf("response = %+v", body)
+			}
+			if !body.HasFinal || body.FinalMessage != "durable answer" {
+				t.Fatalf("final response = %+v", body)
+			}
+		})
+	}
+}
+
+func TestResultUnboundDelegationIsNotYetBound(t *testing.T) {
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	delegationID := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	if _, err := store.CreateWithID(delegationID, delegation.CreateParams{
+		Agent: "codex", SessionName: "work", PaneID: "%7",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{Tracker: tracker.New(), Delegations: store}
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/result?delegation="+delegationID, nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["error"] != "delegation not yet bound" {
+		t.Fatalf("error = %q", body["error"])
+	}
+}
+
+func TestResultRejectsConflictingDelegationAndPane(t *testing.T) {
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	delegationID := "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	if _, err := store.CreateWithID(delegationID, delegation.CreateParams{
+		Agent: "codex", SessionName: "work", PaneID: "%7",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{Tracker: tracker.New(), Delegations: store}
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/result?delegation="+delegationID+"&pane=%258", nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
 }
 
 func TestResultReturnsPinnedRolloutFinalMessage(t *testing.T) {

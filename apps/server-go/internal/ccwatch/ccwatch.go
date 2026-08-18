@@ -118,6 +118,15 @@ type Adapter struct {
 	now     func() int64 // epoch ms, injectable for tests
 }
 
+// ResultSnapshot is the durable result state available from one Claude
+// transcript.
+type ResultSnapshot struct {
+	TranscriptPath string
+	Status         string
+	HasFinal       bool
+	FinalMessage   string
+}
+
 // New returns an Adapter reading the given Claude dirs.
 func New(projectsDir, sessionsDir string) *Adapter {
 	return &Adapter{
@@ -130,6 +139,54 @@ func New(projectsDir, sessionsDir string) *Adapter {
 
 // Name is the watcher/agent discriminator.
 func (a *Adapter) Name() string { return "claude-code" }
+
+// ResultForThread finds a transcript by its session ID and extracts the
+// completed final turn when one is present.
+func (a *Adapter) ResultForThread(threadID string) (ResultSnapshot, error) {
+	if threadID == "" || filepath.Base(threadID) != threadID {
+		return ResultSnapshot{}, nil
+	}
+	dirs, err := os.ReadDir(a.ProjectsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ResultSnapshot{}, nil
+		}
+		return ResultSnapshot{}, err
+	}
+	for _, dir := range dirs {
+		if !dir.IsDir() {
+			continue
+		}
+		path := filepath.Join(a.ProjectsDir, dir.Name(), threadID+".jsonl")
+		if _, err := os.Stat(path); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return ResultSnapshot{}, err
+		}
+		status, _, err := readTranscriptState(path)
+		if err != nil {
+			return ResultSnapshot{}, err
+		}
+		snapshot := ResultSnapshot{TranscriptPath: path, Status: status}
+		if status != wire.StatusDone {
+			return snapshot, nil
+		}
+		chunks, err := transcript.ReadSession(path)
+		if err != nil {
+			return ResultSnapshot{}, err
+		}
+		for i := len(chunks) - 1; i >= 0; i-- {
+			if chunks[i].Type == transcript.AIChunk && chunks[i].Text != "" {
+				snapshot.HasFinal = true
+				snapshot.FinalMessage = chunks[i].Text
+				break
+			}
+		}
+		return snapshot, nil
+	}
+	return ResultSnapshot{}, nil
+}
 
 func (a *Adapter) ScanStateForPid(pid int, _ string) (threadID, name string, verdict tracker.ProbeVerdict) {
 	threadID, name = a.SessionInfoForPid(pid)
@@ -563,10 +620,15 @@ func (a *Adapter) seedFromJSONL() {
 // scanTranscript folds determineStatus/name extraction over every line of a
 // transcript, returning the last definitive status and the best name.
 func scanTranscript(path string) (status, threadName string) {
+	status, threadName, _ = readTranscriptState(path)
+	return status, threadName
+}
+
+func readTranscriptState(path string) (status, threadName string, err error) {
 	status = wire.StatusIdle
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return status, ""
+		return status, "", err
 	}
 	for line := range strings.SplitSeq(string(raw), "\n") {
 		if line == "" {
@@ -587,7 +649,7 @@ func scanTranscript(path string) (status, threadName string) {
 			status = s
 		}
 	}
-	return status, threadName
+	return status, threadName, nil
 }
 
 // --- One-time thread name resolution ---

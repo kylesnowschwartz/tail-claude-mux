@@ -55,6 +55,53 @@ func TestResult_PaneQueryEncoding(t *testing.T) {
 	}
 }
 
+func TestResult_FlagValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "missing address"},
+		{name: "session without pane", args: []string{"-session", "work"}},
+		{name: "pane without session", args: []string{"-pane", "%7"}},
+		{name: "delegation and thread", args: []string{"-delegation", "delegation-id", "-thread", "thread-id"}},
+		{name: "delegation and session pane", args: []string{"-delegation", "delegation-id", "-session", "work", "-pane", "%7"}},
+		{name: "thread and session pane", args: []string{"-thread", "thread-id", "-session", "work", "-pane", "%7"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			if code := runResult(tt.args, &out); code != 2 {
+				t.Fatalf("exit code = %d, want 2; output: %s", code, out.String())
+			}
+		})
+	}
+}
+
+func TestResult_AddressFlagQueries(t *testing.T) {
+	tests := []struct {
+		name, flagName, address, queryName string
+	}{
+		{name: "delegation", flagName: "-delegation", address: "delegation%id", queryName: "delegation"},
+		{name: "thread", flagName: "-thread", address: "thread/id", queryName: "thread"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.URL.Query().Get(tt.queryName); got != tt.address {
+					t.Fatalf("server saw %s=%q, want %q", tt.queryName, got, tt.address)
+				}
+				json.NewEncoder(w).Encode(map[string]any{"threadId": "thread-id", "status": "done"})
+			}))
+			defer srv.Close()
+
+			var out bytes.Buffer
+			if code := runResult([]string{tt.flagName, tt.address, "-port", strconv.Itoa(portOf(srv))}, &out); code != 0 {
+				t.Fatalf("exit code = %d; output: %s", code, out.String())
+			}
+		})
+	}
+}
+
 func TestResult_NonHTTP200(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)

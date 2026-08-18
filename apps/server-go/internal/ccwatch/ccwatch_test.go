@@ -1272,6 +1272,32 @@ func TestClaudeCodeHookAdapterColdStartSeedRoutesByPid(t *testing.T) {
 	})
 }
 
+func TestResultForThreadReadsCompletedTranscript(t *testing.T) {
+	projectsDir := t.TempDir()
+	projectDir := filepath.Join(projectsDir, "-tmp-myproject")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	threadID := "result-thread-1"
+	transcriptPath := filepath.Join(projectDir, threadID+".jsonl")
+	fixture := `{"type":"user","uuid":"user-1","message":{"role":"user","content":"do the thing"}}` + "\n" +
+		`{"type":"assistant","uuid":"assistant-1","message":{"role":"assistant","content":[{"type":"text","text":"finished"}],"stop_reason":"end_turn"}}` + "\n"
+	if err := os.WriteFile(transcriptPath, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := New(projectsDir, t.TempDir()).ResultForThread(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.TranscriptPath != transcriptPath || snapshot.Status != wire.StatusDone {
+		t.Fatalf("snapshot = %+v", snapshot)
+	}
+	if !snapshot.HasFinal || snapshot.FinalMessage != "finished" {
+		t.Fatalf("final snapshot = %+v", snapshot)
+	}
+}
+
 // describe("classifyTitleStatus") — ported from title-status.test.ts.
 func TestClassifyTitleStatus(t *testing.T) {
 	t.Run("leading braille spinner glyph → working", func(t *testing.T) {
