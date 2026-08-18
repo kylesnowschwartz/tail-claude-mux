@@ -7,11 +7,13 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
@@ -21,33 +23,41 @@ import (
 // sweep is safe to run at any time.
 var delegateSignature = regexp.MustCompile(`codex.*--profile.*tcm-delegate`)
 
-// statusUntracked marks a delegate window whose pane GET /result 404s for
-// ("session not found") — the tracker has nothing recorded for it, most
-// often because the server restarted after the delegate finished. It is
-// not one of wire's tracked AgentStatus values; resultStatus assigns it
-// from the HTTP status, never from a server-emitted status field.
-const statusUntracked = "untracked"
+const statusUnknown = "unknown"
 
 // tidyTerminalStatus is the set of statuses that mean a delegate's window
-// is safe to close without -all, even if its codex process is still idling
-// at the prompt: a delegate's codex keeps running interactively after
-// finishing a turn, so process state alone can't tell "done" from "still
-// working". An untracked window is also safe to close on its own — nothing
-// is tracking it, so there is no live turn -all would be needed to override.
+// is safe to close even if its codex process is still idling at the prompt:
+// a delegate's codex keeps running interactively after finishing a turn, so
+// process state alone can't tell "done" from "still working". An unknown
+// window is never safe to close because tidy could not positively identify
+// a terminal delegation result.
 var tidyTerminalStatus = map[string]bool{
 	wire.StatusDone:        true,
 	wire.StatusError:       true,
 	wire.StatusInterrupted: true,
-	statusUntracked:        true,
+}
+
+var listTidyDelegations = func() ([]delegation.Record, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("find home directory: %w", err)
+	}
+	store, err := delegation.New(filepath.Join(home, ".config", "tcm", "delegations"))
+	if err != nil {
+		return nil, err
+	}
+	return store.List()
 }
 
 // tidyCandidate is one matched delegate window in tcm tidy's stdout JSON.
 type tidyCandidate struct {
-	WindowID    string `json:"windowId"`
-	SessionName string `json:"sessionName"`
-	PaneID      string `json:"paneId"`
-	Status      string `json:"status"`
-	Action      string `json:"action"`
+	WindowID     string `json:"windowId"`
+	SessionName  string `json:"sessionName"`
+	PaneID       string `json:"paneId"`
+	DelegationID string `json:"delegationId"`
+	Status       string `json:"status"`
+	Reason       string `json:"reason,omitempty"`
+	Action       string `json:"action"`
 }
 
 // tidyOutcome is the JSON shape tcm tidy prints to stdout.
@@ -61,12 +71,14 @@ type tidyOutcome struct {
 // its most recent pane_start_command match, activity epoch (for --keep's
 // newest-first ordering), and the terminal-status verdict from GET /result.
 type tidyWindow struct {
-	windowID    string
-	sessionName string
-	paneID      string
-	activity    int64
-	status      string
-	closeable   bool
+	windowID     string
+	sessionName  string
+	paneID       string
+	delegationID string
+	activity     int64
+	status       string
+	reason       string
+	closeable    bool
 }
 
 // runTidy closes finished TCM codex delegate tmux windows. It returns the
@@ -75,7 +87,6 @@ func runTidy(args []string, stdout io.Writer) int {
 	fs := flag.NewFlagSet("tidy", flag.ContinueOnError)
 	allSessions := fs.Bool("all-sessions", false, "sweep every tmux session, not just the current one")
 	keep := fs.Int("keep", 0, "keep the N most-recently-active delegate windows")
-	all := fs.Bool("all", false, "close every matched delegate regardless of status")
 	dryRun := fs.Bool("dry-run", false, "print what would close, change nothing")
 	port := fs.Int("port", 7391, "tcm server port")
 	if err := fs.Parse(args); err != nil {
@@ -102,11 +113,14 @@ func runTidy(args []string, stdout io.Writer) int {
 
 	outcome := tidyOutcome{DryRun: *dryRun}
 	for i, w := range windows {
-		cand := tidyCandidate{WindowID: w.windowID, SessionName: w.sessionName, PaneID: w.paneID, Status: w.status}
+		cand := tidyCandidate{
+			WindowID: w.windowID, SessionName: w.sessionName, PaneID: w.paneID,
+			DelegationID: w.delegationID, Status: w.status, Reason: w.reason,
+		}
 		switch {
 		case *keep > 0 && i < *keep:
 			cand.Action = "keep"
-		case !w.closeable && !*all:
+		case !w.closeable:
 			cand.Action = "skip"
 		case *dryRun:
 			cand.Action = "would-close"
@@ -147,6 +161,9 @@ func scanDelegateWindows(scope string, allSessions bool, port int) ([]tidyWindow
 		return nil, fmt.Errorf("tmux list-panes: %w", err)
 	}
 
+	records, recordsErr := listTidyDelegations()
+	delegationByPane := indexDelegationsByPane(records)
+
 	byWindow := map[string]*tidyWindow{}
 	var order []string
 	for _, line := range strings.Split(out, "\n") {
@@ -177,14 +194,40 @@ func scanDelegateWindows(scope string, allSessions bool, port int) ([]tidyWindow
 			w.activity = activity
 		}
 
-		status := resultStatus(port, sessionName, paneID)
-		if status == "" {
-			status = "unknown"
+		if recordsErr != nil {
+			w.paneID = paneID
+			w.delegationID = ""
+			w.status = statusUnknown
+			w.reason = "could not read delegation records: " + recordsErr.Error()
+			w.closeable = false
+			continue
 		}
+		record, ok := delegationByPane[delegationPaneKey(sessionName, paneID)]
+		if !ok {
+			w.paneID = paneID
+			w.delegationID = ""
+			w.status = statusUnknown
+			w.reason = "delegation record not found for pane"
+			w.closeable = false
+			continue
+		}
+		status, reason, closeable := classifyDelegation(port, record.DelegationID)
+		if !closeable {
+			w.paneID = paneID
+			w.delegationID = record.DelegationID
+			w.status = status
+			w.reason = reason
+			w.closeable = false
+			continue
+		}
+		if w.status == statusUnknown {
+			continue
+		}
+		w.paneID = paneID
+		w.delegationID = record.DelegationID
 		w.status = status
-		if tidyTerminalStatus[status] {
-			w.closeable = true
-		}
+		w.reason = ""
+		w.closeable = true
 	}
 
 	windows := make([]tidyWindow, 0, len(order))
@@ -194,29 +237,56 @@ func scanDelegateWindows(scope string, allSessions bool, port int) ([]tidyWindow
 	return windows, nil
 }
 
-// resultStatus asks the server for one pane's authoritative status via GET
-// /result. A 404 means the session isn't tracked, mapped to statusUntracked.
-// Any other transport failure, non-200, or unparseable body yields "" —
-// treated as "unknown" and never closed unless -all is given.
-func resultStatus(port int, session, pane string) string {
+func indexDelegationsByPane(records []delegation.Record) map[string]delegation.Record {
+	indexed := make(map[string]delegation.Record, len(records))
+	for _, record := range records {
+		key := delegationPaneKey(record.SessionName, record.PaneID)
+		current, found := indexed[key]
+		if !found || current.CreatedAt.Before(record.CreatedAt) ||
+			(current.CreatedAt.Equal(record.CreatedAt) && current.DelegationID < record.DelegationID) {
+			indexed[key] = record
+		}
+	}
+	return indexed
+}
+
+func delegationPaneKey(sessionName, paneID string) string {
+	return sessionName + "\x00" + paneID
+}
+
+// classifyDelegation asks the server for a durable delegation's result.
+// Only a positively identified terminal status is closeable.
+func classifyDelegation(port int, delegationID string) (status, reason string, closeable bool) {
 	values := url.Values{}
-	values.Set("session", session)
-	values.Set("pane", pane)
-	status, body, err := getURL(baseURL(port) + "/result?" + values.Encode())
+	values.Set("delegation", delegationID)
+	httpStatus, body, err := getURL(baseURL(port) + "/result?" + values.Encode())
 	if err != nil {
-		return ""
+		return statusUnknown, "result request failed: " + err.Error(), false
 	}
-	if status == 404 {
-		return statusUntracked
-	}
-	if status != 200 {
-		return ""
+	if httpStatus != 200 {
+		return statusUnknown, resultErrorReason(httpStatus, body), false
 	}
 	var decoded struct {
 		Status string `json:"status"`
 	}
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		return ""
+		return statusUnknown, "invalid result response", false
 	}
-	return decoded.Status
+	if !tidyTerminalStatus[decoded.Status] {
+		if decoded.Status == "" {
+			return statusUnknown, "result status is empty", false
+		}
+		return statusUnknown, fmt.Sprintf("status %q is not terminal", decoded.Status), false
+	}
+	return decoded.Status, "", true
+}
+
+func resultErrorReason(status int, body []byte) string {
+	var decoded struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(body, &decoded) == nil && decoded.Error != "" {
+		return decoded.Error
+	}
+	return fmt.Sprintf("result request returned HTTP %d", status)
 }

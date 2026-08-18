@@ -37,7 +37,7 @@ const (
 
 // StatusGone is GET /wait's status for a tracked session that disappeared
 // mid-poll — not one of shared.ts's AgentStatus values (those describe a
-// live tracked agent), and not what GET /result reports for an untracked
+// live tracked agent), and not what GET /result reports for a missing
 // session either: /result 404s instead, with "session not found".
 const StatusGone = "gone"
 

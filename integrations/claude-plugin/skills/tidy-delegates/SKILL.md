@@ -21,15 +21,15 @@ TCM="${CLAUDE_PLUGIN_ROOT}/../../apps/server-go/bin/tcm"
 Scope is the current tmux session by default (`-all-sessions` widens it).
 The sweep is deterministic and fails safe: it only matches windows whose
 pane start command carries the `codex --profile tcm-delegate` spawn
-signature, and by default only closes ones whose TCM status is terminal
-(done/error/interrupted/gone). Running or approval-waiting delegates, and
-windows Kyle opened himself, are never touched.
+signature, resolves each pane through its durable delegation record, and
+only closes ones whose result is terminal (done/error/interrupted). Unknown,
+running, or approval-waiting delegates, and windows Kyle opened himself, are
+never touched.
 
 Flags:
 
 - `-all-sessions` — sweep every tmux session, not just the current one
 - `-keep N` — preserve the N most-recently-active delegate windows
-- `-all` — close every matched delegate regardless of status (interrupts live work)
 - `-dry-run` — print what would close, change nothing
 - `-port N` — tcm server port (defaults to 7391)
 
@@ -52,12 +52,12 @@ thing standing between a done-but-unread delegate and a closed window.
 Output:
 
 ```json
-{"dryRun":true,"candidates":[{"windowId":"@7","sessionName":"kyle","paneId":"%42","status":"done","action":"would-close"}],"closed":0}
+{"dryRun":true,"candidates":[{"windowId":"@7","sessionName":"kyle","paneId":"%42","delegationId":"123e4567-e89b-42d3-a456-426614174000","status":"done","action":"would-close"}],"closed":0}
 ```
 
 `action` per candidate is one of `keep` (inside `-keep N`'s window), `skip`
-(not yet terminal and `-all` wasn't passed), `would-close` (dry run), or —
-on a real run — `closed`/`gone`.
+(the delegation result is unknown), `would-close` (dry run), or — on a real
+run — `closed`/`gone`. Skipped candidates include a `reason`.
 
 ## Step 2 — review, then act
 
@@ -75,7 +75,7 @@ on a real run — `closed`/`gone`.
   "$TCM" tidy [only the recognized flags Kyle supplied]
   ```
 
-Do not add `-all` or `-all-sessions` unless Kyle asked for them.
+Do not add `-all-sessions` unless Kyle asked for it.
 
 This closes windows only — it does not remove any worktree the delegate ran
 in. Sweep those separately per `tcm-delegate-codex`'s cleanup section
