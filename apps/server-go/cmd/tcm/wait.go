@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -69,6 +70,7 @@ var promptPattern = regexp.MustCompile(`(?i)press enter|y/n|approve|allow|permis
 
 // waitConfig is runWait's parsed flags plus the seams tests substitute.
 type waitConfig struct {
+	delegation  string
 	session     string
 	pane        string
 	port        int
@@ -83,6 +85,7 @@ type waitConfig struct {
 // always printing exactly one RESOLUTION line).
 func runWait(args []string, stdout io.Writer) int {
 	fs := flag.NewFlagSet("wait", flag.ContinueOnError)
+	delegationID := fs.String("delegation", "", "delegation id")
 	session := fs.String("session", "", "TCM session name to watch")
 	pane := fs.String("pane", "", "pane id to watch (required; disambiguates multi-agent sessions)")
 	port := fs.Int("port", 7391, "tcm server port")
@@ -91,20 +94,82 @@ func runWait(args []string, stdout io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *session == "" {
-		fmt.Fprintln(os.Stderr, "wait: -session is required")
-		return 2
-	}
-	if *pane == "" {
-		fmt.Fprintln(os.Stderr, "wait: -pane is required")
+	if err := validateWaitAddress(*delegationID, *session, *pane); err != nil {
+		fmt.Fprintln(os.Stderr, "wait: "+err.Error())
 		return 2
 	}
 
-	cfg := waitConfig{session: *session, pane: *pane, port: *port, minutes: *minutes, pollSeconds: *pollSeconds}
+	cfg := waitConfig{delegation: *delegationID, session: *session, pane: *pane, port: *port, minutes: *minutes, pollSeconds: *pollSeconds}
 	deadline := time.Now().Add(time.Duration(cfg.minutes) * time.Minute)
-	outcome := watchToTerminal(cfg, deadline)
+	var outcome waitOutcome
+	if cfg.delegation != "" {
+		outcome = watchDelegationToTerminal(cfg, deadline)
+	} else {
+		outcome = watchToTerminal(cfg, deadline)
+	}
 	_ = writeJSON(stdout, outcome)
 	return 0
+}
+
+func validateWaitAddress(delegationID, session, pane string) error {
+	sessionPane := session != "" && pane != ""
+	partialSessionPane := (session == "") != (pane == "")
+	if partialSessionPane || (delegationID != "") == sessionPane {
+		return errors.New("exactly one address is required: -delegation, or -session with -pane")
+	}
+	return nil
+}
+
+func watchDelegationToTerminal(cfg waitConfig, deadline time.Time) waitOutcome {
+	polls := 0
+	lastState := ""
+	for {
+		if !time.Now().Before(deadline) {
+			return waitOutcome{Outcome: "timeout", Polls: polls, State: lastState}
+		}
+		remaining := time.Until(deadline)
+		timeoutSeconds := int(remaining.Seconds())
+		if timeoutSeconds > 540 {
+			timeoutSeconds = 540
+		}
+		if timeoutSeconds < 5 {
+			return waitOutcome{Outcome: "timeout", Polls: polls, State: lastState}
+		}
+
+		resp, ok := pollDelegationWait(cfg, timeoutSeconds)
+		polls++
+		if !ok {
+			sleep(time.Duration(cfg.pollSeconds) * time.Second)
+			continue
+		}
+		lastState = resp.Status
+		switch resp.Status {
+		case wire.StatusDone:
+			return waitOutcome{Outcome: "finished", Polls: polls, State: resp.Status}
+		case wire.StatusError, wire.StatusInterrupted:
+			return waitOutcome{Outcome: "error", Polls: polls, State: resp.Status}
+		case wire.StatusGone:
+			return waitOutcome{Outcome: "session-dead", Polls: polls, State: resp.Status}
+		case wire.StatusWaiting:
+			if resp.TimedOut {
+				continue
+			}
+			sleep(5 * time.Second)
+			confirm, confirmOK := pollDelegationWait(cfg, 5)
+			polls++
+			if confirmOK {
+				lastState = confirm.Status
+				if confirm.Status == wire.StatusWaiting {
+					return waitOutcome{Outcome: "waiting", Polls: polls, State: wire.StatusWaiting}
+				}
+			}
+			continue
+		default:
+			if resp.Terminal {
+				return waitOutcome{Outcome: "error", Polls: polls, State: resp.Status}
+			}
+		}
+	}
 }
 
 // watchToTerminal drives the poll loop: /wait long-poll primary, pane/session
@@ -208,6 +273,22 @@ func pollWait(cfg waitConfig, timeoutSeconds int) (waitResponse, bool) {
 	client := &http.Client{Timeout: time.Duration(timeoutSeconds)*time.Second + waitClientGrace}
 	status, body, err := getURLWithClient(client, baseURL(cfg.port)+"/wait?"+values.Encode())
 	if err != nil || status != 200 {
+		return waitResponse{}, false
+	}
+	var resp waitResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return waitResponse{}, false
+	}
+	return resp, true
+}
+
+func pollDelegationWait(cfg waitConfig, timeoutSeconds int) (waitResponse, bool) {
+	values := url.Values{}
+	values.Set("delegation", cfg.delegation)
+	values.Set("timeout", fmt.Sprintf("%d", timeoutSeconds))
+	client := &http.Client{Timeout: time.Duration(timeoutSeconds)*time.Second + waitClientGrace}
+	status, body, err := getURLWithClient(client, baseURL(cfg.port)+"/wait?"+values.Encode())
+	if err != nil || status != http.StatusOK {
 		return waitResponse{}, false
 	}
 	var resp waitResponse

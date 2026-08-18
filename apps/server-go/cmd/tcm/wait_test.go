@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
 // withStubSleep swaps sleep for a no-op that counts calls, restoring the
@@ -62,6 +64,61 @@ func TestWait_PaneIsRequired(t *testing.T) {
 	code := runWait([]string{"-session", "s"}, &out)
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2 (usage error)", code)
+	}
+}
+
+func TestWait_FlagValidation(t *testing.T) {
+	tests := []struct {
+		name                          string
+		delegationID, session, paneID string
+		wantErr                       bool
+	}{
+		{name: "delegation", delegationID: "delegation-id"},
+		{name: "session and pane", session: "work", paneID: "%7"},
+		{name: "missing address", wantErr: true},
+		{name: "session without pane", session: "work", wantErr: true},
+		{name: "pane without session", paneID: "%7", wantErr: true},
+		{name: "mixed", delegationID: "delegation-id", session: "work", paneID: "%7", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateWaitAddress(tt.delegationID, tt.session, tt.paneID)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateWaitAddress() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestWait_DelegationSkipsTmuxLivenessAndQueriesDelegation(t *testing.T) {
+	withStubSleep(t)
+	withStubTmux(t, func(args ...string) (string, error) {
+		t.Fatalf("delegation wait called tmux with %v", args)
+		return "", nil
+	})
+	delegationID := "delegation%id"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("delegation"); got != delegationID {
+			t.Fatalf("delegation query = %q, want %q", got, delegationID)
+		}
+		if r.URL.Query().Get("session") != "" || r.URL.Query().Get("pane") != "" {
+			t.Fatalf("unexpected legacy address query: %s", r.URL.RawQuery)
+		}
+		_ = json.NewEncoder(w).Encode(waitResponse{Session: "work", Status: "done", Terminal: true})
+	}))
+	defer srv.Close()
+
+	var out bytes.Buffer
+	code := runWait([]string{"-delegation", delegationID, "-port", portArg(srv), "-minutes", "1"}, &out)
+	if code != 0 {
+		t.Fatalf("exit code = %d; output: %s", code, out.String())
+	}
+	var got waitOutcome
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Outcome != "finished" || got.State != wire.StatusDone {
+		t.Fatalf("outcome = %+v", got)
 	}
 }
 
