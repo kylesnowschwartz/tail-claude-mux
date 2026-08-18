@@ -5,8 +5,10 @@ description: >
   TCM, driven end-to-end by the `tcm` CLI (delegate → wait → followup →
   result), instead of a backgrounded /codex:rescue job. Use for
   implementation work that changes the tree (MO-002 routing: repo-gets-changes
-  → visible pane), when Kyle asks to "watch" a delegation, or for parallel
-  worktree delegations. NOT for read-only investigation/review/second opinions
+  → visible pane), when Kyle asks to "watch" a delegation, for parallel
+  worktree delegations, and when tidying / cleaning up / closing finished
+  delegate windows ("TCM codex shells") via `tcm tidy`. NOT for read-only
+  investigation/review/second opinions
   whose output the orchestrator consumes directly — use /codex:rescue for
   those. Headless or tmux-less contexts: fall back to /codex:rescue.
 ---
@@ -179,20 +181,52 @@ follow-up turn and `tcm result` to read its answer.
   into a worktree of an already-trusted repo avoids this; a genuinely fresh,
   non-worktree directory is the case that hits it.
 
-## Cleanup — only with Kyle's say-so
+## Cleanup — tidy proactively once the result is consumed
 
-Leave the window open when the task completes. On his go:
+The window is disposable; the thread is not. The delegation record and the
+rollout on disk survive the pane, so after a tidy:
 
-- Bulk sweep (the usual case): use the `tidy-delegates` skill — it runs
-  `tcm tidy` and closes finished delegate windows deterministically
-  (spawn-signature + terminal TCM status), session-scoped by default,
-  preview-before-close.
-- Single horizontal delegate: `tmux kill-window -t '<windowId>'` (the
-  returned `@NN`). NEVER kill-session — `sessionName` is Kyle's OWN session
-  under horizontal ownership.
-- Then remove the worktree if one was created:
-  `git worktree remove <path> && git branch -d <branch>`. Worktrees are
-  created by the orchestrator, so the orchestrator sweeps them — TCM never
-  touches git. Crash path (owner session died with delegates in flight): the
-  windows are already reaped; run `git worktree list` in the repo and remove
-  the stale delegate worktrees, then `git worktree prune`.
+- `tcm result -delegation <id>` still returns the final message.
+- The thread can be re-opened later with
+  `codex --profile tcm-delegate resume <threadId>` in the delegate's
+  directory (`tcm result` prints the `threadId`). `tcm followup` will NOT
+  respawn a tidied delegate — a dead pane answers 409 — so resuming is how
+  post-tidy follow-ups happen.
+
+So: once a delegate's result has been read, verified (MO-005), and reported
+to Kyle, tidy its window without waiting to be asked — mention the
+`delegationId`/`threadId` in the report so the thread stays referenceable.
+Do NOT tidy a delegate whose result is unread, blocked on a question, or
+still being verified.
+
+Sweep with `tcm tidy` — deterministic and fail-safe: it only matches windows
+whose pane start command carries the `codex --profile tcm-delegate` spawn
+signature, resolves each through its delegation record, and only closes ones
+whose result is terminal (done/error/interrupted). Running or
+approval-waiting delegates, and windows Kyle opened himself, are never
+touched. Scope is the current tmux session by default.
+
+```sh
+"$TCM" tidy -dry-run   # preview: read it before the real sweep
+"$TCM" tidy            # close what the preview showed
+```
+
+Flags: `-all-sessions` (widen past the current session — only when Kyle asks),
+`-keep N` (preserve the N most-recently-active delegate windows),
+`-port N` (server port, default 7391). Pass only flags Kyle asked for, each
+as its own literal token; never splice free text or shell operators into the
+command line. Per candidate, `action` is `keep`, `skip` (with a `reason`),
+`would-close`, or on a real run `closed`/`gone`. If the preview shows a
+window you can't confirm is consumed, leave it out (`tmux kill-window -t
+'@NN'` closes a single confirmed one instead) or ask.
+
+NEVER kill-session — `sessionName` is Kyle's OWN session under horizontal
+ownership.
+
+Worktrees are the orchestrator's, not TCM's, and `codex resume` needs the
+delegate's directory to still exist — so remove a worktree only after the
+work has landed, not at window-tidy time:
+`git worktree remove <path> && git branch -d <branch>`. Crash path (owner
+session died with delegates in flight): the windows are already reaped; run
+`git worktree list` and remove the stale delegate worktrees, then
+`git worktree prune`.
