@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -24,9 +25,10 @@ type followupOutcome struct {
 // empty so the server resolves it, matching tcm-deliver.sh's two request
 // shapes (with/without a pane argument).
 type followupBody struct {
-	Session string `json:"session"`
-	Message string `json:"message"`
-	Pane    string `json:"pane,omitempty"`
+	Delegation string `json:"delegation,omitempty"`
+	Session    string `json:"session,omitempty"`
+	Message    string `json:"message"`
+	Pane       string `json:"pane,omitempty"`
 }
 
 // followupResponse is the subset of POST /followup's 200 response tcm
@@ -44,6 +46,7 @@ type followupResponse struct {
 // what the delegate did, not a CLI failure.
 func runFollowup(args []string, stdout io.Writer) int {
 	fs := flag.NewFlagSet("followup", flag.ContinueOnError)
+	delegationID := fs.String("delegation", "", "delegation id")
 	session := fs.String("session", "", "TCM session name to deliver the follow-up to")
 	pane := fs.String("pane", "", "pane id (omit to let the server resolve it)")
 	messageFile := fs.String("message-file", "", "path to the follow-up message file")
@@ -51,8 +54,12 @@ func runFollowup(args []string, stdout io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *session == "" || *messageFile == "" {
-		fmt.Fprintln(os.Stderr, "followup: -session and -message-file are required")
+	if err := validateFollowupAddress(*delegationID, *session, *pane); err != nil {
+		fmt.Fprintln(os.Stderr, "followup:", err)
+		return 2
+	}
+	if *messageFile == "" {
+		fmt.Fprintln(os.Stderr, "followup: -message-file is required")
 		return 2
 	}
 
@@ -62,12 +69,19 @@ func runFollowup(args []string, stdout io.Writer) int {
 		return 2
 	}
 
-	outcome := deliverFollowup(*port, *session, *pane, string(source))
+	outcome := deliverFollowup(*port, *delegationID, *session, *pane, string(source))
 	_ = writeJSON(stdout, outcome)
 	if outcome.Outcome == "error" {
 		return 1
 	}
 	return 0
+}
+
+func validateFollowupAddress(delegationID, session, pane string) error {
+	if (delegationID != "" && session == "" && pane == "") || (delegationID == "" && session != "") {
+		return nil
+	}
+	return errors.New("exactly one address is required: -delegation or -session with optional -pane")
 }
 
 // deliverFollowup runs the POST-then-verify ladder: an initial follow-up
@@ -79,8 +93,8 @@ func runFollowup(args []string, stdout io.Writer) int {
 // ladder trades latency for certainty: a delivered message can take up to
 // a minute to confirm because the server only writes a rollout receipt
 // once the delegate's turn actually reads the resumed prompt.
-func deliverFollowup(port int, session, pane, message string) followupOutcome {
-	body, err := json.Marshal(followupBody{Session: session, Message: message, Pane: pane})
+func deliverFollowup(port int, delegationID, session, pane, message string) followupOutcome {
+	body, err := json.Marshal(followupBody{Delegation: delegationID, Session: session, Message: message, Pane: pane})
 	if err != nil {
 		return followupOutcome{Outcome: "error", Detail: err.Error()}
 	}

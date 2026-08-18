@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux/tmuxtest"
@@ -164,6 +165,155 @@ func TestFollowupRevalidatesBeforeRespawn(t *testing.T) {
 	if response.Code != http.StatusConflict || respawned {
 		t.Fatalf("status = %d, respawned = %v: %s", response.Code, respawned, response.Body.String())
 	}
+}
+
+func TestFollowupBoundDelegationWithoutTrackerRespawnsLivePane(t *testing.T) {
+	sessionsDir := resolvedTempDir(t)
+	rolloutDir := filepath.Join(sessionsDir, "2026", "07", "11")
+	if err := os.MkdirAll(rolloutDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	threadID := "33333333-3333-3333-3333-333333333333"
+	rolloutPath := filepath.Join(rolloutDir, "rollout-2026-07-11T00-00-00-"+threadID+".jsonl")
+	if err := os.WriteFile(rolloutPath, []byte(`{"type":"session_meta","payload":{"cwd":"/project"}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, delegationID := createFollowupDelegation(t, threadID)
+	var respawned bool
+	tm := &tmux.Tmux{Run: func(args ...string) (string, error) {
+		if args[0] == "list-panes" {
+			return tmuxtest.PaneSpec{Session: "delegate", ID: "%42", PID: "123", Dir: "/project"}.Row(), nil
+		}
+		respawned = args[0] == "respawn-pane" && args[3] == "%42"
+		return "", nil
+	}}
+	s := &Server{
+		Tracker: tracker.New(), Delegations: store,
+		Builder: &state.Builder{Tmux: tm}, CodexWatcher: codexwatch.New(sessionsDir, ""),
+	}
+	response := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"delegation":%q,"message":"continue"}`, delegationID)
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(body)))
+	if response.Code != http.StatusOK || !respawned {
+		t.Fatalf("status = %d, respawned = %v: %s", response.Code, respawned, response.Body.String())
+	}
+	var result followupResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(result.MessageFile)
+	if result.UUID != threadID || result.RolloutPath != rolloutPath || result.PaneID != "%42" {
+		t.Fatalf("response = %+v", result)
+	}
+}
+
+func TestFollowupBoundDelegationRejectsDeadPane(t *testing.T) {
+	store, delegationID := createFollowupDelegation(t, "33333333-3333-3333-3333-333333333333")
+	tm := &tmux.Tmux{Run: func(args ...string) (string, error) { return "", nil }}
+	s := &Server{Tracker: tracker.New(), Delegations: store, Builder: &state.Builder{Tmux: tm}}
+	response := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"delegation":%q,"message":"continue"}`, delegationID)
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(body)))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusConflict, response.Body.String())
+	}
+	var result map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["error"] != "delegate pane %42 is gone; cannot deliver follow-up" {
+		t.Fatalf("error = %q", result["error"])
+	}
+}
+
+func TestFollowupUnboundDelegationUsesSessionPaneResolution(t *testing.T) {
+	sessionsDir := resolvedTempDir(t)
+	rolloutDir := filepath.Join(sessionsDir, "2026", "07", "11")
+	if err := os.MkdirAll(rolloutDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	threadID := "44444444-4444-4444-8444-444444444444"
+	if err := os.WriteFile(filepath.Join(rolloutDir, "rollout-2026-07-11T00-00-00-"+threadID+".jsonl"), []byte(`{"type":"session_meta","payload":{"cwd":"/project"}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Create(delegation.CreateParams{Agent: "codex", Cwd: "/project", SessionName: "delegate", PaneID: "%42"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "delegate", Agent: "codex", ThreadID: threadID, PaneID: "%42", Status: wire.StatusDone}, false)
+	tm := &tmux.Tmux{Run: func(args ...string) (string, error) {
+		if args[0] == "list-panes" {
+			return tmuxtest.PaneSpec{Session: "delegate", ID: "%42", PID: "123", Dir: "/project"}.Row(), nil
+		}
+		return "", nil
+	}}
+	s := &Server{Tracker: tr, Delegations: store, Builder: &state.Builder{Tmux: tm}, CodexWatcher: codexwatch.New(sessionsDir, "")}
+	response := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"delegation":%q,"message":"continue"}`, record.DelegationID)
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(body)))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	var result followupResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(result.MessageFile)
+	if result.UUID != threadID || result.PaneID != "%42" {
+		t.Fatalf("response = %+v", result)
+	}
+}
+
+func TestFollowupDelegationAddressErrors(t *testing.T) {
+	store, delegationID := createFollowupDelegation(t, "33333333-3333-3333-3333-333333333333")
+	tests := []struct {
+		name, body, wantError string
+		wantCode              int
+	}{
+		{name: "unknown", body: `{"delegation":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","message":"continue"}`, wantCode: http.StatusNotFound, wantError: "delegation not found"},
+		{name: "session conflict", body: fmt.Sprintf(`{"delegation":%q,"session":"other","message":"continue"}`, delegationID), wantCode: http.StatusBadRequest, wantError: "delegation and session identify different agents"},
+		{name: "pane conflict", body: fmt.Sprintf(`{"delegation":%q,"pane":"%%7","message":"continue"}`, delegationID), wantCode: http.StatusBadRequest, wantError: "delegation and pane identify different agents"},
+		{name: "thread conflict", body: fmt.Sprintf(`{"delegation":%q,"thread":"other","message":"continue"}`, delegationID), wantCode: http.StatusBadRequest, wantError: "delegation and thread identify different agents"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Server{Tracker: tracker.New(), Delegations: store}
+			response := httptest.NewRecorder()
+			s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(tt.body)))
+			if response.Code != tt.wantCode {
+				t.Fatalf("status = %d, want %d: %s", response.Code, tt.wantCode, response.Body.String())
+			}
+			var result map[string]string
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result["error"] != tt.wantError {
+				t.Fatalf("error = %q, want %q", result["error"], tt.wantError)
+			}
+		})
+	}
+}
+
+func createFollowupDelegation(t *testing.T, threadID string) (*delegation.Store, string) {
+	t.Helper()
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Create(delegation.CreateParams{Agent: "codex", Cwd: "/project", SessionName: "delegate", PaneID: "%42"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Bind(record.DelegationID, "codex", threadID); err != nil {
+		t.Fatal(err)
+	}
+	return store, record.DelegationID
 }
 
 func TestCleanupOldFollowupMessages(t *testing.T) {

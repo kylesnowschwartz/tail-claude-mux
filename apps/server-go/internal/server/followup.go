@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,14 +11,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
 type followupRequest struct {
-	Session string `json:"session"`
-	Message string `json:"message"`
-	Pane    string `json:"pane,omitempty"`
-	Thread  string `json:"thread,omitempty"`
+	Delegation string `json:"delegation,omitempty"`
+	Session    string `json:"session"`
+	Message    string `json:"message"`
+	Pane       string `json:"pane,omitempty"`
+	Thread     string `json:"thread,omitempty"`
+}
+
+type followupTarget struct {
+	Session string
+	State   *wire.AgentEvent
+	Bound   bool
 }
 
 type followupResponse struct {
@@ -38,22 +47,31 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 		writeFollowupError(w, http.StatusBadRequest, "request body must contain one JSON object")
 		return
 	}
-	if strings.TrimSpace(req.Session) == "" || strings.TrimSpace(req.Message) == "" {
+	if strings.TrimSpace(req.Message) == "" {
+		if strings.TrimSpace(req.Delegation) != "" {
+			writeFollowupError(w, http.StatusBadRequest, "message is required")
+			return
+		}
+		writeFollowupError(w, http.StatusBadRequest, "session and message are required")
+		return
+	}
+	if strings.TrimSpace(req.Delegation) == "" && strings.TrimSpace(req.Session) == "" {
 		writeFollowupError(w, http.StatusBadRequest, "session and message are required")
 		return
 	}
 	s.followupMu.Lock()
 	defer s.followupMu.Unlock()
 
-	state, resolveErr := s.followupState(req.Session, req.Thread, req.Pane)
+	target, resolveErr := s.resolveFollowupTarget(req)
 	if resolveErr != nil {
 		writeFollowupError(w, resolveErr.status, resolveErr.message)
 		return
 	}
-	if state == nil {
+	if target.State == nil {
 		writeFollowupError(w, http.StatusNotFound, "session not found")
 		return
 	}
+	state := target.State
 	if state.Agent != "codex" {
 		writeFollowupError(w, http.StatusUnprocessableEntity, "follow-up is only supported for codex sessions")
 		return
@@ -62,7 +80,11 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 		writeFollowupError(w, http.StatusConflict, message)
 		return
 	}
-	dir := s.followupDir(req.Session, state.PaneID)
+	dir := s.followupDir(target.Session, state.PaneID)
+	if target.Bound && state.PaneID != "" && dir == "" {
+		writeFollowupError(w, http.StatusConflict, fmt.Sprintf("delegate pane %s is gone; cannot deliver follow-up", state.PaneID))
+		return
+	}
 	if state.PaneID == "" || dir == "" || s.CodexWatcher == nil {
 		writeFollowupError(w, http.StatusInternalServerError, "session is missing follow-up metadata")
 		return
@@ -76,17 +98,18 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 		writeFollowupError(w, http.StatusNotFound, "no codex rollout found for session directory")
 		return
 	}
-	messageFile, err := writeFollowupMessage(req.Session, req.Message)
+	messageFile, err := writeFollowupMessage(target.Session, req.Message)
 	if err != nil {
 		writeFollowupError(w, http.StatusInternalServerError, "could not write follow-up message")
 		return
 	}
-	current, resolveErr := s.followupState(req.Session, req.Thread, req.Pane)
+	currentTarget, resolveErr := s.resolveFollowupTarget(req)
 	if resolveErr != nil {
 		_ = os.Remove(messageFile)
 		writeFollowupError(w, resolveErr.status, resolveErr.message)
 		return
 	}
+	current := currentTarget.State
 	if current == nil || current.ThreadID != state.ThreadID || current.PaneID != state.PaneID {
 		_ = os.Remove(messageFile)
 		writeFollowupError(w, http.StatusConflict, "session changed before follow-up delivery; refusing to interrupt it")
@@ -97,7 +120,13 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 		writeFollowupError(w, http.StatusConflict, message)
 		return
 	}
-	if currentDir := s.followupDir(req.Session, current.PaneID); currentDir != dir {
+	currentDir := s.followupDir(currentTarget.Session, current.PaneID)
+	if currentTarget.Bound && currentDir == "" {
+		_ = os.Remove(messageFile)
+		writeFollowupError(w, http.StatusConflict, fmt.Sprintf("delegate pane %s is gone; cannot deliver follow-up", current.PaneID))
+		return
+	}
+	if currentDir != dir {
 		_ = os.Remove(messageFile)
 		writeFollowupError(w, http.StatusConflict, "session pane changed before follow-up delivery; refusing to interrupt it")
 		return
@@ -129,6 +158,59 @@ func followupStatusConflict(status string) string {
 
 func (s *Server) followupState(session, threadID, paneID string) (*wire.AgentEvent, *agentResolutionError) {
 	return s.resolveTrackedEvent(session, threadID, paneID)
+}
+
+func (s *Server) resolveFollowupTarget(req followupRequest) (followupTarget, *agentResolutionError) {
+	if req.Delegation == "" {
+		state, resolveErr := s.followupState(req.Session, req.Thread, req.Pane)
+		return followupTarget{Session: req.Session, State: state}, resolveErr
+	}
+	if s.Delegations == nil {
+		return followupTarget{}, &agentResolutionError{status: http.StatusNotFound, message: "delegation not found"}
+	}
+	record, err := s.Delegations.Get(req.Delegation)
+	if err != nil {
+		if errors.Is(err, delegation.ErrNotFound) {
+			return followupTarget{}, &agentResolutionError{status: http.StatusNotFound, message: "delegation not found"}
+		}
+		return followupTarget{}, &agentResolutionError{status: http.StatusInternalServerError, message: "could not read delegation"}
+	}
+	target := followupTarget{Session: record.SessionName, Bound: record.ThreadID != ""}
+	if req.Session != "" && req.Session != record.SessionName {
+		return target, &agentResolutionError{status: http.StatusBadRequest, message: "delegation and session identify different agents"}
+	}
+	if req.Pane != "" && req.Pane != record.PaneID {
+		return target, &agentResolutionError{status: http.StatusBadRequest, message: "delegation and pane identify different agents"}
+	}
+	if record.ThreadID == "" {
+		state, resolveErr := s.followupState(record.SessionName, "", record.PaneID)
+		if resolveErr != nil {
+			return target, resolveErr
+		}
+		if req.Thread != "" && state.ThreadID != req.Thread {
+			return target, &agentResolutionError{status: http.StatusBadRequest, message: "delegation and thread identify different agents"}
+		}
+		target.State = state
+		return target, nil
+	}
+	if req.Thread != "" && req.Thread != record.ThreadID {
+		return target, &agentResolutionError{status: http.StatusBadRequest, message: "delegation and thread identify different agents"}
+	}
+	target.State = &wire.AgentEvent{
+		Session:  record.SessionName,
+		Agent:    record.Agent,
+		ThreadID: record.ThreadID,
+		PaneID:   record.PaneID,
+	}
+	tracked, resolveErr := s.followupState(record.SessionName, record.ThreadID, "")
+	if resolveErr == nil {
+		target.State.Status = tracked.Status
+		return target, nil
+	}
+	if resolveErr.status != http.StatusNotFound {
+		return target, resolveErr
+	}
+	return target, nil
 }
 
 func (s *Server) followupDir(session, paneID string) string {

@@ -211,6 +211,55 @@ func TestFollowup_DeliveredYieldsExitZero(t *testing.T) {
 	}
 }
 
+func TestFollowup_FlagValidation(t *testing.T) {
+	tests := []struct {
+		name                        string
+		delegationID, session, pane string
+		wantErr                     bool
+	}{
+		{name: "delegation", delegationID: "delegation-id"},
+		{name: "session", session: "work"},
+		{name: "session and pane", session: "work", pane: "%7"},
+		{name: "missing address", wantErr: true},
+		{name: "pane without session", pane: "%7", wantErr: true},
+		{name: "mixed", delegationID: "delegation-id", session: "work", wantErr: true},
+		{name: "delegation and pane", delegationID: "delegation-id", pane: "%7", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateFollowupAddress(tt.delegationID, tt.session, tt.pane)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestFollowup_DelegationPostBody(t *testing.T) {
+	withStubSleep(t)
+	messageFile := "/tmp/followup-msg-delegation.txt"
+	rollout := writeTempFile(t, "mentions "+messageFile+"\n")
+	delegationID := "delegation-id"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body followupBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Delegation != delegationID || body.Message != "hello" || body.Session != "" || body.Pane != "" {
+			t.Fatalf("body = %+v", body)
+		}
+		json.NewEncoder(w).Encode(followupResponse{MessageFile: messageFile, RolloutPath: rollout})
+	}))
+	defer srv.Close()
+
+	sourceFile := writeTempFile(t, "hello")
+	var out bytes.Buffer
+	code := runFollowup([]string{"-delegation", delegationID, "-message-file", sourceFile, "-port", strconv.Itoa(portOf(srv))}, &out)
+	if code != 0 {
+		t.Fatalf("exit code = %d: %s", code, out.String())
+	}
+}
+
 // TestFollowup_ContractPin pins the exact JSON keys tcm followup emits.
 func TestFollowup_ContractPin(t *testing.T) {
 	withStubSleep(t)
