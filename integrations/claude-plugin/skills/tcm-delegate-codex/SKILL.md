@@ -80,8 +80,8 @@ the launching session, auto-detected from `$TMUX` (override with `-owner
 <name>`). The delegate's durable handle is the returned `delegationId` — a
 server-persisted record that survives server restarts and, once the delegate's
 first turn binds it to a thread, pane death too. Prefer it for wait/followup/
-result. The `sessionName` + `paneId` PAIR still works as the transient
-attachment handle — `sessionName` is the LAUNCHING session (shared with Kyle's
+result. The `sessionName` + `paneId` PAIR addresses the transient pane
+attachment — `sessionName` is the LAUNCHING session (shared with Kyle's
 own claude-code row and any sibling delegates), so when using it always thread
 `paneId` through. NEVER kill-session; closing the owner session reaps its
 delegate windows as a side effect, not a thing you do on purpose.
@@ -95,10 +95,10 @@ full budget:
 "$TCM" wait -delegation <delegationId> -minutes 20
 ```
 
-(`-session kyle -pane %42` remains the fallback addressing when no
-delegationId is at hand. With `-delegation`, the wait keys off the durable
-record: it tolerates the first identity-less seconds after spawn and, once
-bound, survives pane death — termination is judged by thread.)
+(`-session kyle -pane %42` addresses the delegate by pane attachment. With
+`-delegation`, the wait keys off the durable record: it tolerates the first
+identity-less seconds after spawn and, once bound, survives pane death —
+termination is judged by thread.)
 
 Use Bash `run_in_background`, then read stdout once the process exits.
 Output:
@@ -136,7 +136,7 @@ The pane is the thread; a second pane for a follow-up is the double-spend
 "$TCM" followup -delegation <delegationId> -message-file /abs/msgfile.md
 ```
 
-(or `-session kyle -pane %42`.) Delivery still needs the delegate's live
+(or `-session kyle -pane %42`.) Delivery needs the delegate's live
 pane: a dead pane answers 409 naming the pane rather than respawning
 anywhere else.
 

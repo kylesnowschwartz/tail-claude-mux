@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"testing"
 
@@ -128,6 +129,43 @@ func TestHandleSpawnAgentFailureCreatesNoDelegation(t *testing.T) {
 	}
 	if len(records) != 0 {
 		t.Errorf("records = %#v, want none", records)
+	}
+}
+
+func TestHandleSpawnAgentStoreFailureReturnsSpawnAddress(t *testing.T) {
+	dir := t.TempDir()
+	storeDir := t.TempDir()
+	store, err := delegation.New(storeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(storeDir); err != nil {
+		t.Fatal(err)
+	}
+	tm := &tmux.Tmux{Run: func(args ...string) (string, error) {
+		switch args[0] {
+		case "list-sessions":
+			return "$1\towner\t0\t0\t1\t/tmp\t0", nil
+		case "list-windows":
+			return "shell", nil
+		default:
+			return "owner %42 @7", nil
+		}
+	}}
+	s := &Server{Builder: &state.Builder{Tmux: tm}, Delegations: store}
+	body := `{"dir":` + mustMarshalString(t, dir) + `,"agent":"codex","prompt":"task","ownerSession":"owner"}`
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/spawn-agent", bytes.NewBufferString(body)))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var result tmux.SpawnAgentResult
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.SessionName != "owner" || result.PaneID != "%42" || result.WindowID != "@7" || result.DelegationID != "" {
+		t.Fatalf("response = %#v", result)
 	}
 }
 

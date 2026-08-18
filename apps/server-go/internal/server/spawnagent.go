@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
@@ -40,22 +41,22 @@ func (s *Server) handleSpawnAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Delegations == nil {
-		writeSpawnAgentError(w, http.StatusInternalServerError, "delegation store is unavailable")
-		return
+		log.Printf("delegation persistence failed after spawn: delegation store is unavailable")
+	} else {
+		record, err := s.Delegations.CreateWithID(delegationID, delegation.CreateParams{
+			Agent:        req.Agent,
+			Cwd:          req.Dir,
+			OwnerSession: req.OwnerSession,
+			SessionName:  result.SessionName,
+			PaneID:       result.PaneID,
+			WindowID:     result.WindowID,
+		})
+		if err != nil {
+			log.Printf("delegation persistence failed after spawn: %v", err)
+		} else {
+			result.DelegationID = record.DelegationID
+		}
 	}
-	record, err := s.Delegations.CreateWithID(delegationID, delegation.CreateParams{
-		Agent:        req.Agent,
-		Cwd:          req.Dir,
-		OwnerSession: req.OwnerSession,
-		SessionName:  result.SessionName,
-		PaneID:       result.PaneID,
-		WindowID:     result.WindowID,
-	})
-	if err != nil {
-		writeSpawnAgentError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	result.DelegationID = record.DelegationID
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)

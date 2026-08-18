@@ -200,6 +200,54 @@ func TestStore(t *testing.T) {
 	}
 }
 
+func TestStoreListSkipsUnrelatedAndCorruptFiles(t *testing.T) {
+	tests := []struct {
+		name, filename, content string
+	}{
+		{name: "stray file", filename: "notes.json", content: `{"note":"keep this"}`},
+		{name: "corrupt record", filename: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.json", content: `{"delegation_id":`},
+		{name: "mismatched record", filename: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.json", content: `{"delegation_id":"cccccccc-cccc-4ccc-8ccc-cccccccccccc"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore(t, time.Now().UTC())
+			want := createTestRecord(t, store, CreateParams{Agent: "codex", PaneID: "%7"})
+			if err := os.WriteFile(filepath.Join(store.dir, tt.filename), []byte(tt.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			records, err := store.List()
+			if err != nil {
+				t.Fatalf("List() error = %v", err)
+			}
+			if len(records) != 1 || records[0].DelegationID != want.DelegationID {
+				t.Fatalf("List() = %#v, want only %s", records, want.DelegationID)
+			}
+			if has, err := store.HasUnbound(); err != nil || !has {
+				t.Fatalf("HasUnbound() = (%v, %v), want (true, nil)", has, err)
+			}
+			if removed, err := store.Sweep(7 * 24 * time.Hour); err != nil || removed != 0 {
+				t.Fatalf("Sweep() = (%d, %v), want (0, nil)", removed, err)
+			}
+		})
+	}
+}
+
+func TestStoreNormalizesClaudeAgentAlias(t *testing.T) {
+	store := newTestStore(t, time.Now().UTC())
+	record := createTestRecord(t, store, CreateParams{Agent: "claude"})
+	if record.Agent != "claude-code" {
+		t.Fatalf("created agent = %q, want claude-code", record.Agent)
+	}
+	bound, err := store.Bind(record.DelegationID, "claude-code", "thread-123")
+	if err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+	if bound.Agent != "claude-code" || bound.ThreadID != "thread-123" {
+		t.Fatalf("bound record = %#v", bound)
+	}
+}
+
 func newTestStore(t *testing.T, now time.Time) *Store {
 	t.Helper()
 	store, err := New(t.TempDir())

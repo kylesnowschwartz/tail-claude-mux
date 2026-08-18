@@ -116,9 +116,8 @@ func runServer(args []string) {
 	}
 	removedDelegations, err := delegationStore.Sweep(7 * 24 * time.Hour)
 	if err != nil {
-		log.Fatalf("sweep delegation store: %v", err)
-	}
-	if removedDelegations != 0 {
+		log.Printf("sweep delegation store: %v", err)
+	} else if removedDelegations != 0 {
 		log.Printf("delegation store: removed %d expired records", removedDelegations)
 	}
 

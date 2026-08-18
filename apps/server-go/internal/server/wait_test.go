@@ -276,3 +276,19 @@ func TestWaitDelegationAddressErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveDelegationWaitTreatsNilTrackedStateAsMiss(t *testing.T) {
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Create(delegation.CreateParams{Agent: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{Delegations: store}
+	state, resolveErr := s.resolveDelegationWait(record.DelegationID, "", "", "")
+	if resolveErr != nil || state.status != "" {
+		t.Fatalf("state = %+v, error = %+v", state, resolveErr)
+	}
+}

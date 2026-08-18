@@ -85,6 +85,16 @@ func (s *Server) handleDelegationResult(w http.ResponseWriter, delegationID, ses
 			writeResultError(w, http.StatusBadRequest, "delegation and thread identify different agents")
 			return
 		}
+		tracked, resolveErr := s.followupState(record.SessionName, record.ThreadID, "")
+		if resolveErr == nil && tracked != nil {
+			s.writeLiveResult(w, record.SessionName, tracked)
+			return
+		}
+		if resolveErr != nil && resolveErr.status != http.StatusNotFound {
+			writeResultError(w, resolveErr.status, resolveErr.message)
+			return
+		}
+
 		response := resultResponse{Session: record.SessionName, ThreadID: record.ThreadID, Cwd: record.Cwd}
 		found, inspectErr := s.populateDiskResult(&response, record.Agent)
 		if inspectErr != nil {
@@ -116,21 +126,19 @@ func (s *Server) handleDelegationResult(w http.ResponseWriter, delegationID, ses
 }
 
 func (s *Server) handleThreadResult(w http.ResponseWriter, session, threadID, paneID string) {
-	var state *wire.AgentEvent
 	if session != "" {
-		resolved, resolveErr := s.followupState(session, threadID, paneID)
-		if resolveErr != nil && resolveErr.status == http.StatusBadRequest {
+		state, resolveErr := s.followupState(session, threadID, paneID)
+		if resolveErr == nil && state != nil {
+			s.writeLiveResult(w, session, state)
+			return
+		}
+		if resolveErr != nil && resolveErr.status != http.StatusNotFound {
 			writeResultError(w, resolveErr.status, resolveErr.message)
 			return
 		}
-		state = resolved
 	}
 	response := resultResponse{Session: session, ThreadID: threadID}
-	agent := ""
-	if state != nil {
-		agent = state.Agent
-	}
-	found, err := s.populateDiskResult(&response, agent)
+	found, err := s.populateDiskResult(&response, "")
 	if err != nil {
 		writeResultError(w, http.StatusInternalServerError, err.Error())
 		return

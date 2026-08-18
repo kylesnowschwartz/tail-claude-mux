@@ -22,6 +22,8 @@ import (
 // waiting re-confirm without actually sleeping.
 var sleep = time.Sleep
 
+var waitNow = time.Now
+
 // waitClientGrace is added on top of a /wait long-poll's requested timeout
 // to build the HTTP client's own deadline, so a hung server still fails the
 // request instead of blocking forever. Tests shrink this to keep a
@@ -124,10 +126,10 @@ func watchDelegationToTerminal(cfg waitConfig, deadline time.Time) waitOutcome {
 	polls := 0
 	lastState := ""
 	for {
-		if !time.Now().Before(deadline) {
+		if !waitNow().Before(deadline) {
 			return waitOutcome{Outcome: "timeout", Polls: polls, State: lastState}
 		}
-		remaining := time.Until(deadline)
+		remaining := deadline.Sub(waitNow())
 		timeoutSeconds := int(remaining.Seconds())
 		if timeoutSeconds > 540 {
 			timeoutSeconds = 540
@@ -149,6 +151,9 @@ func watchDelegationToTerminal(cfg waitConfig, deadline time.Time) waitOutcome {
 		case wire.StatusError, wire.StatusInterrupted:
 			return waitOutcome{Outcome: "error", Polls: polls, State: resp.Status}
 		case wire.StatusGone:
+			if resp.TimedOut {
+				continue
+			}
 			return waitOutcome{Outcome: "session-dead", Polls: polls, State: resp.Status}
 		case wire.StatusWaiting:
 			if resp.TimedOut {

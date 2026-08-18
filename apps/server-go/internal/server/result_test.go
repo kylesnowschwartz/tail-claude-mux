@@ -79,6 +79,58 @@ func TestResultReturnsBoundDelegationFromDiskWithoutTracker(t *testing.T) {
 	}
 }
 
+func TestResultTrackerStatusWinsOverStaleDiskStatus(t *testing.T) {
+	sessionsDir := resolvedTempDir(t)
+	rolloutDir := filepath.Join(sessionsDir, "2026", "07", "11")
+	if err := os.MkdirAll(rolloutDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	threadID := "45454545-4545-4454-8454-454545454545"
+	rolloutPath := filepath.Join(rolloutDir, "rollout-2026-07-11T00-00-00-"+threadID+".jsonl")
+	fixture := `{"type":"session_meta","payload":{"id":"` + threadID + `","cwd":"/project"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"stale final"}]}}` + "\n"
+	if err := os.WriteFile(rolloutPath, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	delegationID := "abababab-abab-4bab-8bab-abababababab"
+	if _, err := store.CreateWithID(delegationID, delegation.CreateParams{
+		Agent: "codex", Cwd: "/project", SessionName: "work", PaneID: "%7",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Bind(delegationID, "codex", threadID); err != nil {
+		t.Fatal(err)
+	}
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "codex", ThreadID: threadID, PaneID: "%7", Status: wire.StatusRunning}, false)
+	s := &Server{Tracker: tr, Delegations: store, CodexWatcher: codexwatch.New(sessionsDir, "")}
+
+	paths := []string{
+		"/result?delegation=" + delegationID,
+		"/result?session=work&thread=" + threadID,
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+			}
+			var body resultResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Status != wire.StatusRunning || body.FinalMessage != "stale final" || body.RolloutPath != rolloutPath {
+				t.Fatalf("response = %+v", body)
+			}
+		})
+	}
+}
+
 func TestResultUnboundDelegationIsNotYetBound(t *testing.T) {
 	store, err := delegation.New(t.TempDir())
 	if err != nil {

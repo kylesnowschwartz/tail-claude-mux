@@ -179,6 +179,9 @@ func (s *Server) resolveDelegationWait(delegationID, session, threadID, paneID s
 			}
 			return state, resolveErr
 		}
+		if tracked == nil {
+			return state, nil
+		}
 		if threadID != "" && tracked.ThreadID != threadID {
 			return state, &agentResolutionError{status: http.StatusBadRequest, message: "delegation and thread identify different agents"}
 		}
@@ -190,11 +193,11 @@ func (s *Server) resolveDelegationWait(delegationID, session, threadID, paneID s
 		return state, &agentResolutionError{status: http.StatusBadRequest, message: "delegation and thread identify different agents"}
 	}
 	tracked, resolveErr := s.resolveTrackedEvent(record.SessionName, record.ThreadID, "")
-	if resolveErr == nil {
+	if resolveErr == nil && tracked != nil {
 		state.status = tracked.Status
 		return state, nil
 	}
-	if resolveErr.status != http.StatusNotFound {
+	if resolveErr != nil && resolveErr.status != http.StatusNotFound {
 		return state, resolveErr
 	}
 	response := resultResponse{Session: record.SessionName, ThreadID: record.ThreadID, Cwd: record.Cwd}

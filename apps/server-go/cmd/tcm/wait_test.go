@@ -102,7 +102,7 @@ func TestWait_DelegationSkipsTmuxLivenessAndQueriesDelegation(t *testing.T) {
 			t.Fatalf("delegation query = %q, want %q", got, delegationID)
 		}
 		if r.URL.Query().Get("session") != "" || r.URL.Query().Get("pane") != "" {
-			t.Fatalf("unexpected legacy address query: %s", r.URL.RawQuery)
+			t.Fatalf("unexpected pane attachment query: %s", r.URL.RawQuery)
 		}
 		_ = json.NewEncoder(w).Encode(waitResponse{Session: "work", Status: "done", Terminal: true})
 	}))
@@ -119,6 +119,49 @@ func TestWait_DelegationSkipsTmuxLivenessAndQueriesDelegation(t *testing.T) {
 	}
 	if got.Outcome != "finished" || got.State != wire.StatusDone {
 		t.Fatalf("outcome = %+v", got)
+	}
+}
+
+func TestWait_DelegationGoneTimeoutHandling(t *testing.T) {
+	tests := []struct {
+		name     string
+		response waitResponse
+		outcome  string
+	}{
+		{
+			name:     "deadline coercion reaches CLI timeout",
+			response: waitResponse{Session: "work", Status: wire.StatusGone, TimedOut: true},
+			outcome:  "timeout",
+		},
+		{
+			name:     "confirmed gone is session dead",
+			response: waitResponse{Session: "work", Status: wire.StatusGone},
+			outcome:  "session-dead",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withStubSleep(t)
+			srv := waitHandler(t, []waitResponse{tt.response}, nil, `{"sessions":[]}`)
+			defer srv.Close()
+			start := time.Now()
+			deadline := start.Add(time.Minute)
+			calls := 0
+			previousNow := waitNow
+			waitNow = func() time.Time {
+				calls++
+				if tt.response.TimedOut && calls > 2 {
+					return deadline
+				}
+				return start
+			}
+			t.Cleanup(func() { waitNow = previousNow })
+			cfg := waitConfig{delegation: "delegation-id", port: portOf(srv), pollSeconds: 0}
+			got := watchDelegationToTerminal(cfg, deadline)
+			if got.Outcome != tt.outcome || got.Polls != 1 {
+				t.Fatalf("outcome = %+v, want outcome %q with 1 poll", got, tt.outcome)
+			}
+		})
 	}
 }
 

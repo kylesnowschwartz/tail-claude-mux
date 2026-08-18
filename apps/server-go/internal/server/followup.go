@@ -187,6 +187,9 @@ func (s *Server) resolveFollowupTarget(req followupRequest) (followupTarget, *ag
 		if resolveErr != nil {
 			return target, resolveErr
 		}
+		if state == nil {
+			return target, nil
+		}
 		if req.Thread != "" && state.ThreadID != req.Thread {
 			return target, &agentResolutionError{status: http.StatusBadRequest, message: "delegation and thread identify different agents"}
 		}
@@ -203,13 +206,22 @@ func (s *Server) resolveFollowupTarget(req followupRequest) (followupTarget, *ag
 		PaneID:   record.PaneID,
 	}
 	tracked, resolveErr := s.followupState(record.SessionName, record.ThreadID, "")
-	if resolveErr == nil {
+	if resolveErr == nil && tracked != nil {
+		if tracked.Status == "" {
+			return target, &agentResolutionError{status: http.StatusConflict, message: "cannot verify delegate is idle; refusing to interrupt"}
+		}
 		target.State.Status = tracked.Status
 		return target, nil
 	}
-	if resolveErr.status != http.StatusNotFound {
+	if resolveErr != nil && resolveErr.status != http.StatusNotFound {
 		return target, resolveErr
 	}
+	response := resultResponse{Session: record.SessionName, ThreadID: record.ThreadID, Cwd: record.Cwd}
+	found, inspectErr := s.populateDiskResult(&response, record.Agent)
+	if inspectErr != nil || !found || response.Status == "" {
+		return target, &agentResolutionError{status: http.StatusConflict, message: "cannot verify delegate is idle; refusing to interrupt"}
+	}
+	target.State.Status = response.Status
 	return target, nil
 }
 

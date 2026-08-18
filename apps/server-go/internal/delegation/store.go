@@ -83,7 +83,7 @@ func (s *Store) CreateWithID(delegationID string, params CreateParams) (Record, 
 
 	record := Record{
 		DelegationID: delegationID,
-		Agent:        params.Agent,
+		Agent:        normalizeAgent(params.Agent),
 		Cwd:          params.Cwd,
 		OwnerSession: params.OwnerSession,
 		SessionName:  params.SessionName,
@@ -113,6 +113,8 @@ func (s *Store) Bind(delegationID, agent, threadID string) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
+	record.Agent = normalizeAgent(record.Agent)
+	agent = normalizeAgent(agent)
 	if record.Agent != agent {
 		return Record{}, fmt.Errorf("%w: record has %q, bind requested %q", ErrAgentMismatch, record.Agent, agent)
 	}
@@ -210,9 +212,16 @@ func (s *Store) list() ([]Record, error) {
 			continue
 		}
 		id := strings.TrimSuffix(entry.Name(), ".json")
-		record, err := s.read(id)
+		if !validUUID(id) {
+			continue
+		}
+		raw, err := os.ReadFile(s.path(id))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read delegation %s: %w", id, err)
+		}
+		record, err := decodeRecord(id, raw)
+		if err != nil {
+			continue
 		}
 		records = append(records, record)
 	}
@@ -223,6 +232,13 @@ func (s *Store) list() ([]Record, error) {
 		return strings.Compare(a.DelegationID, b.DelegationID)
 	})
 	return records, nil
+}
+
+func normalizeAgent(agent string) string {
+	if agent == "claude" {
+		return "claude-code"
+	}
+	return agent
 }
 
 func (s *Store) read(delegationID string) (Record, error) {
@@ -236,6 +252,10 @@ func (s *Store) read(delegationID string) (Record, error) {
 	if err != nil {
 		return Record{}, fmt.Errorf("read delegation %s: %w", delegationID, err)
 	}
+	return decodeRecord(delegationID, raw)
+}
+
+func decodeRecord(delegationID string, raw []byte) (Record, error) {
 	var record Record
 	if err := json.Unmarshal(raw, &record); err != nil {
 		return Record{}, fmt.Errorf("decode delegation %s: %w", delegationID, err)
