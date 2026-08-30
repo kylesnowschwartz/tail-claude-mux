@@ -367,34 +367,87 @@ func (s *Server) enforceCompanionHeightIn(panes []tmux.Pane) {
 	}
 }
 
+// defaultSweepDebounce collapses the duplicate posts a single kill-pane
+// produces (the global after-kill-pane hook and the window-scoped
+// pane-exited hook both route to /pane-exited) into one sweep.
+const defaultSweepDebounce = 150 * time.Millisecond
+
+// defaultSweepConfirmDelay separates the orphan sweep's two listings, so
+// a transient gap in one snapshot has time to heal before any kill.
+const defaultSweepConfirmDelay = 250 * time.Millisecond
+
 // handlePaneExited is the POST /pane-exited ingress (tmux pane-exited /
-// pane-died hooks): a pane closed — when every remaining pane in a window
-// is tcm-managed (sidebar or companion), the user's last real pane is
-// gone, so kill the managed leftovers (index.ts killOrphanedSidebarPanes,
-// generalized from "sidebar alone").
+// after-kill-pane hooks): a pane closed — when every remaining pane in a
+// window is tcm-managed (sidebar or companion), the user's last real pane
+// is gone, so kill the managed leftovers (index.ts
+// killOrphanedSidebarPanes).
 func (s *Server) handlePaneExited(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()
 	visible := s.sidebarVisible
 	s.mu.Unlock()
-	if !visible {
-		w.WriteHeader(http.StatusOK)
-		return
+	if visible {
+		if s.sweepDebounce <= 0 {
+			s.sweepOrphanedPanes()
+		} else {
+			s.mu.Lock()
+			if s.paneExitedTimer == nil {
+				s.paneExitedTimer = time.AfterFunc(s.sweepDebounce, func() {
+					s.mu.Lock()
+					s.paneExitedTimer = nil
+					s.mu.Unlock()
+					s.sweepOrphanedPanes()
+				})
+			}
+			s.mu.Unlock()
+		}
 	}
-	t := s.Builder.Tmux
-	panes := t.ListAllPanes()
+	w.WriteHeader(http.StatusOK)
+}
+
+// orphanWindows returns the windows whose panes are all tcm-managed.
+func orphanWindows(panes []tmux.Pane) map[string]bool {
 	userPanesByWindow := map[string]int{}
 	for _, p := range panes {
 		if p.Session != tmux.StashSession && !p.Managed() {
 			userPanesByWindow[p.WindowID]++
 		}
 	}
+	orphaned := map[string]bool{}
 	for _, p := range tmux.ManagedPanes(panes) {
 		if userPanesByWindow[p.WindowID] == 0 {
+			orphaned[p.WindowID] = true
+		}
+	}
+	return orphaned
+}
+
+// sweepOrphanedPanes kills the managed panes of windows that are orphaned
+// in TWO listings taken sweepConfirmDelay apart: killing an overlay is
+// irreversible, and a window whose user pane is missing from a single
+// snapshot (mid pane-churn, or hollowed by a listing defect) must not
+// lose its sidebar to that gap. A vetoed kill is logged as the tripwire
+// for such a gap.
+func (s *Server) sweepOrphanedPanes() {
+	s.orphanSweepMu.Lock()
+	defer s.orphanSweepMu.Unlock()
+	t := s.Builder.Tmux
+	suspects := orphanWindows(t.ListAllPanes())
+	if len(suspects) == 0 {
+		return
+	}
+	time.Sleep(s.sweepConfirmDelay)
+	panes := t.ListAllPanes()
+	confirmed := orphanWindows(panes)
+	for _, p := range tmux.ManagedPanes(panes) {
+		switch {
+		case !suspects[p.WindowID]:
+		case !confirmed[p.WindowID]:
+			log.Printf("sidebar: orphan kill vetoed pane=%s window=%s — user pane visible again in confirm listing", p.ID, p.WindowID)
+		default:
 			log.Printf("sidebar: killing orphaned pane=%s window=%s", p.ID, p.WindowID)
 			t.KillPane(p.ID)
 		}
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 // parseWindowContext extracts the windowId from a tmux hook context body:

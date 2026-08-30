@@ -97,6 +97,12 @@ type Server struct {
 	delegationBindLog sync.Map      // delegation ID -> struct{}, suppresses repeated bind errors
 
 	// Sidebar lifecycle + width enforcement state (see sidebar.go).
+	// Zero sweepDebounce/sweepConfirmDelay make the orphan sweep
+	// synchronous with no confirm pause (tests build Server directly).
+	paneExitedTimer         *time.Timer
+	sweepDebounce           time.Duration
+	sweepConfirmDelay       time.Duration
+	orphanSweepMu           sync.Mutex
 	ensureSidebarTimer      *time.Timer
 	ensureSidebarWindowID   string
 	sidebarVisible          bool
@@ -123,8 +129,10 @@ func New(b *state.Builder, tr *tracker.Tracker, w *ccwatch.Adapter, codex *codex
 	b.Metadata = md
 	return &Server{
 		Builder: b, Tracker: tr, Watcher: w, CodexWatcher: codex, Scanner: sc, Metadata: md,
-		clients:          map[*client]bool{},
-		lastSeenByThread: map[string]lastSeen{},
+		clients:           map[*client]bool{},
+		lastSeenByThread:  map[string]lastSeen{},
+		sweepDebounce:     defaultSweepDebounce,
+		sweepConfirmDelay: defaultSweepConfirmDelay,
 	}
 }
 

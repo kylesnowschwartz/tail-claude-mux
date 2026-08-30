@@ -212,6 +212,21 @@ func TestHandlePaneExited_OrphanPredicate(t *testing.T) {
 	}
 }
 
+func TestHandlePaneExited_TransientListingGap_NoKill(t *testing.T) {
+	// list-panes can transiently omit a live pane; the sweep's confirm
+	// listing shows the user pane again, so the sidebar must survive.
+	otherMain := tmuxtest.PaneSpec{Session: "proj", ID: "%5", PID: "105", Dir: "/p", WindowActive: "1", WindowIndex: "1", WindowID: "@2", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "41", WindowHeight: "41", Title: "zsh"}.Row()
+	var cmds [][]string
+	s := newTestServer(sequencedRunner([]string{
+		rows(sidebarRow(), companionRow(), otherMain),            // sweep listing: @1's user pane missing
+		rows(mainRow(), sidebarRow(), companionRow(), otherMain), // confirm listing: it is back
+	}, nil, &cmds), state.CompanionPaneConfig{})
+	s.handlePaneExited(httptest.NewRecorder(), nil)
+	if got := only(cmds, "kill-pane"); len(got) != 0 {
+		t.Errorf("a window orphaned in only one listing must keep its panes, got kills %v", got)
+	}
+}
+
 func TestHandleToggle_StashesAndRestoresCompanion(t *testing.T) {
 	companion := state.CompanionPaneConfig{Command: "watch date", Rows: 8}
 
