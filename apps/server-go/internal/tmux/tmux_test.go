@@ -43,9 +43,9 @@ func TestListSessions_ParsesAndFiltersStashAndIgnored(t *testing.T) {
 
 // The ignore field must render via the #{?,1,0} conditional, never the
 // raw #{@tcm-ignore}. The raw form expands empty when the option is
-// unset, and ExecRunner's TrimSpace eats the final row's trailing tab —
-// the field-count check then drops whichever session sorts last (found
-// live: the last-sorting session flapped in and out of the dashboard).
+// unset; the conditional keeps the field non-empty, so no listing row
+// ends in a bare trailing tab and row parsing never depends on how
+// output trimming treats one.
 func TestListingFormats_IgnoreFieldNeverEmpty(t *testing.T) {
 	formats := map[string]string{}
 	tm := &Tmux{Run: func(args ...string) (string, error) {
@@ -143,6 +143,24 @@ func TestListAllPanes_Parses(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+}
+
+// A blank pane_title makes the final listing row end in a bare tab (the
+// title is the last -F field). The row must survive output trimming and
+// parse with an empty Title — dropping it hides a live pane from the
+// orphan sweep, which then kills that window's sidebar.
+func TestListAllPanes_EmptyTitleOnFinalRow(t *testing.T) {
+	row := tmuxtest.PaneSpec{Session: "zz", ID: "%9", PID: "200", Dir: "/p", WindowActive: "1", WindowIndex: "0", PaneIndex: "0", WindowID: "@9", Left: "0", Right: "79", Width: "80", WindowWidth: "80", Height: "24", WindowHeight: "24"}.Row()
+	if !strings.HasSuffix(row, sep) {
+		t.Fatalf("fixture must end in a bare tab, got %q", row)
+	}
+	tm := &Tmux{Run: func(args ...string) (string, error) {
+		return trimOutput(row + "\n"), nil // the real pipeline: raw tmux output through ExecRunner's trim
+	}}
+	got := tm.ListAllPanes()
+	if len(got) != 1 || got[0].ID != "%9" || got[0].Title != "" {
+		t.Errorf("got %+v, want one pane %%9 with empty title", got)
 	}
 }
 

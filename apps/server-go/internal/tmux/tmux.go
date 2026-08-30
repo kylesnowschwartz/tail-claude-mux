@@ -5,6 +5,9 @@
 package tmux
 
 import (
+	"errors"
+	"fmt"
+	"log"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -51,10 +54,24 @@ type Client struct {
 // execs the tmux binary; tests inject a fake.
 type Runner func(args ...string) (string, error)
 
-// ExecRunner runs the real tmux binary.
+// ExecRunner runs the real tmux binary. tmux writes its diagnosis to
+// stderr; folding it into the error keeps failure logs actionable.
 func ExecRunner(args ...string) (string, error) {
 	out, err := exec.Command("tmux", args...).Output()
-	return strings.TrimSpace(string(out)), err
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+		err = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+	}
+	return trimOutput(string(out)), err
+}
+
+// trimOutput strips only trailing newlines from tmux output. A format
+// row whose last field is empty (e.g. a blank pane_title) ends in a tab;
+// trimming any wider whitespace class eats that tab, the row fails the
+// field-count check, and the last-sorting pane or session silently
+// vanishes from every listing.
+func trimOutput(out string) string {
+	return strings.TrimRight(out, "\r\n")
 }
 
 // Tmux queries one tmux server through its Runner.
@@ -88,11 +105,10 @@ func (t *Tmux) ListSessions() []Session {
 // public ListSessions it keeps @tcm-ignore'd rows — spawn-agent name
 // dedupe must still see them.
 func (t *Tmux) listSessions() ([]Session, error) {
-	// The ignore flag is the LAST field and must never render empty:
-	// ExecRunner TrimSpace-trims the output, so a bare #{@tcm-ignore}
-	// (empty when unset) would lose its tab on the final row and the
-	// 7-field parse would drop that session. The conditional pins it to
-	// "1"/"0".
+	// The ignore flag is the LAST field and must never render empty: a
+	// bare #{@tcm-ignore} (empty when unset) would leave the final row
+	// ending in a bare tab, and the 7-field parse would then hinge on
+	// output trimming preserving it. The conditional pins it to "1"/"0".
 	out, err := t.Run("list-sessions", "-F",
 		"#{session_id}"+sep+"#{session_name}"+sep+"#{session_created}"+sep+
 			"#{session_attached}"+sep+"#{session_windows}"+sep+"#{session_path}"+sep+
@@ -272,17 +288,33 @@ func (t *Tmux) ListAllPanes() []Pane {
 			"#{pane_left}"+sep+"#{pane_right}"+sep+"#{pane_width}"+sep+
 			"#{window_width}"+sep+"#{pane_height}"+sep+"#{window_height}"+sep+
 			"#{?"+IgnoreOption+",1,0}"+sep+"#{pane_title}")
-	if err != nil || out == "" {
+	if err != nil {
+		log.Printf("tmux: list-panes failed: %v", err)
+		return nil
+	}
+	if out == "" {
 		return nil
 	}
 	var panes []Pane
+	dropped, firstDropped := 0, ""
+	reject := func(line string) {
+		dropped++
+		if firstDropped == "" {
+			firstDropped = line
+		}
+	}
 	for line := range strings.SplitSeq(out, "\n") {
+		if line == "" {
+			continue
+		}
 		f := strings.SplitN(line, sep, 18)
 		if len(f) != 18 || f[0] == "" {
+			reject(line)
 			continue
 		}
 		pid, err := strconv.Atoi(f[2])
 		if err != nil {
+			reject(line)
 			continue
 		}
 		panes = append(panes, Pane{
@@ -305,6 +337,12 @@ func (t *Tmux) ListAllPanes() []Pane {
 			Ignored:      f[16] == "1",
 			Title:        f[17],
 		})
+	}
+	// A dropped line means a live pane silently vanished from every
+	// consumer's view (orphan sweeps, spawns, routing) — always worth a
+	// log line.
+	if dropped > 0 {
+		log.Printf("tmux: list-panes dropped %d unparseable line(s); first: %.200q", dropped, firstDropped)
 	}
 	return panes
 }

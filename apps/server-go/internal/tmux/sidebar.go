@@ -4,7 +4,10 @@
 // (when to spawn where) stays in the server, mirroring the bun split.
 package tmux
 
-import "strconv"
+import (
+	"log"
+	"strconv"
+)
 
 const (
 	// SidebarPaneTitle is the legacy identification title; the
@@ -99,6 +102,7 @@ func (t *Tmux) SpawnSidebar(windowID string, width int, position, scriptsDir str
 		}
 	}
 	if target == nil {
+		log.Printf("tmux: spawn sidebar: no pane in window=%s (listing had %d panes)", windowID, len(panes))
 		return ""
 	}
 
@@ -151,7 +155,12 @@ func (t *Tmux) SpawnManagedPane(targetPane string, splitFlags []string, size int
 	args := append([]string{"split-window", "-d"}, splitFlags...)
 	args = append(args, "-l", strconv.Itoa(size), "-t", targetPane, "-P", "-F", "#{pane_id}", command)
 	newID, err := t.Run(args...)
-	if err != nil || newID == "" {
+	if err != nil {
+		log.Printf("tmux: split-window at target=%s failed: %v", targetPane, err)
+		return ""
+	}
+	if newID == "" {
+		log.Printf("tmux: split-window at target=%s returned no pane id", targetPane)
 		return ""
 	}
 	t.markPane(newID, markerOption, title)
