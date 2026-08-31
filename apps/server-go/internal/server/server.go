@@ -102,6 +102,7 @@ type Server struct {
 	paneExitedTimer         *time.Timer
 	sweepDebounce           time.Duration
 	sweepConfirmDelay       time.Duration
+	sweepActive             bool // an orphan sweep is between its two listings
 	orphanSweepMu           sync.Mutex
 	ensureSidebarTimer      *time.Timer
 	ensureSidebarWindowID   string

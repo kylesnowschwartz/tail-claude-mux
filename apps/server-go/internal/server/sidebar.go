@@ -430,6 +430,14 @@ func orphanWindows(panes []tmux.Pane) map[string]bool {
 func (s *Server) sweepOrphanedPanes() {
 	s.orphanSweepMu.Lock()
 	defer s.orphanSweepMu.Unlock()
+	s.mu.Lock()
+	s.sweepActive = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.sweepActive = false
+		s.mu.Unlock()
+	}()
 	t := s.Builder.Tmux
 	suspects := orphanWindows(t.ListAllPanes())
 	if len(suspects) == 0 {
@@ -438,6 +446,7 @@ func (s *Server) sweepOrphanedPanes() {
 	time.Sleep(s.sweepConfirmDelay)
 	panes := t.ListAllPanes()
 	confirmed := orphanWindows(panes)
+	killed := false
 	for _, p := range tmux.ManagedPanes(panes) {
 		switch {
 		case !suspects[p.WindowID]:
@@ -446,7 +455,17 @@ func (s *Server) sweepOrphanedPanes() {
 		default:
 			log.Printf("sidebar: killing orphaned pane=%s window=%s", p.ID, p.WindowID)
 			t.KillPane(p.ID)
+			killed = true
 		}
+	}
+	// A killed sidebar ballooned to the dead user pane's width before it
+	// died, and its TUI reported that width as if it were a drag. Any save
+	// that report armed would persist the balloon and enforce it on every
+	// surviving sidebar — discard it.
+	if killed {
+		s.mu.Lock()
+		s.cancelPendingSaveLocked()
+		s.mu.Unlock()
 	}
 }
 
@@ -566,6 +585,13 @@ func (s *Server) enforceSidebarWidthIn(panes []tmux.Pane, skipSession string) {
 // can cancel it.
 func (s *Server) reportWidthLocked(c *client, cmd wire.ClientCommand) {
 	if !s.sidebarVisible {
+		return
+	}
+	// A width report racing a pane-exit sweep is tmux redistribution (a
+	// dying window's sidebar balloons into the dead pane's space), never a
+	// user drag. A real drag keeps reporting after the sweep settles.
+	if s.paneExitedTimer != nil || s.sweepActive {
+		log.Printf("sidebar: width report %d ignored — pane-exit sweep in progress", cmd.Width)
 		return
 	}
 	windowWidth := 0

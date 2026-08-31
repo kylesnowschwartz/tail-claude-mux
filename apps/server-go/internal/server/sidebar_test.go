@@ -5,10 +5,12 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux/tmuxtest"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
 // Canned rows for one window @1 in session proj, 153x41.
@@ -320,5 +322,49 @@ func TestKillForReload_FeatureOff_OnlySidebars(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cmds, want) {
 		t.Errorf("cmds = %v\nwant %v", cmds, want)
+	}
+}
+
+func TestReportWidth_IgnoredWhileSweepPending(t *testing.T) {
+	// A width report racing a pane-exit sweep is the dying window's
+	// sidebar ballooning into the dead pane's space, not a user drag —
+	// it must not arm a save.
+	var cmds [][]string
+	s := newTestServer(sequencedRunner([]string{rows(mainRow(), sidebarRow())}, nil, &cmds), state.CompanionPaneConfig{})
+	for name, arm := range map[string]func(){
+		"debounce pending": func() { s.paneExitedTimer = time.AfterFunc(time.Hour, func() {}) },
+		"sweep in flight":  func() { s.sweepActive = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			s.paneExitedTimer, s.sweepActive = nil, false
+			arm()
+			s.mu.Lock()
+			s.reportWidthLocked(&client{sessionName: "proj"}, wire.ClientCommand{Type: wire.CmdReportWidth, Width: 120})
+			saveArmed := s.saveTimer != nil
+			s.mu.Unlock()
+			if saveArmed {
+				t.Errorf("width report during sweep armed a save")
+			}
+			if s.paneExitedTimer != nil {
+				s.paneExitedTimer.Stop()
+			}
+		})
+	}
+}
+
+func TestSweep_KillCancelsPendingSave(t *testing.T) {
+	// The balloon report can land before the sweep starts; killing the
+	// pane that sent it must discard the save it armed.
+	otherMain := tmuxtest.PaneSpec{Session: "proj", ID: "%5", PID: "105", Dir: "/p", WindowActive: "1", WindowIndex: "1", WindowID: "@2", Left: "0", Right: "119", Width: "120", WindowWidth: "153", Height: "41", WindowHeight: "41", Title: "zsh"}.Row()
+	var cmds [][]string
+	s := newTestServer(sequencedRunner([]string{rows(sidebarRow(), companionRow(), otherMain)}, nil, &cmds), state.CompanionPaneConfig{})
+	s.mu.Lock()
+	s.saveTimer = time.AfterFunc(time.Hour, func() {})
+	s.mu.Unlock()
+	s.handlePaneExited(httptest.NewRecorder(), nil)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.saveTimer != nil {
+		t.Errorf("orphan kill left the pending width save armed")
 	}
 }
