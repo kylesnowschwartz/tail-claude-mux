@@ -397,6 +397,11 @@ func (s *Server) handlePaneExited(w http.ResponseWriter, _ *http.Request) {
 					s.mu.Unlock()
 					s.sweepOrphanedPanes()
 				})
+				// The sidebar balloons the instant tmux redistributes the
+				// dead pane's space; waiting out the sweep debounce leaves
+				// that flash on screen. Snap it back now — the sweep
+				// re-enforces after any kills.
+				go s.enforceGeometry("")
 			}
 			s.mu.Unlock()
 		}
