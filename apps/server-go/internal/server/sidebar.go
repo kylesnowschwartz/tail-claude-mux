@@ -439,6 +439,12 @@ func (s *Server) sweepOrphanedPanes() {
 		s.mu.Unlock()
 	}()
 	t := s.Builder.Tmux
+	// A closed user pane hands its space to whichever sibling tmux picks —
+	// often the sidebar, which balloons. Snapping survivors back to the
+	// configured geometry pushes the freed space to the remaining user
+	// panes instead (the /pane-exited leg of enforcement; every other
+	// reflow hook already enforces).
+	defer s.enforceGeometry("")
 	suspects := orphanWindows(t.ListAllPanes())
 	if len(suspects) == 0 {
 		return

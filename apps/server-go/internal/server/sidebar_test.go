@@ -368,3 +368,22 @@ func TestSweep_KillCancelsPendingSave(t *testing.T) {
 		t.Errorf("orphan kill left the pending width save armed")
 	}
 }
+
+func TestHandlePaneExited_BalloonedSidebarSnapsBack(t *testing.T) {
+	// Closing one pane of a multi-pane window hands its space to the
+	// sidebar (it balloons); the window still has a user pane, so nothing
+	// is killed — the sweep must resize the sidebar back so the freed
+	// space lands with the surviving user pane.
+	ballooned := tmuxtest.PaneSpec{Session: "proj", ID: "%2", PID: "101", Dir: "/p", WindowActive: "1", Sidebar: "1", WindowID: "@1", Left: "60", Right: "152", Width: "93", WindowWidth: "153", Height: "41", WindowHeight: "41", Title: "tcm-sidebar"}.Row()
+	survivor := tmuxtest.PaneSpec{Session: "proj", ID: "%1", PID: "100", Dir: "/p", WindowActive: "1", WindowID: "@1", Left: "0", Right: "59", Width: "60", WindowWidth: "153", Height: "41", WindowHeight: "41", Title: "zsh"}.Row()
+	var cmds [][]string
+	s := newTestServer(sequencedRunner([]string{rows(survivor, ballooned)}, nil, &cmds), state.CompanionPaneConfig{})
+	s.handlePaneExited(httptest.NewRecorder(), nil)
+	if kills := only(cmds, "kill-pane"); len(kills) != 0 {
+		t.Errorf("window with a surviving user pane must keep its sidebar, got kills %v", kills)
+	}
+	want := [][]string{{"resize-pane", "-t", "%2", "-x", "33"}}
+	if got := only(cmds, "resize-pane"); !reflect.DeepEqual(got, want) {
+		t.Errorf("resize-pane = %v, want %v", got, want)
+	}
+}
