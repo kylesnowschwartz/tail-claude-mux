@@ -147,6 +147,56 @@ func TestDelegationAnswerTimeout(t *testing.T) {
 	}
 }
 
+func TestDelegationAnswerWaiterDeregistersAfterTimeout(t *testing.T) {
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Create(delegation.CreateParams{Agent: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ask, err := store.AppendMessage(record.DelegationID, delegation.Message{From: "delegate", Kind: "ask", Text: "continue?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{Delegations: store, waitPollInterval: 5 * time.Millisecond}
+	done := make(chan delegationAnswerResponse, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		path := "/delegation-answer?delegation=" + record.DelegationID + "&ask=" + ask.ID + "&timeout=0.05"
+		s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		var body delegationAnswerResponse
+		_ = json.Unmarshal(response.Body.Bytes(), &body)
+		done <- body
+	}()
+	waitForAnswerWaiter(t, s, record.DelegationID, ask.ID)
+	body := <-done
+	if !body.TimedOut || body.Answered {
+		t.Fatalf("response = %#v, want timeout", body)
+	}
+	if s.hasAnswerWaiter(record.DelegationID, ask.ID) {
+		t.Fatal("answer waiter remained registered after timeout")
+	}
+}
+
+func TestAnswerWaiterRegistryReferenceCounts(t *testing.T) {
+	s := &Server{}
+	unregisterOne := s.registerAnswerWaiter("delegation", "ask")
+	unregisterTwo := s.registerAnswerWaiter("delegation", "ask")
+	if !s.hasAnswerWaiter("delegation", "ask") {
+		t.Fatal("answer waiter is not registered")
+	}
+	unregisterOne()
+	if !s.hasAnswerWaiter("delegation", "ask") {
+		t.Fatal("answer waiter was removed while another poll remained")
+	}
+	unregisterTwo()
+	if s.hasAnswerWaiter("delegation", "ask") {
+		t.Fatal("answer waiter remained after every poll exited")
+	}
+}
+
 func TestDelegationRecordEndpoint(t *testing.T) {
 	store, err := delegation.New(t.TempDir())
 	if err != nil {

@@ -35,6 +35,11 @@ type delegationMessageFailure struct {
 	message string
 }
 
+type answerWaiterKey struct {
+	delegationID string
+	askID        string
+}
+
 func (s *Server) handleDelegationMessage(w http.ResponseWriter, r *http.Request) {
 	var req delegationMessageRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, delegationMessageBodyLimit))
@@ -184,6 +189,8 @@ func (s *Server) handleDelegationAnswer(w http.ResponseWriter, r *http.Request) 
 		writeDelegationMessageError(w, http.StatusBadRequest, "timeout must be a number of seconds")
 		return
 	}
+	unregister := s.registerAnswerWaiter(delegationID, askID)
+	defer unregister()
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	poll := time.NewTicker(s.waitInterval())
@@ -219,6 +226,32 @@ func (s *Server) handleDelegationAnswer(w http.ResponseWriter, r *http.Request) 
 		case <-poll.C:
 		}
 	}
+}
+
+func (s *Server) registerAnswerWaiter(delegationID, askID string) func() {
+	key := answerWaiterKey{delegationID: delegationID, askID: askID}
+	s.answerWaiterMu.Lock()
+	if s.answerWaiters == nil {
+		s.answerWaiters = make(map[answerWaiterKey]int)
+	}
+	s.answerWaiters[key]++
+	s.answerWaiterMu.Unlock()
+
+	return func() {
+		s.answerWaiterMu.Lock()
+		defer s.answerWaiterMu.Unlock()
+		if s.answerWaiters[key] <= 1 {
+			delete(s.answerWaiters, key)
+			return
+		}
+		s.answerWaiters[key]--
+	}
+}
+
+func (s *Server) hasAnswerWaiter(delegationID, askID string) bool {
+	s.answerWaiterMu.Lock()
+	defer s.answerWaiterMu.Unlock()
+	return s.answerWaiters[answerWaiterKey{delegationID: delegationID, askID: askID}] > 0
 }
 
 func containsAsk(messages []delegation.Message, askID string) bool {

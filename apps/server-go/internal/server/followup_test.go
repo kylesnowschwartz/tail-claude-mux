@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -136,16 +137,31 @@ func TestFollowupAnswersOneUnansweredAskBeforeRunningRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := store.MarkDelivered(delegationID, []string{ask.ID}); err != nil {
+		t.Fatal(err)
+	}
 	tr := tracker.New()
 	tr.ApplyEvent(wire.AgentEvent{Session: "delegate", Agent: "codex", ThreadID: threadID, PaneID: "%42", Status: wire.StatusRunning}, false)
 	respawned := false
 	s := &Server{
 		Tracker: tr, Delegations: store,
+		waitPollInterval: 5 * time.Millisecond,
 		Builder: &state.Builder{Tmux: &tmux.Tmux{Run: func(args ...string) (string, error) {
 			respawned = args[0] == "respawn-pane"
 			return "", nil
 		}}},
 	}
+	answerDone := make(chan delegationAnswerResponse, 1)
+	go func() {
+		answered := httptest.NewRecorder()
+		path := "/delegation-answer?delegation=" + delegationID + "&ask=" + ask.ID + "&timeout=1"
+		s.Handler().ServeHTTP(answered, httptest.NewRequest(http.MethodGet, path, nil))
+		var answerBody delegationAnswerResponse
+		_ = json.Unmarshal(answered.Body.Bytes(), &answerBody)
+		answerDone <- answerBody
+	}()
+	waitForAnswerWaiter(t, s, delegationID, ask.ID)
+
 	response := httptest.NewRecorder()
 	body := fmt.Sprintf(`{"delegation":%q,"message":"yes"}`, delegationID)
 	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(body)))
@@ -160,15 +176,9 @@ func TestFollowupAnswersOneUnansweredAskBeforeRunningRefusal(t *testing.T) {
 		t.Fatalf("response = %+v", result)
 	}
 
-	answered := httptest.NewRecorder()
-	path := "/delegation-answer?delegation=" + delegationID + "&ask=" + ask.ID + "&timeout=0"
-	s.Handler().ServeHTTP(answered, httptest.NewRequest(http.MethodGet, path, nil))
-	var answerBody delegationAnswerResponse
-	if err := json.Unmarshal(answered.Body.Bytes(), &answerBody); err != nil {
-		t.Fatal(err)
-	}
-	if answered.Code != http.StatusOK || !answerBody.Answered || answerBody.Message == nil || answerBody.Message.Text != "yes" {
-		t.Fatalf("answer response = %d %#v", answered.Code, answerBody)
+	answerBody := <-answerDone
+	if !answerBody.Answered || answerBody.Message == nil || answerBody.Message.Text != "yes" {
+		t.Fatalf("answer response = %#v", answerBody)
 	}
 
 	double := httptest.NewRecorder()
@@ -179,17 +189,60 @@ func TestFollowupAnswersOneUnansweredAskBeforeRunningRefusal(t *testing.T) {
 	}
 }
 
+func TestFollowupDoesNotAnswerUndeliveredAsk(t *testing.T) {
+	threadID := "33333333-3333-3333-3333-333333333333"
+	store, delegationID := createFollowupDelegation(t, threadID)
+	ask, err := store.AppendMessage(delegationID, delegation.Message{From: "delegate", Kind: "ask", Text: "continue?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "delegate", Agent: "codex", ThreadID: threadID, PaneID: "%42", Status: wire.StatusRunning}, false)
+	s := &Server{Tracker: tr, Delegations: store, waitPollInterval: 5 * time.Millisecond}
+	answerDone := make(chan struct{}, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		path := "/delegation-answer?delegation=" + delegationID + "&ask=" + ask.ID + "&timeout=1"
+		s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		answerDone <- struct{}{}
+	}()
+	waitForAnswerWaiter(t, s, delegationID, ask.ID)
+
+	response := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"delegation":%q,"message":"yes"}`, delegationID)
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(body)))
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "session is running; refusing to interrupt it") {
+		t.Fatalf("response = %d %q", response.Code, response.Body.String())
+	}
+	if _, answered, err := store.AnswerFor(delegationID, ask.ID); err != nil || answered {
+		t.Fatalf("AnswerFor() = (_, %v, %v), want unanswered", answered, err)
+	}
+	if _, err := store.AppendMessage(delegationID, delegation.Message{From: "orchestrator", Kind: "answer", Text: "cleanup", ReplyTo: ask.ID}); err != nil {
+		t.Fatal(err)
+	}
+	<-answerDone
+}
+
 func TestFollowupRejectsAmbiguousUnansweredAsks(t *testing.T) {
 	threadID := "33333333-3333-3333-3333-333333333333"
 	store, delegationID := createFollowupDelegation(t, threadID)
+	var asks []delegation.Message
 	for _, text := range []string{"first?", "second?"} {
-		if _, err := store.AppendMessage(delegationID, delegation.Message{From: "delegate", Kind: "ask", Text: text}); err != nil {
+		ask, err := store.AppendMessage(delegationID, delegation.Message{From: "delegate", Kind: "ask", Text: text})
+		if err != nil {
 			t.Fatal(err)
 		}
+		asks = append(asks, ask)
+	}
+	if err := store.MarkDelivered(delegationID, []string{asks[0].ID, asks[1].ID}); err != nil {
+		t.Fatal(err)
 	}
 	tr := tracker.New()
 	tr.ApplyEvent(wire.AgentEvent{Session: "delegate", Agent: "codex", ThreadID: threadID, PaneID: "%42", Status: wire.StatusRunning}, false)
 	s := &Server{Tracker: tr, Delegations: store}
+	for _, ask := range asks {
+		defer s.registerAnswerWaiter(delegationID, ask.ID)()
+	}
 	response := httptest.NewRecorder()
 	body := fmt.Sprintf(`{"delegation":%q,"message":"yes"}`, delegationID)
 	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(body)))
@@ -273,6 +326,13 @@ func TestFollowupBoundDelegationUsesDiskDoneStatus(t *testing.T) {
 	}
 
 	store, delegationID := createFollowupDelegation(t, threadID)
+	staleAsk, err := store.AppendMessage(delegationID, delegation.Message{From: "delegate", Kind: "ask", Text: "continue?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkDelivered(delegationID, []string{staleAsk.ID}); err != nil {
+		t.Fatal(err)
+	}
 	var respawned bool
 	tm := &tmux.Tmux{Run: func(args ...string) (string, error) {
 		if args[0] == "list-panes" {
@@ -299,6 +359,18 @@ func TestFollowupBoundDelegationUsesDiskDoneStatus(t *testing.T) {
 	if result.UUID != threadID || result.RolloutPath != rolloutPath || result.PaneID != "%42" {
 		t.Fatalf("response = %+v", result)
 	}
+}
+
+func waitForAnswerWaiter(t *testing.T, s *Server, delegationID, askID string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if s.hasAnswerWaiter(delegationID, askID) {
+			return
+		}
+		runtime.Gosched()
+	}
+	t.Fatal("answer waiter was not registered")
 }
 
 func TestFollowupBoundDelegationWithoutTrackerOrDiskRefuses(t *testing.T) {
@@ -330,6 +402,13 @@ func TestFollowupBoundDelegationWithoutTrackerOrDiskRefuses(t *testing.T) {
 func TestFollowupBoundDelegationRejectsDeadPane(t *testing.T) {
 	threadID := "33333333-3333-3333-3333-333333333333"
 	store, delegationID := createFollowupDelegation(t, threadID)
+	staleAsk, err := store.AppendMessage(delegationID, delegation.Message{From: "delegate", Kind: "ask", Text: "continue?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkDelivered(delegationID, []string{staleAsk.ID}); err != nil {
+		t.Fatal(err)
+	}
 	tr := tracker.New()
 	tr.ApplyEvent(wire.AgentEvent{Session: "delegate", Agent: "codex", ThreadID: threadID, PaneID: "%42", Status: wire.StatusDone}, false)
 	tm := &tmux.Tmux{Run: func(args ...string) (string, error) { return "", nil }}

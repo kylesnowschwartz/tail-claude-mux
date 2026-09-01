@@ -181,16 +181,25 @@ func (s *Server) routeFollowupToAsk(w http.ResponseWriter, delegationID, text st
 	if len(asks) == 0 {
 		return false
 	}
-	if len(asks) > 1 {
+	answerable := make([]delegation.Message, 0, len(asks))
+	for _, ask := range asks {
+		if ask.DeliveredAt != nil && s.hasAnswerWaiter(delegationID, ask.ID) {
+			answerable = append(answerable, ask)
+		}
+	}
+	if len(answerable) == 0 {
+		return false
+	}
+	if len(answerable) > 1 {
 		writeFollowupError(w, http.StatusConflict, "ambiguous-ask: multiple unanswered asks; use tcm answer -ask <id>")
 		return true
 	}
-	if _, failure := s.appendDelegationAnswer(delegationID, asks[0].ID, text); failure != nil {
+	if _, failure := s.appendDelegationAnswer(delegationID, answerable[0].ID, text); failure != nil {
 		writeFollowupError(w, failure.status, failure.message)
 		return true
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(followupResponse{Mode: "answer", AskID: asks[0].ID})
+	_ = json.NewEncoder(w).Encode(followupResponse{Mode: "answer", AskID: answerable[0].ID})
 	return true
 }
 
