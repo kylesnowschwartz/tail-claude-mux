@@ -131,9 +131,18 @@ func TestFollowup_DeliveredOnPostRetryGrep(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := atomic.AddInt32(&postCalls, 1)
 		if n == 2 {
+			var body followupBody
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.AskRouting != "off" {
+				t.Fatalf("retry askRouting = %q, want off", body.AskRouting)
+			}
 			if err := os.WriteFile(rollout, []byte("now mentions "+messageFile+"\n"), 0o644); err != nil {
 				t.Fatalf("rewrite rollout: %v", err)
 			}
+			json.NewEncoder(w).Encode(followupResponse{Mode: "resume"})
+			return
 		}
 		json.NewEncoder(w).Encode(followupResponse{MessageFile: messageFile, RolloutPath: rollout})
 	}))
@@ -152,6 +161,47 @@ func TestFollowup_DeliveredOnPostRetryGrep(t *testing.T) {
 	}
 	if atomic.LoadInt32(&postCalls) != 2 {
 		t.Errorf("post calls = %d, want 2 (initial + retry)", postCalls)
+	}
+}
+
+func TestFollowup_RetryAnswerIsReported(t *testing.T) {
+	sleepCalls := withStubSleep(t)
+	messageFile := "/tmp/followup-msg-retry-answer.txt"
+	rollout := writeTempFile(t, "no receipt\n")
+	askID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	var postCalls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&postCalls, 1)
+		if n == 1 {
+			json.NewEncoder(w).Encode(followupResponse{Mode: "resume", MessageFile: messageFile, RolloutPath: rollout})
+			return
+		}
+		var body followupBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.AskRouting != "off" {
+			t.Fatalf("retry askRouting = %q, want off", body.AskRouting)
+		}
+		json.NewEncoder(w).Encode(followupResponse{Mode: "answer", AskID: askID})
+	}))
+	defer srv.Close()
+
+	sourceFile := writeTempFile(t, "hello")
+	var out bytes.Buffer
+	code := runFollowup([]string{"-delegation", "delegation-id", "-message-file", sourceFile, "-port", strconv.Itoa(portOf(srv))}, &out)
+	if code != 0 {
+		t.Fatalf("exit code = %d", code)
+	}
+	var got followupOutcome
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Outcome != "answered" || got.AskID != askID || got.HTTPCode != "200" {
+		t.Fatalf("outcome = %+v", got)
+	}
+	if gotPosts, gotSleeps := atomic.LoadInt32(&postCalls), atomic.LoadInt32(sleepCalls); gotPosts != 2 || gotSleeps != 2 {
+		t.Fatalf("post calls = %d, sleep calls = %d; want 2 and 2", gotPosts, gotSleeps)
 	}
 }
 

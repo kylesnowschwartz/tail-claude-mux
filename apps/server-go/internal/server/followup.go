@@ -21,6 +21,7 @@ type followupRequest struct {
 	Message    string `json:"message"`
 	Pane       string `json:"pane,omitempty"`
 	Thread     string `json:"thread,omitempty"`
+	AskRouting string `json:"askRouting,omitempty"`
 }
 
 type followupTarget struct {
@@ -63,7 +64,7 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 	}
 	s.followupMu.Lock()
 	defer s.followupMu.Unlock()
-	if req.Delegation != "" {
+	if req.Delegation != "" && req.AskRouting != "off" {
 		delegationID, addressErr := s.resolveFollowupDelegation(req)
 		if addressErr != nil {
 			writeFollowupError(w, addressErr.status, addressErr.message)

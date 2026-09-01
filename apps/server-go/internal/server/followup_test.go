@@ -223,6 +223,32 @@ func TestFollowupDoesNotAnswerUndeliveredAsk(t *testing.T) {
 	<-answerDone
 }
 
+func TestFollowupAskRoutingOffDoesNotAnswer(t *testing.T) {
+	threadID := "33333333-3333-3333-3333-333333333333"
+	store, delegationID := createFollowupDelegation(t, threadID)
+	ask, err := store.AppendMessage(delegationID, delegation.Message{From: "delegate", Kind: "ask", Text: "continue?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkDelivered(delegationID, []string{ask.ID}); err != nil {
+		t.Fatal(err)
+	}
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "delegate", Agent: "codex", ThreadID: threadID, PaneID: "%42", Status: wire.StatusRunning}, false)
+	s := &Server{Tracker: tr, Delegations: store}
+	defer s.registerAnswerWaiter(delegationID, ask.ID)()
+
+	response := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"delegation":%q,"message":"retry","askRouting":"off"}`, delegationID)
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(body)))
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "session is running; refusing to interrupt it") {
+		t.Fatalf("response = %d %q", response.Code, response.Body.String())
+	}
+	if _, answered, err := store.AnswerFor(delegationID, ask.ID); err != nil || answered {
+		t.Fatalf("AnswerFor() = (_, %v, %v), want unanswered", answered, err)
+	}
+}
+
 func TestFollowupRejectsAmbiguousUnansweredAsks(t *testing.T) {
 	threadID := "33333333-3333-3333-3333-333333333333"
 	store, delegationID := createFollowupDelegation(t, threadID)

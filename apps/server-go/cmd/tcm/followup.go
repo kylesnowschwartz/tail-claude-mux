@@ -30,6 +30,7 @@ type followupBody struct {
 	Session    string `json:"session,omitempty"`
 	Message    string `json:"message"`
 	Pane       string `json:"pane,omitempty"`
+	AskRouting string `json:"askRouting,omitempty"`
 }
 
 // followupResponse is the subset of POST /followup's 200 response tcm
@@ -139,7 +140,13 @@ func deliverFollowup(port int, delegationID, session, pane, message string) foll
 		receipts = countReceipts(messageFile, rolloutPath)
 	}
 	if receipts == 0 {
-		retryStatus, retryBody, retryErr := postJSON(baseURL(port)+"/followup", body)
+		retryRequest, marshalErr := json.Marshal(followupBody{
+			Delegation: delegationID, Session: session, Message: message, Pane: pane, AskRouting: "off",
+		})
+		if marshalErr != nil {
+			return followupOutcome{Outcome: "error", HTTPCode: httpCode, Detail: marshalErr.Error()}
+		}
+		retryStatus, retryBody, retryErr := postJSON(baseURL(port)+"/followup", retryRequest)
 		if retryErr != nil {
 			httpCode = "transport-error"
 		} else {
@@ -147,7 +154,15 @@ func deliverFollowup(port int, delegationID, session, pane, message string) foll
 			if retryStatus == 200 {
 				var retryResp followupResponse
 				if err := json.Unmarshal(retryBody, &retryResp); err == nil {
-					messageFile, rolloutPath = retryResp.MessageFile, retryResp.RolloutPath
+					if retryResp.Mode == "answer" {
+						return followupOutcome{Outcome: "answered", AskID: retryResp.AskID, HTTPCode: "200"}
+					}
+					if retryResp.MessageFile != "" {
+						messageFile = retryResp.MessageFile
+					}
+					if retryResp.RolloutPath != "" {
+						rolloutPath = retryResp.RolloutPath
+					}
 				}
 			}
 		}
