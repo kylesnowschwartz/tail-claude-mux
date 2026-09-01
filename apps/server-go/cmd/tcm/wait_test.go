@@ -188,6 +188,24 @@ func TestWait_DelegationMessageOutcome(t *testing.T) {
 	}
 }
 
+func TestWait_AskMessageCarriesReplyWith(t *testing.T) {
+	ask := delegation.Message{ID: "ask-id", From: "delegate", Kind: "ask", Text: "which option?"}
+	srv := waitHandler(t, []waitResponse{{Session: "work", Status: "message", Messages: []delegation.Message{ask}}}, nil, `{"sessions":[]}`)
+	defer srv.Close()
+	var out bytes.Buffer
+	code := runWait([]string{"-delegation", "delegation-id", "-port", portArg(srv), "-minutes", "1"}, &out)
+	if code != 0 {
+		t.Fatalf("exit code = %d: %s", code, out.String())
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(out.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := raw["replyWith"], "tcm followup -delegation delegation-id -message-file <path>"; got != want {
+		t.Fatalf("replyWith = %#v, want %q", got, want)
+	}
+}
+
 func TestWait_TerminalStatusesMapToOutcomes(t *testing.T) {
 	cases := []struct {
 		status  string

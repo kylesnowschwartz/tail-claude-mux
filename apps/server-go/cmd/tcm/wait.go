@@ -47,6 +47,9 @@ type waitOutcome struct {
 type waitMessageOutcome struct {
 	Outcome  string               `json:"outcome"`
 	Messages []delegation.Message `json:"messages"`
+	// ReplyWith is the literal command that answers a delivered ask, so any
+	// orchestrator reading this JSON knows the protocol without the skill doc.
+	ReplyWith string `json:"replyWith,omitempty"`
 }
 
 // waitResponse mirrors internal/server's GET /wait JSON body.
@@ -120,11 +123,26 @@ func runWait(args []string, stdout io.Writer) int {
 		outcome = watchToTerminal(cfg, deadline)
 	}
 	if outcome.Outcome == delegationMessageWaitStatus {
-		_ = writeJSON(stdout, waitMessageOutcome{Outcome: outcome.Outcome, Messages: outcome.Messages})
+		_ = writeJSON(stdout, waitMessageOutcome{
+			Outcome:   outcome.Outcome,
+			Messages:  outcome.Messages,
+			ReplyWith: replyWithHint(cfg.delegation, outcome.Messages),
+		})
 		return 0
 	}
 	_ = writeJSON(stdout, outcome)
 	return 0
+}
+
+// replyWithHint names the command that answers a pending ask. Notes need no
+// reply, so the hint appears only when an ask is among the messages.
+func replyWithHint(delegationID string, messages []delegation.Message) string {
+	for _, msg := range messages {
+		if msg.Kind == "ask" {
+			return fmt.Sprintf("tcm followup -delegation %s -message-file <path>", delegationID)
+		}
+	}
+	return ""
 }
 
 func validateWaitAddress(delegationID, session, pane string) error {

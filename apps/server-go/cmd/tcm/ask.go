@@ -19,6 +19,9 @@ type askOutcome struct {
 	Outcome string `json:"outcome"`
 	AskID   string `json:"askId"`
 	Answer  string `json:"answer,omitempty"`
+	// ResumeWith is the literal command that resumes polling this ask after a
+	// no-answer-yet timeout, so the delegate needs no other documentation.
+	ResumeWith string `json:"resumeWith,omitempty"`
 }
 
 type delegationAnswerResponse struct {
@@ -68,7 +71,10 @@ func runAsk(args []string, stdout io.Writer) int {
 		return emitTalkbackError(stdout, detail, code)
 	}
 	if !answered {
-		_ = writeJSON(stdout, askOutcome{Outcome: "no-answer-yet", AskID: currentAskID})
+		_ = writeJSON(stdout, askOutcome{
+			Outcome: "no-answer-yet", AskID: currentAskID,
+			ResumeWith: fmt.Sprintf("tcm ask -ask %s", currentAskID),
+		})
 		return 0
 	}
 	_ = writeJSON(stdout, askOutcome{Outcome: "answered", AskID: currentAskID, Answer: answer})

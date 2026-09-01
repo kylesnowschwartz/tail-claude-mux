@@ -92,7 +92,7 @@ func TestAskResumesWithoutPosting(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d: %s", code, out.String())
 	}
-	if got, want := out.String(), "{\"outcome\":\"no-answer-yet\",\"askId\":\"existing-ask\"}\n"; got != want {
+	if got, want := out.String(), "{\"outcome\":\"no-answer-yet\",\"askId\":\"existing-ask\",\"resumeWith\":\"tcm ask -ask existing-ask\"}\n"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
 }
