@@ -211,7 +211,7 @@ func (s *Server) resolveFollowupDelegation(req followupRequest) (string, *agentR
 	if req.Pane != "" && req.Pane != record.PaneID {
 		return "", &agentResolutionError{status: http.StatusBadRequest, message: "delegation and pane identify different agents"}
 	}
-	if record.ThreadID != "" && req.Thread != "" && req.Thread != record.ThreadID {
+	if req.Thread != "" && req.Thread != record.ThreadID {
 		return "", &agentResolutionError{status: http.StatusBadRequest, message: "delegation and thread identify different agents"}
 	}
 	return record.DelegationID, nil

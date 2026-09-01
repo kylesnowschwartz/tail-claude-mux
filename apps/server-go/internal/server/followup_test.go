@@ -547,6 +547,32 @@ func TestResolveFollowupTargetTreatsNilTrackedStateAsMiss(t *testing.T) {
 	}
 }
 
+func TestFollowupDelegationResolversRejectUnboundThreadMismatch(t *testing.T) {
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Create(delegation.CreateParams{Agent: "codex", SessionName: "delegate", PaneID: "%42"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "delegate", Agent: "codex", ThreadID: "actual-thread", PaneID: "%42", Status: wire.StatusRunning}, false)
+	s := &Server{Tracker: tr, Delegations: store}
+	req := followupRequest{Delegation: record.DelegationID, Thread: "other-thread"}
+
+	_, delegationErr := s.resolveFollowupDelegation(req)
+	_, targetErr := s.resolveFollowupTarget(req)
+	for name, resolveErr := range map[string]*agentResolutionError{
+		"delegation resolver": delegationErr,
+		"target resolver":     targetErr,
+	} {
+		if resolveErr == nil || resolveErr.status != http.StatusBadRequest || resolveErr.message != "delegation and thread identify different agents" {
+			t.Fatalf("%s error = %#v", name, resolveErr)
+		}
+	}
+}
+
 func TestFollowupDelegationAddressErrors(t *testing.T) {
 	store, delegationID := createFollowupDelegation(t, "33333333-3333-3333-3333-333333333333")
 	tests := []struct {
