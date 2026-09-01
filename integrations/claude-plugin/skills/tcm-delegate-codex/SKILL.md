@@ -2,8 +2,8 @@
 name: tcm-delegate-codex
 description: >
   Delegate a coding task to a visible Codex agent running in a tmux pane via
-  TCM, driven end-to-end by the `tcm` CLI (delegate → wait → followup →
-  result), instead of a backgrounded /codex:rescue job. Use for
+  TCM, driven end-to-end by the `tcm` CLI (delegate → wait → message/answer
+  or followup → result), instead of a backgrounded /codex:rescue job. Use for
   implementation work that changes the tree (MO-002 routing: repo-gets-changes
   → visible pane), when Kyle asks to "watch" a delegation, for parallel
   worktree delegations, and when tidying / cleaning up / closing finished
@@ -115,9 +115,45 @@ Output:
 ```
 
 Outcomes: `finished`, `waiting` (pane sitting at an approval/input prompt),
-`error`, `session-dead` (pane or session gone), `timeout` (budget exceeded
-with no terminal state). None of these are a broken CLI — a nonzero exit
-from `tcm wait` means a usage error, not an "error" outcome.
+`message` (the delegate sent one or more notes or asks), `error`,
+`session-dead` (pane or session gone), `timeout` (budget exceeded with no
+terminal state). None of these are a broken CLI — a nonzero exit from
+`tcm wait` means a usage error, not an "error" outcome.
+
+## Delegate talk-back
+
+Every delegate's spawn prompt contains a preamble naming its upstream
+orchestrator and showing `tcm tell` and `tcm ask`. The delegate receives the
+delegation id, tcm binary path, and server port in its environment, so it
+always knows that an upstream exists and how to reach it.
+
+`tcm wait` can stop on messages before the delegate reaches a terminal or
+approval-waiting state:
+
+```json
+{"outcome":"message","messages":[{"id":"<messageId>","from":"delegate","kind":"ask","text":"Which option?"}]}
+```
+
+Handle every message, then run `tcm wait -delegation <delegationId>` again.
+A `note` needs no reply. Answer an `ask` by its message id:
+
+```sh
+"$TCM" answer -delegation <delegationId> -ask <messageId> -message "Use option A"
+```
+
+A delegate whose `tcm ask` has returned
+`{"outcome":"no-answer-yet","askId":"<messageId>"}` is still mid-turn
+waiting for that answer. Use `tcm answer`, not `tcm followup`: follow-up is
+for an idle delegate between turns and correctly refuses to interrupt this
+one.
+
+Delegation-addressed `tcm result` includes the complete message log. When
+consuming a result, also check the log directly so a note or ask is not
+missed:
+
+```sh
+"$TCM" messages -delegation <delegationId>
+```
 
 ## 3. Read the result
 
@@ -127,12 +163,12 @@ from `tcm wait` means a usage error, not an "error" outcome.
 
 (or `-session kyle -pane %42`, or `-thread <uuid>`.) Prints the server's
 `/result` JSON verbatim, including `finalMessage`, `rolloutPath`, `threadId`,
-and `status`. By delegation or thread id the answer comes from the durable
-record and the rollout on disk, so it works after a server restart and after
-the pane is gone. `finalMessage` is a CLAIM: verify it
-per MO-005 (tests/lint/diff scope) before reporting done. If it contains a
-QUESTION, the delegate is blocked awaiting an answer — surface it to Kyle,
-answer via follow-up (§4).
+`status`, and, for a delegation address, `messages`. By delegation or thread
+id the answer comes from the durable record and the rollout on disk, so it
+works after a server restart and after the pane is gone. `finalMessage` is a
+CLAIM: verify it per MO-005 (tests/lint/diff scope) before reporting done. If
+it contains a QUESTION, the delegate is blocked awaiting an answer — surface
+it to Kyle, answer via follow-up (§4).
 
 ## 4. Follow-ups go to the SAME session and pane
 
