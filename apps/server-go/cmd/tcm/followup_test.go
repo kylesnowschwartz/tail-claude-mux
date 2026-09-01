@@ -97,7 +97,31 @@ func TestFollowup_AnsweredSkipsReceiptLadder(t *testing.T) {
 
 func TestFollowup_AmbiguousAskMapping(t *testing.T) {
 	withStubSleep(t)
-	detail := "ambiguous-ask: multiple unanswered asks; use tcm answer -ask <id>"
+	detail := "multiple unanswered asks"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"code": "ambiguous-ask", "error": detail})
+	}))
+	defer srv.Close()
+
+	sourceFile := writeTempFile(t, "yes")
+	var out bytes.Buffer
+	code := runFollowup([]string{"-delegation", "delegation-id", "-message-file", sourceFile, "-port", strconv.Itoa(portOf(srv))}, &out)
+	if code != 0 {
+		t.Fatalf("exit code = %d", code)
+	}
+	var got followupOutcome
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Outcome != "ambiguous-ask" || got.HTTPCode != "409" || got.Detail != detail {
+		t.Fatalf("outcome = %+v", got)
+	}
+}
+
+func TestFollowup_AmbiguousAskLegacyPrefixFallback(t *testing.T) {
+	withStubSleep(t)
+	detail := "ambiguous-ask: multiple unanswered asks"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]string{"error": detail})
@@ -114,7 +138,7 @@ func TestFollowup_AmbiguousAskMapping(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Outcome != "ambiguous-ask" || got.HTTPCode != "409" || got.Detail != detail {
+	if got.Outcome != "ambiguous-ask" || got.Detail != detail {
 		t.Fatalf("outcome = %+v", got)
 	}
 }

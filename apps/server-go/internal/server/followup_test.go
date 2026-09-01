@@ -279,8 +279,8 @@ func TestFollowupRejectsAmbiguousUnansweredAsks(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result["error"] != "ambiguous-ask: multiple unanswered asks; use tcm answer -ask <id>" {
-		t.Fatalf("error = %q", result["error"])
+	if result["code"] != "ambiguous-ask" || result["error"] != "multiple unanswered asks" {
+		t.Fatalf("response = %#v", result)
 	}
 }
 

@@ -182,7 +182,7 @@ func (s *Server) routeFollowupToAsk(w http.ResponseWriter, delegationID, text st
 		return false
 	}
 	if len(answerable) > 1 {
-		writeFollowupError(w, http.StatusConflict, "ambiguous-ask: multiple unanswered asks; use tcm answer -ask <id>")
+		writeFollowupErrorCode(w, http.StatusConflict, "ambiguous-ask", "multiple unanswered asks")
 		return true
 	}
 	if _, failure := s.appendDelegationAnswer(delegationID, answerable[0].ID, text); failure != nil {
@@ -348,4 +348,10 @@ func writeFollowupError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+func writeFollowupErrorCode(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"code": code, "error": message})
 }

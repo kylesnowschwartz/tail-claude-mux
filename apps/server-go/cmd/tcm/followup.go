@@ -113,8 +113,8 @@ func deliverFollowup(port int, delegationID, session, pane, message string) foll
 		return followupOutcome{Outcome: "error", Detail: "transport failure: " + err.Error()}
 	}
 	if status == 409 {
-		detail := refusalReason(respBody)
-		if strings.HasPrefix(detail, "ambiguous-ask:") {
+		code, detail := refusal(respBody)
+		if code == "ambiguous-ask" || strings.HasPrefix(detail, "ambiguous-ask:") {
 			return followupOutcome{Outcome: "ambiguous-ask", HTTPCode: "409", Detail: detail}
 		}
 		return followupOutcome{Outcome: "refused-409", HTTPCode: "409", Detail: detail}
@@ -191,16 +191,16 @@ func countReceipts(messageFile, rolloutPath string) int {
 	return strings.Count(string(data), messageFile)
 }
 
-// refusalReason extracts the server's refusal explanation from a 409 body,
-// falling back to a generic message when the body isn't the expected shape.
-func refusalReason(body []byte) string {
+// refusal extracts the server's stable code and explanation from a 409 body.
+func refusal(body []byte) (string, string) {
 	var decoded struct {
 		Error string `json:"error"`
+		Code  string `json:"code"`
 	}
 	if err := json.Unmarshal(body, &decoded); err != nil || decoded.Error == "" {
-		return "follow-up refused"
+		return "", "follow-up refused"
 	}
-	return decoded.Error
+	return decoded.Code, decoded.Error
 }
 
 // excerpt trims and truncates a response body for error detail, matching
