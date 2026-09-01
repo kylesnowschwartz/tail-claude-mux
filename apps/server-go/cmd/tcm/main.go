@@ -145,6 +145,7 @@ func runServer(args []string) {
 	srv := server.New(builder, tracker.New(), watcher, codexWatcher, panescan.New())
 	srv.Delegations = delegationStore
 	srv.BuildInfo = buildInfo()
+	srv.Port = *port
 	srv.Restart = restartInPlace
 	srv.Quit = func() {
 		_ = os.Remove(wire.PIDFile)

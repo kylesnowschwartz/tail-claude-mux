@@ -3,13 +3,24 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
+
+const delegateContextPreamble = `[TCM delegate context] You are a delegate agent. An orchestrator in tmux session "%s" spawned you and is watching this delegation (ID %s). You can message it at any time:
+  "$TCM_BIN" tell -message "<text>"   — deliver a note or result upstream (fire-and-forget)
+  "$TCM_BIN" ask -message "<question>" — ask and wait for the orchestrator's answer
+Both read TCM_DELEGATION_ID and TCM_PORT from your environment. Multiline text: use -message-file <path>. Never claim you have no upstream. Your task brief follows.
+---
+`
 
 // handleSpawnAgent starts an agent in a tmux session or owner window.
 func (s *Server) handleSpawnAgent(w http.ResponseWriter, r *http.Request) {
@@ -30,6 +41,18 @@ func (s *Server) handleSpawnAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.DelegationID = delegationID
+	executable, err := os.Executable()
+	if err != nil {
+		writeSpawnAgentError(w, http.StatusInternalServerError, "could not resolve tcm executable")
+		return
+	}
+	req.TCMBin = executable
+	port := s.Port
+	if port == 0 {
+		port = wire.ServerPort
+	}
+	req.TCMPort = strconv.Itoa(port)
+	req.Prompt = prependDelegateContext(req.Prompt, req.OwnerSession, delegationID)
 	result, err := s.Builder.Tmux.SpawnAgent(req)
 	if err != nil {
 		var validationErr *tmux.SpawnAgentValidationError
@@ -60,6 +83,10 @@ func (s *Server) handleSpawnAgent(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+func prependDelegateContext(prompt, ownerSession, delegationID string) string {
+	return fmt.Sprintf(delegateContextPreamble, ownerSession, delegationID) + prompt
 }
 
 func writeSpawnAgentDecodeError(w http.ResponseWriter, err error) {

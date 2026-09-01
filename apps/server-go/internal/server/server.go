@@ -54,6 +54,7 @@ type Server struct {
 	Metadata     *metadata.Store
 	Delegations  *delegation.Store
 	BuildInfo    string
+	Port         int
 
 	// Restart is invoked ~50ms after answering POST /restart (the dev
 	// loop's `restart.sh` ingress). main wires it to a self-exec;

@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
@@ -71,7 +73,7 @@ func TestHandleSpawnAgentCreatesDelegation(t *testing.T) {
 			return "owner %42 @7", nil
 		}
 	}}
-	s := &Server{Builder: &state.Builder{Tmux: tm}, Delegations: store}
+	s := &Server{Builder: &state.Builder{Tmux: tm}, Delegations: store, Port: 7392}
 	body := `{"dir":` + mustMarshalString(t, dir) + `,"agent":"codex","prompt":"task","ownerSession":"owner"}`
 	response := httptest.NewRecorder()
 	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/spawn-agent", bytes.NewBufferString(body)))
@@ -89,6 +91,17 @@ func TestHandleSpawnAgentCreatesDelegation(t *testing.T) {
 	if !slices.Contains(spawnArgs, "TCM_DELEGATION_ID="+result.DelegationID) {
 		t.Errorf("spawn args = %#v, want delegation environment", spawnArgs)
 	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(spawnArgs, "TCM_BIN="+executable) || !slices.Contains(spawnArgs, "TCM_PORT="+strconv.Itoa(s.Port)) {
+		t.Errorf("spawn args = %#v, want binary and port environment", spawnArgs)
+	}
+	command := spawnArgs[len(spawnArgs)-1]
+	if !strings.Contains(command, "[TCM delegate context]") || !strings.Contains(command, result.DelegationID) || !strings.Contains(command, "task") {
+		t.Errorf("spawn command = %q, want delegation context and task", command)
+	}
 	record, err := store.Get(result.DelegationID)
 	if err != nil {
 		t.Fatalf("Get(%q) error = %v", result.DelegationID, err)
@@ -96,6 +109,19 @@ func TestHandleSpawnAgentCreatesDelegation(t *testing.T) {
 	if record.Agent != "codex" || record.Cwd != dir || record.OwnerSession != "owner" ||
 		record.SessionName != "owner" || record.PaneID != "%42" || record.WindowID != "@7" {
 		t.Errorf("record = %#v", record)
+	}
+}
+
+func TestPrependDelegateContext(t *testing.T) {
+	delegationID := "123e4567-e89b-42d3-a456-426614174000"
+	want := `[TCM delegate context] You are a delegate agent. An orchestrator in tmux session "owner" spawned you and is watching this delegation (ID 123e4567-e89b-42d3-a456-426614174000). You can message it at any time:
+  "$TCM_BIN" tell -message "<text>"   — deliver a note or result upstream (fire-and-forget)
+  "$TCM_BIN" ask -message "<question>" — ask and wait for the orchestrator's answer
+Both read TCM_DELEGATION_ID and TCM_PORT from your environment. Multiline text: use -message-file <path>. Never claim you have no upstream. Your task brief follows.
+---
+task`
+	if got := prependDelegateContext("task", "owner", delegationID); got != want {
+		t.Fatalf("prompt = %q, want %q", got, want)
 	}
 }
 

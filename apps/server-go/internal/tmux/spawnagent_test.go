@@ -255,6 +255,8 @@ func TestSpawnAgentWindowTmuxArguments(t *testing.T) {
 	req := SpawnAgentRequest{
 		Dir: dir, Agent: "codex", Prompt: "task", Name: "agent", OwnerSession: "owner",
 		DelegationID: "123e4567-e89b-42d3-a456-426614174000",
+		TCMBin:       "/usr/local/bin/tcm",
+		TCMPort:      "7392",
 	}
 	result, err := tm.SpawnAgent(req)
 	if err != nil {
@@ -263,6 +265,8 @@ func TestSpawnAgentWindowTmuxArguments(t *testing.T) {
 	want := []string{
 		"new-window", "-d", "-t", "=owner:", "-c", dir, "-n", "agent",
 		"-e", "TCM_DELEGATION_ID=123e4567-e89b-42d3-a456-426614174000",
+		"-e", "TCM_BIN=/usr/local/bin/tcm",
+		"-e", "TCM_PORT=7392",
 		"-P", "-F", spawnAgentFormat, "--", buildSpawnAgentCommand(req),
 	}
 	if !reflect.DeepEqual(got, want) {

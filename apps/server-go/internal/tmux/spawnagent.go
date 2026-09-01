@@ -37,8 +37,11 @@ type SpawnAgentRequest struct {
 	// callers supplying an override own any end-of-options handling it needs.
 	Command []string `json:"command,omitempty"`
 	// DelegationID is minted by the server and injected into the new window.
-	// It is not accepted from the HTTP request.
+	// TCMBin and TCMPort let the delegate address that server. These fields are
+	// not accepted from the HTTP request.
 	DelegationID string `json:"-"`
+	TCMBin       string `json:"-"`
+	TCMPort      string `json:"-"`
 }
 
 // SpawnAgentResult identifies the tmux session, pane, and window that were created.
@@ -74,7 +77,11 @@ func (t *Tmux) SpawnAgent(req SpawnAgentRequest) (SpawnAgentResult, error) {
 	// never yank Kyle away from what he is doing.
 	args := []string{"new-window", "-d", "-t", exactOwnerSessionTarget(req.OwnerSession), "-c", req.Dir, "-n", name}
 	if req.DelegationID != "" {
-		args = append(args, "-e", "TCM_DELEGATION_ID="+req.DelegationID)
+		args = append(args,
+			"-e", "TCM_DELEGATION_ID="+req.DelegationID,
+			"-e", "TCM_BIN="+req.TCMBin,
+			"-e", "TCM_PORT="+req.TCMPort,
+		)
 	}
 	args = append(args, "-P", "-F", spawnAgentFormat, "--", command)
 	out, err := t.Run(args...)
