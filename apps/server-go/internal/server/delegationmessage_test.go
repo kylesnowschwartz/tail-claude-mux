@@ -147,6 +147,27 @@ func TestDelegationAnswerTimeout(t *testing.T) {
 	}
 }
 
+func TestDelegationRecordEndpoint(t *testing.T) {
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Create(delegation.CreateParams{Agent: "codex", OwnerSession: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{Delegations: store}
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/delegation?delegation="+record.DelegationID, nil))
+	var got delegation.Record
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || got.DelegationID != record.DelegationID || got.OwnerSession != "owner" {
+		t.Fatalf("response = %d %#v", response.Code, got)
+	}
+}
+
 func postDelegationMessage(t *testing.T, handler http.Handler, delegationID, from, kind, text, replyTo string) delegation.Message {
 	t.Helper()
 	raw, err := json.Marshal(delegationMessageRequest{Delegation: delegationID, From: from, Kind: kind, Text: text, ReplyTo: replyTo})

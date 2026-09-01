@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
+	"strconv"
 	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
@@ -30,6 +32,14 @@ var tmuxOutput = func(args ...string) (string, error) {
 // baseURL builds the tcm server's address from a -port flag value.
 func baseURL(port int) string {
 	return fmt.Sprintf("http://%s:%d", wire.ServerHost, port)
+}
+
+func defaultServerPort() int {
+	port, err := strconv.Atoi(os.Getenv("TCM_PORT"))
+	if err != nil || port < 1 || port > 65535 {
+		return wire.ServerPort
+	}
+	return port
 }
 
 // writeJSON prints v to w as a single line of JSON, exactly the shape the

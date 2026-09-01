@@ -147,6 +147,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /result", s.handleResult)
 	mux.HandleFunc("GET /delegation-messages", s.handleDelegationMessages)
 	mux.HandleFunc("GET /delegation-answer", s.handleDelegationAnswer)
+	mux.HandleFunc("GET /delegation", s.handleDelegation)
 	mux.HandleFunc("GET /explain", s.handleExplain)
 	mux.HandleFunc("POST /hook", s.handleHook)
 	mux.HandleFunc("POST /focus", s.handleFocus)

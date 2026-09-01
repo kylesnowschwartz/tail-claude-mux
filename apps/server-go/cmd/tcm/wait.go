@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
@@ -30,23 +31,32 @@ var waitNow = time.Now
 // stub-server-never-responds case fast.
 var waitClientGrace = 30 * time.Second
 
+const delegationMessageWaitStatus = "message"
+
 // waitOutcome is the JSON shape tcm wait prints to stdout. State is the last
 // server-reported status this run observed (empty when /wait was never
 // reachable).
 type waitOutcome struct {
-	Outcome string `json:"outcome"`
-	Detail  string `json:"detail,omitempty"`
-	Polls   int    `json:"polls"`
-	State   string `json:"state,omitempty"`
+	Outcome  string               `json:"outcome"`
+	Detail   string               `json:"detail,omitempty"`
+	Polls    int                  `json:"polls"`
+	State    string               `json:"state,omitempty"`
+	Messages []delegation.Message `json:"-"`
+}
+
+type waitMessageOutcome struct {
+	Outcome  string               `json:"outcome"`
+	Messages []delegation.Message `json:"messages"`
 }
 
 // waitResponse mirrors internal/server's GET /wait JSON body.
 type waitResponse struct {
-	Session        string `json:"session"`
-	Status         string `json:"status"`
-	Terminal       bool   `json:"terminal"`
-	TimedOut       bool   `json:"timedOut"`
-	ElapsedSeconds int64  `json:"elapsedSeconds"`
+	Session        string               `json:"session"`
+	Status         string               `json:"status"`
+	Terminal       bool                 `json:"terminal"`
+	TimedOut       bool                 `json:"timedOut"`
+	ElapsedSeconds int64                `json:"elapsedSeconds"`
+	Messages       []delegation.Message `json:"messages,omitempty"`
 }
 
 // stateAgent is the subset of GET /state's agents[] entries tcm wait reads
@@ -109,6 +119,10 @@ func runWait(args []string, stdout io.Writer) int {
 	} else {
 		outcome = watchToTerminal(cfg, deadline)
 	}
+	if outcome.Outcome == delegationMessageWaitStatus {
+		_ = writeJSON(stdout, waitMessageOutcome{Outcome: outcome.Outcome, Messages: outcome.Messages})
+		return 0
+	}
 	_ = writeJSON(stdout, outcome)
 	return 0
 }
@@ -146,6 +160,8 @@ func watchDelegationToTerminal(cfg waitConfig, deadline time.Time) waitOutcome {
 		}
 		lastState = resp.Status
 		switch resp.Status {
+		case delegationMessageWaitStatus:
+			return waitOutcome{Outcome: delegationMessageWaitStatus, Polls: polls, State: resp.Status, Messages: resp.Messages}
 		case wire.StatusDone:
 			return waitOutcome{Outcome: "finished", Polls: polls, State: resp.Status}
 		case wire.StatusError, wire.StatusInterrupted:
@@ -164,6 +180,9 @@ func watchDelegationToTerminal(cfg waitConfig, deadline time.Time) waitOutcome {
 			polls++
 			if confirmOK {
 				lastState = confirm.Status
+				if confirm.Status == delegationMessageWaitStatus {
+					return waitOutcome{Outcome: delegationMessageWaitStatus, Polls: polls, State: confirm.Status, Messages: confirm.Messages}
+				}
 				if confirm.Status == wire.StatusWaiting {
 					return waitOutcome{Outcome: "waiting", Polls: polls, State: wire.StatusWaiting}
 				}

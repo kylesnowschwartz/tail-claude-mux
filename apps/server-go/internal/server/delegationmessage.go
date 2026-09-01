@@ -116,6 +116,25 @@ func (s *Server) handleDelegationMessages(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(delegationMessagesResponse{Messages: messages})
 }
 
+func (s *Server) handleDelegation(w http.ResponseWriter, r *http.Request) {
+	delegationID := r.URL.Query().Get("delegation")
+	if delegationID == "" {
+		writeDelegationMessageError(w, http.StatusBadRequest, "delegation is required")
+		return
+	}
+	if s.Delegations == nil {
+		writeDelegationMessageError(w, http.StatusNotFound, "delegation not found")
+		return
+	}
+	record, err := s.Delegations.Get(delegationID)
+	if err != nil {
+		writeDelegationStoreError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(record)
+}
+
 func (s *Server) handleDelegationAnswer(w http.ResponseWriter, r *http.Request) {
 	delegationID := r.URL.Query().Get("delegation")
 	askID := r.URL.Query().Get("ask")

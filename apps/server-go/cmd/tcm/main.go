@@ -51,9 +51,8 @@ var (
 )
 
 // main dispatches to the `tcm <subcommand>` argv shape. `server` runs the
-// backend; `delegate`, `result`, `wait`, `followup`, and `tidy` are client
-// subcommands that talk to a running server (and, for tidy, tmux directly)
-// over HTTP.
+// backend; the other subcommands talk to a running server (and, for tidy,
+// tmux directly) over HTTP.
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -70,6 +69,16 @@ func main() {
 		os.Exit(runWait(os.Args[2:], os.Stdout))
 	case "followup":
 		os.Exit(runFollowup(os.Args[2:], os.Stdout))
+	case "tell":
+		os.Exit(runTell(os.Args[2:], os.Stdout))
+	case "ask":
+		os.Exit(runAsk(os.Args[2:], os.Stdout))
+	case "answer":
+		os.Exit(runAnswer(os.Args[2:], os.Stdout))
+	case "messages":
+		os.Exit(runMessages(os.Args[2:], os.Stdout))
+	case "whoami":
+		os.Exit(runWhoami(os.Args[2:], os.Stdout))
 	case "tidy":
 		os.Exit(runTidy(os.Args[2:], os.Stdout))
 	default:
@@ -79,7 +88,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s <command> [flags]\n\ncommands:\n  server     run the tcm backend server\n  delegate   spawn a codex delegate in a tmux window\n  result     fetch a delegate's result\n  wait       watch a delegate until it reaches a terminal outcome\n  followup   deliver a follow-up message to a waiting delegate\n  tidy       close finished delegate windows\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "usage: %s <command> [flags]\n\ncommands:\n  server     run the tcm backend server\n  delegate   spawn a codex delegate in a tmux window\n  result     fetch a delegate's result\n  wait       watch a delegate until it reaches an actionable outcome\n  followup   deliver a follow-up message to an idle delegate\n  tell       send a note from a delegate to its orchestrator\n  ask        ask the orchestrator and wait for an answer\n  answer     answer a delegate's pending ask\n  messages   list a delegation's message log\n  whoami     show the current delegation record\n  tidy       close finished delegate windows\n", filepath.Base(os.Args[0]))
 }
 
 // runServer is the tcm backend's entry point. args is the argv tail after

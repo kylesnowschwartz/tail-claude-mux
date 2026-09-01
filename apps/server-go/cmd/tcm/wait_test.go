@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
@@ -162,6 +163,28 @@ func TestWait_DelegationGoneTimeoutHandling(t *testing.T) {
 				t.Fatalf("outcome = %+v, want outcome %q with 1 poll", got, tt.outcome)
 			}
 		})
+	}
+}
+
+func TestWait_DelegationMessageOutcome(t *testing.T) {
+	message := delegation.Message{ID: "message-id", From: "delegate", Kind: "note", Text: "review complete"}
+	srv := waitHandler(t, []waitResponse{{Session: "work", Status: "message", Messages: []delegation.Message{message}}}, nil, `{"sessions":[]}`)
+	defer srv.Close()
+	var out bytes.Buffer
+	code := runWait([]string{"-delegation", "delegation-id", "-port", portArg(srv), "-minutes", "1"}, &out)
+	if code != 0 {
+		t.Fatalf("exit code = %d: %s", code, out.String())
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(out.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 2 || raw["outcome"] != "message" {
+		t.Fatalf("output = %v", raw)
+	}
+	messages, ok := raw["messages"].([]any)
+	if !ok || len(messages) != 1 {
+		t.Fatalf("messages = %#v", raw["messages"])
 	}
 }
 
