@@ -83,16 +83,6 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 		writeFollowupError(w, http.StatusNotFound, "session not found")
 		return
 	}
-	if req.Delegation == "" {
-		delegationID, err := s.delegationForPane(target.Session, target.State.PaneID)
-		if err != nil {
-			writeFollowupError(w, http.StatusInternalServerError, "could not read delegation")
-			return
-		}
-		if delegationID != "" && s.routeFollowupToAsk(w, delegationID, req.Message) {
-			return
-		}
-	}
 	state := target.State
 	if state.Agent != "codex" {
 		writeFollowupError(w, http.StatusUnprocessableEntity, "follow-up is only supported for codex sessions")
@@ -224,22 +214,6 @@ func (s *Server) resolveFollowupDelegation(req followupRequest) (string, *agentR
 		return "", &agentResolutionError{status: http.StatusBadRequest, message: "delegation and thread identify different agents"}
 	}
 	return record.DelegationID, nil
-}
-
-func (s *Server) delegationForPane(session, paneID string) (string, error) {
-	if s.Delegations == nil || paneID == "" {
-		return "", nil
-	}
-	records, err := s.Delegations.List()
-	if err != nil {
-		return "", err
-	}
-	for i := len(records) - 1; i >= 0; i-- {
-		if records[i].SessionName == session && records[i].PaneID == paneID {
-			return records[i].DelegationID, nil
-		}
-	}
-	return "", nil
 }
 
 func followupStatusConflict(status string) string {

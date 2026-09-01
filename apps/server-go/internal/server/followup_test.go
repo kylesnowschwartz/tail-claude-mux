@@ -272,6 +272,40 @@ func TestFollowupWithNoAskKeepsRunningRefusal(t *testing.T) {
 	}
 }
 
+func TestFollowupSessionPaneDoesNotRoutePersistedAsk(t *testing.T) {
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Create(delegation.CreateParams{Agent: "codex", SessionName: "work", PaneID: "%7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Bind(record.DelegationID, "codex", "old-thread"); err != nil {
+		t.Fatal(err)
+	}
+	ask, err := store.AppendMessage(record.DelegationID, delegation.Message{From: "delegate", Kind: "ask", Text: "old question?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkDelivered(record.DelegationID, []string{ask.ID}); err != nil {
+		t.Fatal(err)
+	}
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "codex", ThreadID: "current-thread", PaneID: "%7", Status: wire.StatusRunning}, false)
+	s := &Server{Tracker: tr, Delegations: store}
+	defer s.registerAnswerWaiter(record.DelegationID, ask.ID)()
+
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(`{"session":"work","pane":"%7","message":"continue"}`)))
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "session is running; refusing to interrupt it") {
+		t.Fatalf("response = %d %q", response.Code, response.Body.String())
+	}
+	if _, answered, err := store.AnswerFor(record.DelegationID, ask.ID); err != nil || answered {
+		t.Fatalf("AnswerFor() = (_, %v, %v), want unanswered", answered, err)
+	}
+}
+
 func TestFollowupRevalidatesBeforeRespawn(t *testing.T) {
 	sessionsDir := resolvedTempDir(t)
 	rolloutDir := filepath.Join(sessionsDir, "2026", "07", "11")
