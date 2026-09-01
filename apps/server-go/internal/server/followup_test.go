@@ -571,6 +571,14 @@ func TestFollowupDelegationResolversRejectUnboundThreadMismatch(t *testing.T) {
 			t.Fatalf("%s error = %#v", name, resolveErr)
 		}
 	}
+
+	matching := followupRequest{Delegation: record.DelegationID, Thread: "actual-thread"}
+	if delegationID, resolveErr := s.resolveFollowupDelegation(matching); resolveErr != nil || delegationID != record.DelegationID {
+		t.Fatalf("delegation resolver matching result = (%q, %#v)", delegationID, resolveErr)
+	}
+	if target, resolveErr := s.resolveFollowupTarget(matching); resolveErr != nil || target.State == nil || target.State.ThreadID != "actual-thread" {
+		t.Fatalf("target resolver matching result = (%#v, %#v)", target, resolveErr)
+	}
 }
 
 func TestFollowupDelegationAddressErrors(t *testing.T) {
