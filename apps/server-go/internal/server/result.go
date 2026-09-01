@@ -11,14 +11,15 @@ import (
 )
 
 type resultResponse struct {
-	Session        string `json:"session"`
-	Status         string `json:"status"`
-	HasFinal       bool   `json:"hasFinal"`
-	FinalMessage   string `json:"finalMessage"`
-	RolloutPath    string `json:"rolloutPath"`
-	ThreadID       string `json:"threadId"`
-	Cwd            string `json:"cwd"`
-	Identification string `json:"identification"`
+	Session        string               `json:"session"`
+	Status         string               `json:"status"`
+	HasFinal       bool                 `json:"hasFinal"`
+	FinalMessage   string               `json:"finalMessage"`
+	RolloutPath    string               `json:"rolloutPath"`
+	ThreadID       string               `json:"threadId"`
+	Cwd            string               `json:"cwd"`
+	Identification string               `json:"identification"`
+	Messages       []delegation.Message `json:"messages,omitempty"`
 }
 
 func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +56,7 @@ func (s *Server) handleTrackedResult(w http.ResponseWriter, session, paneID stri
 		writeResultError(w, http.StatusNotFound, "session not found")
 		return
 	}
-	s.writeLiveResult(w, session, state)
+	s.writeLiveResult(w, session, state, nil)
 }
 
 func (s *Server) handleDelegationResult(w http.ResponseWriter, delegationID, session, threadID, paneID string) {
@@ -70,6 +71,11 @@ func (s *Server) handleDelegationResult(w http.ResponseWriter, delegationID, ses
 			return
 		}
 		writeResultError(w, http.StatusInternalServerError, "could not read delegation")
+		return
+	}
+	messages, err := s.Delegations.Messages(delegationID)
+	if err != nil {
+		writeResultError(w, http.StatusInternalServerError, "could not read delegation messages")
 		return
 	}
 	if session != "" && session != record.SessionName {
@@ -87,7 +93,7 @@ func (s *Server) handleDelegationResult(w http.ResponseWriter, delegationID, ses
 		}
 		tracked, resolveErr := s.followupState(record.SessionName, record.ThreadID, "")
 		if resolveErr == nil && tracked != nil {
-			s.writeLiveResult(w, record.SessionName, tracked)
+			s.writeLiveResult(w, record.SessionName, tracked, messages)
 			return
 		}
 		if resolveErr != nil && resolveErr.status != http.StatusNotFound {
@@ -95,7 +101,7 @@ func (s *Server) handleDelegationResult(w http.ResponseWriter, delegationID, ses
 			return
 		}
 
-		response := resultResponse{Session: record.SessionName, ThreadID: record.ThreadID, Cwd: record.Cwd}
+		response := resultResponse{Session: record.SessionName, ThreadID: record.ThreadID, Cwd: record.Cwd, Messages: messages}
 		found, inspectErr := s.populateDiskResult(&response, record.Agent)
 		if inspectErr != nil {
 			writeResultError(w, http.StatusInternalServerError, inspectErr.Error())
@@ -122,14 +128,14 @@ func (s *Server) handleDelegationResult(w http.ResponseWriter, delegationID, ses
 		writeResultError(w, http.StatusBadRequest, "delegation and thread identify different agents")
 		return
 	}
-	s.writeLiveResult(w, record.SessionName, state)
+	s.writeLiveResult(w, record.SessionName, state, messages)
 }
 
 func (s *Server) handleThreadResult(w http.ResponseWriter, session, threadID, paneID string) {
 	if session != "" {
 		state, resolveErr := s.followupState(session, threadID, paneID)
 		if resolveErr == nil && state != nil {
-			s.writeLiveResult(w, session, state)
+			s.writeLiveResult(w, session, state, nil)
 			return
 		}
 		if resolveErr != nil && resolveErr.status != http.StatusNotFound {
@@ -150,8 +156,8 @@ func (s *Server) handleThreadResult(w http.ResponseWriter, session, threadID, pa
 	writeResultResponse(w, response)
 }
 
-func (s *Server) writeLiveResult(w http.ResponseWriter, session string, state *wire.AgentEvent) {
-	response := resultResponse{Session: session, Status: state.Status, ThreadID: state.ThreadID}
+func (s *Server) writeLiveResult(w http.ResponseWriter, session string, state *wire.AgentEvent, messages []delegation.Message) {
+	response := resultResponse{Session: session, Status: state.Status, ThreadID: state.ThreadID, Messages: messages}
 	if state.Agent != "codex" || state.ThreadID == "" || s.CodexWatcher == nil {
 		writeResultResponse(w, response)
 		return

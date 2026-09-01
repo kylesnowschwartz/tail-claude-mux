@@ -14,14 +14,16 @@ import (
 const (
 	defaultWaitTimeout = 120 * time.Second
 	maxWaitTimeout     = 600 * time.Second
+	messageWaitStatus  = "message"
 )
 
 type waitResponse struct {
-	Session        string `json:"session"`
-	Status         string `json:"status"`
-	Terminal       bool   `json:"terminal"`
-	TimedOut       bool   `json:"timedOut"`
-	ElapsedSeconds int64  `json:"elapsedSeconds"`
+	Session        string               `json:"session"`
+	Status         string               `json:"status"`
+	Terminal       bool                 `json:"terminal"`
+	TimedOut       bool                 `json:"timedOut"`
+	ElapsedSeconds int64                `json:"elapsedSeconds"`
+	Messages       []delegation.Message `json:"messages,omitempty"`
 }
 
 type delegationWaitState struct {
@@ -108,11 +110,6 @@ func (s *Server) handleDelegationWait(w http.ResponseWriter, r *http.Request, de
 		writeAgentResolutionError(w, resolveErr)
 		return
 	}
-	if state.bound && state.status == "" {
-		s.writeWaitResponse(w, state.session, wire.StatusGone, time.Now(), false)
-		return
-	}
-
 	started := time.Now()
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
@@ -120,6 +117,15 @@ func (s *Server) handleDelegationWait(w http.ResponseWriter, r *http.Request, de
 	defer poll.Stop()
 
 	for {
+		messages, err := s.takeUndeliveredDelegateMessages(delegationID)
+		if err != nil {
+			writeDelegationStoreError(w, err)
+			return
+		}
+		if len(messages) > 0 {
+			s.writeDelegationMessageWaitResponse(w, state.session, started, messages)
+			return
+		}
 		state, resolveErr = s.resolveDelegationWait(delegationID, session, threadID, paneID)
 		if resolveErr != nil {
 			writeAgentResolutionError(w, resolveErr)
@@ -137,6 +143,15 @@ func (s *Server) handleDelegationWait(w http.ResponseWriter, r *http.Request, de
 		case <-r.Context().Done():
 			return
 		case <-deadline.C:
+			messages, err = s.takeUndeliveredDelegateMessages(delegationID)
+			if err != nil {
+				writeDelegationStoreError(w, err)
+				return
+			}
+			if len(messages) > 0 {
+				s.writeDelegationMessageWaitResponse(w, state.session, started, messages)
+				return
+			}
 			state, resolveErr = s.resolveDelegationWait(delegationID, session, threadID, paneID)
 			if resolveErr != nil {
 				writeAgentResolutionError(w, resolveErr)
@@ -150,6 +165,37 @@ func (s *Server) handleDelegationWait(w http.ResponseWriter, r *http.Request, de
 		case <-poll.C:
 		}
 	}
+}
+
+func (s *Server) takeUndeliveredDelegateMessages(delegationID string) ([]delegation.Message, error) {
+	s.messageMu.Lock()
+	defer s.messageMu.Unlock()
+	messages, err := s.Delegations.UndeliveredFromDelegate(delegationID)
+	if err != nil || len(messages) == 0 {
+		return messages, err
+	}
+	ids := make([]string, len(messages))
+	for i, msg := range messages {
+		ids[i] = msg.ID
+	}
+	if err := s.Delegations.MarkDelivered(delegationID, ids); err != nil {
+		return nil, err
+	}
+	allMessages, err := s.Delegations.Messages(delegationID)
+	if err != nil {
+		return nil, err
+	}
+	delivered := make([]delegation.Message, 0, len(messages))
+	wanted := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		wanted[id] = struct{}{}
+	}
+	for _, msg := range allMessages {
+		if _, ok := wanted[msg.ID]; ok {
+			delivered = append(delivered, msg)
+		}
+	}
+	return delivered, nil
 }
 
 func (s *Server) resolveDelegationWait(delegationID, session, threadID, paneID string) (delegationWaitState, *agentResolutionError) {
@@ -248,6 +294,14 @@ func (s *Server) writeWaitResponse(w http.ResponseWriter, session, status string
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(waitResponse{
 		Session: session, Status: status, Terminal: wire.IsTerminalStatus(status), TimedOut: timedOut,
+		ElapsedSeconds: int64(time.Since(started) / time.Second),
+	})
+}
+
+func (s *Server) writeDelegationMessageWaitResponse(w http.ResponseWriter, session string, started time.Time, messages []delegation.Message) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(waitResponse{
+		Session: session, Status: messageWaitStatus, Messages: messages,
 		ElapsedSeconds: int64(time.Since(started) / time.Second),
 	})
 }

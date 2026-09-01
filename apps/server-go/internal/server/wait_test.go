@@ -69,6 +69,10 @@ func TestWaitSingleInstanceKeepsLegacyResponse(t *testing.T) {
 	if legacy.Body.String() != disambiguated.Body.String() {
 		t.Fatalf("legacy body = %q, pane body = %q", legacy.Body.String(), disambiguated.Body.String())
 	}
+	want := "{\"session\":\"work\",\"status\":\"done\",\"terminal\":true,\"timedOut\":false,\"elapsedSeconds\":0}\n"
+	if legacy.Body.String() != want {
+		t.Fatalf("legacy body = %q, want %q", legacy.Body.String(), want)
+	}
 }
 
 func TestWaitImmediateAndErrors(t *testing.T) {
@@ -195,6 +199,49 @@ func TestWaitDelegationPicksUpMidWaitBind(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("delegation wait did not pick up binding")
+	}
+}
+
+func TestWaitDelegationReturnsEachMessageOnce(t *testing.T) {
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Create(delegation.CreateParams{Agent: "codex", SessionName: "work", PaneID: "%7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := store.AppendMessage(record.DelegationID, delegation.Message{From: "delegate", Kind: "note", Text: "review complete"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadID := "44444444-4444-4444-8444-444444444444"
+	if _, err := store.Bind(record.DelegationID, "codex", threadID); err != nil {
+		t.Fatal(err)
+	}
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Agent: "codex", Session: "work", ThreadID: threadID, PaneID: "%7", Status: wire.StatusDone}, false)
+	s := &Server{Tracker: tr, Delegations: store}
+
+	first := httptest.NewRecorder()
+	s.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/wait?delegation="+record.DelegationID, nil))
+	var firstBody waitResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &firstBody); err != nil {
+		t.Fatal(err)
+	}
+	if first.Code != http.StatusOK || firstBody.Status != messageWaitStatus || firstBody.Terminal || firstBody.TimedOut ||
+		len(firstBody.Messages) != 1 || firstBody.Messages[0].ID != message.ID || firstBody.Messages[0].DeliveredAt == nil {
+		t.Fatalf("first response = %d %+v", first.Code, firstBody)
+	}
+
+	second := httptest.NewRecorder()
+	s.Handler().ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/wait?delegation="+record.DelegationID, nil))
+	var secondBody waitResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &secondBody); err != nil {
+		t.Fatal(err)
+	}
+	if second.Code != http.StatusOK || secondBody.Status != wire.StatusDone || len(secondBody.Messages) != 0 {
+		t.Fatalf("second response = %d %+v", second.Code, secondBody)
 	}
 }
 

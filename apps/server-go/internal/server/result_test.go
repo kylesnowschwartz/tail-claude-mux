@@ -224,6 +224,36 @@ func TestResultUnknownSessionIsJSON404(t *testing.T) {
 	}
 }
 
+func TestResultDelegationIncludesMessageLog(t *testing.T) {
+	store, err := delegation.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Create(delegation.CreateParams{Agent: "codex", SessionName: "work", PaneID: "%1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := store.AppendMessage(record.DelegationID, delegation.Message{From: "delegate", Kind: "note", Text: "review complete"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "codex", ThreadID: "thread", PaneID: "%1", Status: wire.StatusDone}, false)
+	s := &Server{Tracker: tr, Delegations: store}
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/result?delegation="+record.DelegationID, nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	var body resultResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Messages) != 1 || body.Messages[0].ID != message.ID {
+		t.Fatalf("messages = %#v, want %s", body.Messages, message.ID)
+	}
+}
+
 func TestResultSelectsPaneInMultiAgentSession(t *testing.T) {
 	tr := tracker.New()
 	tr.ApplyEvent(wire.AgentEvent{Session: "work", Agent: "codex", ThreadID: "one", PaneID: "%1", Status: wire.StatusDone}, false)
