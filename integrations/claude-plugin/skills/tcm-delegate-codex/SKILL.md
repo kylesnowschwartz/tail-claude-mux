@@ -2,8 +2,8 @@
 name: tcm-delegate-codex
 description: >
   Delegate a coding task to a visible Codex agent running in a tmux pane via
-  TCM, driven end-to-end by the `tcm` CLI (delegate → wait → message/answer
-  or followup → result), instead of a backgrounded /codex:rescue job. Use for
+  TCM, driven end-to-end by the `tcm` CLI (delegate → wait → followup →
+  result), instead of a backgrounded /codex:rescue job. Use for
   implementation work that changes the tree (MO-002 routing: repo-gets-changes
   → visible pane), when Kyle asks to "watch" a delegation, for parallel
   worktree delegations, and when tidying / cleaning up / closing finished
@@ -134,18 +134,11 @@ approval-waiting state:
 {"outcome":"message","messages":[{"id":"<messageId>","from":"delegate","kind":"ask","text":"Which option?"}]}
 ```
 
-Handle every message, then run `tcm wait -delegation <delegationId>` again.
-A `note` needs no reply. Answer an `ask` by its message id:
-
-```sh
-"$TCM" answer -delegation <delegationId> -ask <messageId> -message "Use option A"
-```
-
-A delegate whose `tcm ask` has returned
-`{"outcome":"no-answer-yet","askId":"<messageId>"}` is still mid-turn
-waiting for that answer. Use `tcm answer`, not `tcm followup`: follow-up is
-for an idle delegate between turns and correctly refuses to interrupt this
-one.
+Handle every message. A `note` needs no reply. Reply to an `ask` with
+`tcm followup` (§4), then run `tcm wait -delegation <delegationId>` again.
+A delegate whose `tcm ask` returned
+`{"outcome":"no-answer-yet","askId":"<messageId>"}` remains in the same
+turn until the reply arrives.
 
 Delegation-addressed `tcm result` includes the complete message log. When
 consuming a result, also check the log directly so a note or ask is not
@@ -170,32 +163,53 @@ CLAIM: verify it per MO-005 (tests/lint/diff scope) before reporting done. If
 it contains a QUESTION, the delegate is blocked awaiting an answer — surface
 it to Kyle, answer via follow-up (§4).
 
-## 4. Follow-ups go to the SAME session and pane
+## 4. Reply with `tcm followup`
 
-The pane is the thread; a second pane for a follow-up is the double-spend
-(MO-005). Write the message to a file (multiline-safe), then:
+`tcm followup` is the single reply verb. Write the reply to a file
+(multiline-safe), then:
 
 ```sh
 "$TCM" followup -delegation <delegationId> -message-file /abs/msgfile.md
 ```
 
-(or `-session kyle -pane %42`.) Delivery needs the delegate's live
-pane: a dead pane answers 409 naming the pane rather than respawning
-anywhere else.
+(or `-session kyle -pane %42`.) The server chooses the delivery mode from
+the delegation's message state:
 
-Output:
+- Exactly one unanswered ask: record the reply as its answer. The delegate's
+  blocked `tcm ask` receives it and continues the same turn. No pane respawn or
+  rollout receipt is involved.
+- No unanswered asks: resume the idle delegate in its existing pane for a new
+  turn. The pane is the thread; never create a second pane for the reply.
+- Multiple unanswered asks: return `ambiguous-ask` without answering either.
+
+Answer-mode output:
+
+```json
+{"outcome":"answered","askId":"<messageId>","httpCode":"200"}
+```
+
+Run `tcm wait` again immediately. The delegate is continuing the same turn.
+
+Resume-mode output:
 
 ```json
 {"outcome":"delivered","httpCode":"200","receipts":1,"messageFile":"...","rolloutPath":"..."}
 ```
 
-The server pins the thread's rollout by tracked threadId, refuses to
-interrupt a running or prompt-waiting delegate with 409, and revalidates
-before resuming. `tcm followup` posts, then greps the rollout for a delivery
-receipt at 5s and 25s, retries the POST once if neither grep found it, and
-grep again 30s later — that ladder is why the call can take close to a
-minute. After it returns `delivered`, run `tcm wait` again to watch the
-follow-up turn and `tcm result` to read its answer.
+The resume path pins the tracked thread's rollout, refuses to interrupt a
+running or prompt-waiting delegate with 409, and revalidates before resuming.
+It needs the live delegate pane; a dead pane returns 409 naming the pane.
+The command greps the rollout for a delivery receipt at 5s and 25s, retries
+the POST once if neither grep finds it, and greps again 30s later. After
+`delivered`, run `tcm wait` to watch the new turn and `tcm result` to read it.
+
+For `ambiguous-ask`, list the message log, choose the intended ask id, and use
+the explicit targeting command:
+
+```sh
+"$TCM" messages -delegation <delegationId>
+"$TCM" answer -delegation <delegationId> -ask <messageId> -message "Use option A"
+```
 
 ## Failure modes
 
@@ -204,6 +218,8 @@ follow-up turn and `tcm result` to read its answer.
 - `refused-409` — the delegate is mid-run or at a prompt; the server
   declined to interrupt live work. `detail` carries the reason. Wait or
   answer the prompt; the pane is untouched.
+- `ambiguous-ask` — more than one ask is unanswered. Use `tcm messages`, then
+  target one ask with `tcm answer -ask <messageId>`.
 - `session-dead` — the pane or its tmux session is gone. `tcm result` may
   still return the final message (it reads the thread's rollout, which
   outlives the pane) — report honestly, never silently respawn.
