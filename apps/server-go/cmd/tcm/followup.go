@@ -14,6 +14,7 @@ import (
 // followupOutcome is the JSON shape tcm followup prints to stdout.
 type followupOutcome struct {
 	Outcome     string `json:"outcome"`
+	AskID       string `json:"askId,omitempty"`
 	HTTPCode    string `json:"httpCode"`
 	Receipts    int    `json:"receipts"`
 	MessageFile string `json:"messageFile"`
@@ -36,14 +37,13 @@ type followupBody struct {
 type followupResponse struct {
 	MessageFile string `json:"messageFile"`
 	RolloutPath string `json:"rolloutPath"`
+	Mode        string `json:"mode"`
+	AskID       string `json:"askId"`
 }
 
-// runFollowup delivers a follow-up message to a waiting delegate and
-// verifies delivery by grepping the delegate's rollout for a receipt of the
-// message file path. It returns the process exit code: 1 when the outcome
-// is "error" (a usage or transport failure), 0 for every other delegation
-// outcome (delivered, refused-409, delivery-unverified) — those describe
-// what the delegate did, not a CLI failure.
+// runFollowup sends a reply to a delegate. An answered ask returns
+// immediately; a resumed delegate is verified through its rollout receipt.
+// It returns 1 for usage or transport failures and 0 for delegation outcomes.
 func runFollowup(args []string, stdout io.Writer) int {
 	fs := flag.NewFlagSet("followup", flag.ContinueOnError)
 	delegationID := fs.String("delegation", "", "delegation id")
@@ -70,7 +70,15 @@ func runFollowup(args []string, stdout io.Writer) int {
 	}
 
 	outcome := deliverFollowup(*port, *delegationID, *session, *pane, string(source))
-	_ = writeJSON(stdout, outcome)
+	if outcome.Outcome == "answered" {
+		_ = writeJSON(stdout, struct {
+			Outcome  string `json:"outcome"`
+			AskID    string `json:"askId"`
+			HTTPCode string `json:"httpCode"`
+		}{Outcome: outcome.Outcome, AskID: outcome.AskID, HTTPCode: outcome.HTTPCode})
+	} else {
+		_ = writeJSON(stdout, outcome)
+	}
 	if outcome.Outcome == "error" {
 		return 1
 	}
@@ -86,8 +94,8 @@ func validateFollowupAddress(delegationID, session, pane string) error {
 
 // deliverFollowup runs the POST-then-verify ladder: an initial follow-up
 // POST, receipt greps at 5s and 25s after delivery, one retry POST, then a
-// final grep 30s later. A 409 on the FIRST post is a refusal — the server
-// is declining to interrupt an active delegate. A 409 on the retry is not:
+// final grep 30s later. A 409 on the first POST is a refusal or an ambiguous
+// set of asks. A 409 on the retry is not:
 // the first POST already respawned the pane, so that conflict means the
 // resume took; only the final receipt grep classifies the retry path. The
 // ladder trades latency for certainty: a delivered message can take up to
@@ -104,7 +112,11 @@ func deliverFollowup(port int, delegationID, session, pane, message string) foll
 		return followupOutcome{Outcome: "error", Detail: "transport failure: " + err.Error()}
 	}
 	if status == 409 {
-		return followupOutcome{Outcome: "refused-409", HTTPCode: "409", Detail: refusalReason(respBody)}
+		detail := refusalReason(respBody)
+		if strings.HasPrefix(detail, "ambiguous-ask:") {
+			return followupOutcome{Outcome: "ambiguous-ask", HTTPCode: "409", Detail: detail}
+		}
+		return followupOutcome{Outcome: "refused-409", HTTPCode: "409", Detail: detail}
 	}
 	if status != 200 {
 		return followupOutcome{Outcome: "error", HTTPCode: fmt.Sprintf("%d", status), Detail: fmt.Sprintf("unexpected-http-%d: %s", status, excerpt(respBody))}
@@ -113,6 +125,9 @@ func deliverFollowup(port int, delegationID, session, pane, message string) foll
 	var resp followupResponse
 	if err := json.Unmarshal(respBody, &resp); err != nil {
 		return followupOutcome{Outcome: "error", HTTPCode: "200", Detail: "unparseable response body: " + err.Error()}
+	}
+	if resp.Mode == "answer" {
+		return followupOutcome{Outcome: "answered", AskID: resp.AskID, HTTPCode: "200"}
 	}
 	messageFile, rolloutPath := resp.MessageFile, resp.RolloutPath
 	httpCode := "200"

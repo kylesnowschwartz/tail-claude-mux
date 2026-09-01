@@ -58,6 +58,67 @@ func TestFollowup_DeliveredOnFirstGrep(t *testing.T) {
 	}
 }
 
+func TestFollowup_AnsweredSkipsReceiptLadder(t *testing.T) {
+	sleepCalls := withStubSleep(t)
+	askID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	var postCalls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&postCalls, 1)
+		json.NewEncoder(w).Encode(followupResponse{Mode: "answer", AskID: askID})
+	}))
+	defer srv.Close()
+
+	sourceFile := writeTempFile(t, "yes")
+	var out bytes.Buffer
+	code := runFollowup([]string{"-delegation", "delegation-id", "-message-file", sourceFile, "-port", strconv.Itoa(portOf(srv))}, &out)
+	if code != 0 {
+		t.Fatalf("exit code = %d", code)
+	}
+	var got followupOutcome
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Outcome != "answered" || got.AskID != askID || got.HTTPCode != "200" {
+		t.Fatalf("outcome = %+v", got)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(out.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 3 {
+		t.Fatalf("output keys = %v, want outcome, askId, and httpCode", raw)
+	}
+	gotPosts := atomic.LoadInt32(&postCalls)
+	gotSleeps := atomic.LoadInt32(sleepCalls)
+	if gotPosts != 1 || gotSleeps != 0 {
+		t.Fatalf("post calls = %d, sleep calls = %d; want 1 and 0", gotPosts, gotSleeps)
+	}
+}
+
+func TestFollowup_AmbiguousAskMapping(t *testing.T) {
+	withStubSleep(t)
+	detail := "ambiguous-ask: multiple unanswered asks; use tcm answer -ask <id>"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": detail})
+	}))
+	defer srv.Close()
+
+	sourceFile := writeTempFile(t, "yes")
+	var out bytes.Buffer
+	code := runFollowup([]string{"-delegation", "delegation-id", "-message-file", sourceFile, "-port", strconv.Itoa(portOf(srv))}, &out)
+	if code != 0 {
+		t.Fatalf("exit code = %d", code)
+	}
+	var got followupOutcome
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Outcome != "ambiguous-ask" || got.HTTPCode != "409" || got.Detail != detail {
+		t.Fatalf("outcome = %+v", got)
+	}
+}
+
 func TestFollowup_DeliveredOnPostRetryGrep(t *testing.T) {
 	withStubSleep(t)
 	messageFile := "/tmp/followup-msg-456.txt"
