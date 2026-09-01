@@ -175,12 +175,16 @@ it to Kyle, answer via follow-up (§4).
 (or `-session kyle -pane %42`.) The server chooses the delivery mode from
 the delegation's message state:
 
-- Exactly one unanswered ask: record the reply as its answer. The delegate's
-  blocked `tcm ask` receives it and continues the same turn. No pane respawn or
-  rollout receipt is involved.
-- No unanswered asks: resume the idle delegate in its existing pane for a new
-  turn. The pane is the thread; never create a second pane for the reply.
-- Multiple unanswered asks: return `ambiguous-ask` without answering either.
+- Exactly one answerable ask: record the reply as its answer. An ask is
+  answerable only after `tcm wait` has surfaced it and while the delegate is
+  still blocked polling for the answer. The blocked `tcm ask` receives the
+  reply and continues the same turn. No pane respawn or rollout receipt is
+  involved.
+- No answerable asks: use the existing resume or refusal path. An undelivered
+  ask or an ask whose poll ended cannot consume the reply. An idle delegate
+  resumes in its existing pane for a new turn; a running or prompt-waiting
+  delegate returns `refused-409`.
+- Multiple answerable asks: return `ambiguous-ask` without answering any.
 
 Answer-mode output:
 
@@ -218,7 +222,7 @@ the explicit targeting command:
 - `refused-409` — the delegate is mid-run or at a prompt; the server
   declined to interrupt live work. `detail` carries the reason. Wait or
   answer the prompt; the pane is untouched.
-- `ambiguous-ask` — more than one ask is unanswered. Use `tcm messages`, then
+- `ambiguous-ask` — more than one ask is answerable. Use `tcm messages`, then
   target one ask with `tcm answer -ask <messageId>`.
 - `session-dead` — the pane or its tmux session is gone. `tcm result` may
   still return the final message (it reads the thread's rollout, which
