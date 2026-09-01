@@ -34,6 +34,8 @@ type followupResponse struct {
 	RolloutPath string `json:"rolloutPath"`
 	MessageFile string `json:"messageFile"`
 	PaneID      string `json:"paneId"`
+	Mode        string `json:"mode"`
+	AskID       string `json:"askId,omitempty"`
 }
 
 func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +63,16 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 	}
 	s.followupMu.Lock()
 	defer s.followupMu.Unlock()
+	if req.Delegation != "" {
+		delegationID, addressErr := s.resolveFollowupDelegation(req)
+		if addressErr != nil {
+			writeFollowupError(w, addressErr.status, addressErr.message)
+			return
+		}
+		if s.routeFollowupToAsk(w, delegationID, req.Message) {
+			return
+		}
+	}
 
 	target, resolveErr := s.resolveFollowupTarget(req)
 	if resolveErr != nil {
@@ -70,6 +82,16 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 	if target.State == nil {
 		writeFollowupError(w, http.StatusNotFound, "session not found")
 		return
+	}
+	if req.Delegation == "" {
+		delegationID, err := s.delegationForPane(target.Session, target.State.PaneID)
+		if err != nil {
+			writeFollowupError(w, http.StatusInternalServerError, "could not read delegation")
+			return
+		}
+		if delegationID != "" && s.routeFollowupToAsk(w, delegationID, req.Message) {
+			return
+		}
 	}
 	state := target.State
 	if state.Agent != "codex" {
@@ -142,7 +164,73 @@ func (s *Server) handleFollowup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(followupResponse{UUID: uuid, RolloutPath: rolloutPath, MessageFile: messageFile, PaneID: state.PaneID})
+	_ = json.NewEncoder(w).Encode(followupResponse{UUID: uuid, RolloutPath: rolloutPath, MessageFile: messageFile, PaneID: state.PaneID, Mode: "resume"})
+}
+
+func (s *Server) routeFollowupToAsk(w http.ResponseWriter, delegationID, text string) bool {
+	if s.Delegations == nil || delegationID == "" {
+		return false
+	}
+	s.messageMu.Lock()
+	defer s.messageMu.Unlock()
+	asks, err := s.Delegations.UnansweredAsks(delegationID)
+	if err != nil {
+		writeDelegationStoreError(w, err)
+		return true
+	}
+	if len(asks) == 0 {
+		return false
+	}
+	if len(asks) > 1 {
+		writeFollowupError(w, http.StatusConflict, "ambiguous-ask: multiple unanswered asks; use tcm answer -ask <id>")
+		return true
+	}
+	if _, failure := s.appendDelegationAnswer(delegationID, asks[0].ID, text); failure != nil {
+		writeFollowupError(w, failure.status, failure.message)
+		return true
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(followupResponse{Mode: "answer", AskID: asks[0].ID})
+	return true
+}
+
+func (s *Server) resolveFollowupDelegation(req followupRequest) (string, *agentResolutionError) {
+	if s.Delegations == nil {
+		return "", &agentResolutionError{status: http.StatusNotFound, message: "delegation not found"}
+	}
+	record, err := s.Delegations.Get(req.Delegation)
+	if err != nil {
+		if errors.Is(err, delegation.ErrNotFound) {
+			return "", &agentResolutionError{status: http.StatusNotFound, message: "delegation not found"}
+		}
+		return "", &agentResolutionError{status: http.StatusInternalServerError, message: "could not read delegation"}
+	}
+	if req.Session != "" && req.Session != record.SessionName {
+		return "", &agentResolutionError{status: http.StatusBadRequest, message: "delegation and session identify different agents"}
+	}
+	if req.Pane != "" && req.Pane != record.PaneID {
+		return "", &agentResolutionError{status: http.StatusBadRequest, message: "delegation and pane identify different agents"}
+	}
+	if record.ThreadID != "" && req.Thread != "" && req.Thread != record.ThreadID {
+		return "", &agentResolutionError{status: http.StatusBadRequest, message: "delegation and thread identify different agents"}
+	}
+	return record.DelegationID, nil
+}
+
+func (s *Server) delegationForPane(session, paneID string) (string, error) {
+	if s.Delegations == nil || paneID == "" {
+		return "", nil
+	}
+	records, err := s.Delegations.List()
+	if err != nil {
+		return "", err
+	}
+	for i := len(records) - 1; i >= 0; i-- {
+		if records[i].SessionName == session && records[i].PaneID == paneID {
+			return records[i].DelegationID, nil
+		}
+	}
+	return "", nil
 }
 
 func followupStatusConflict(status string) string {

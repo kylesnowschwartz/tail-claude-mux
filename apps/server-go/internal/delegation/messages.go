@@ -125,6 +125,33 @@ func (s *Store) AnswerFor(delegationID, askID string) (Message, bool, error) {
 	return Message{}, false, nil
 }
 
+// UnansweredAsks returns delegate asks that have no paired answer.
+func (s *Store) UnansweredAsks(delegationID string) ([]Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	messages, err := s.readMessages(delegationID)
+	if err != nil {
+		return nil, err
+	}
+	answered := make(map[string]struct{})
+	for _, msg := range messages {
+		if msg.From == "orchestrator" && msg.Kind == "answer" {
+			answered[msg.ReplyTo] = struct{}{}
+		}
+	}
+	unanswered := make([]Message, 0)
+	for _, msg := range messages {
+		if msg.From != "delegate" || msg.Kind != "ask" {
+			continue
+		}
+		if _, ok := answered[msg.ID]; !ok {
+			unanswered = append(unanswered, msg)
+		}
+	}
+	return unanswered, nil
+}
+
 func validateMessage(msg Message) error {
 	if len(msg.Text) == 0 {
 		return errors.New("message text is empty")

@@ -99,6 +99,33 @@ func TestMessageStoreAnswerPairing(t *testing.T) {
 	}
 }
 
+func TestMessageStoreUnansweredAsks(t *testing.T) {
+	store := newTestStore(t, time.Date(2026, time.September, 1, 10, 0, 0, 0, time.UTC))
+	record := createTestRecord(t, store, CreateParams{Agent: "codex"})
+	answeredAsk, err := store.AppendMessage(record.DelegationID, Message{From: "delegate", Kind: "ask", Text: "first?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unansweredAsk, err := store.AppendMessage(record.DelegationID, Message{From: "delegate", Kind: "ask", Text: "second?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AppendMessage(record.DelegationID, Message{From: "delegate", Kind: "note", Text: "context"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AppendMessage(record.DelegationID, Message{From: "orchestrator", Kind: "answer", Text: "yes", ReplyTo: answeredAsk.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	asks, err := store.UnansweredAsks(record.DelegationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asks) != 1 || asks[0].ID != unansweredAsk.ID {
+		t.Fatalf("UnansweredAsks() = %#v, want %#v", asks, unansweredAsk)
+	}
+}
+
 func TestAppendMessageValidation(t *testing.T) {
 	store := newTestStore(t, time.Now().UTC())
 	record := createTestRecord(t, store, CreateParams{Agent: "codex"})

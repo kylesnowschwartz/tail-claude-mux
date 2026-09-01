@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -111,7 +112,7 @@ func TestFollowupPinsThreadAndRespawnsPane(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(body.MessageFile)
-	if body.UUID != uuid || body.RolloutPath != rolloutPath || body.PaneID != "%7" {
+	if body.UUID != uuid || body.RolloutPath != rolloutPath || body.PaneID != "%7" || body.Mode != "resume" {
 		t.Fatalf("response = %+v", body)
 	}
 	message, err := os.ReadFile(body.MessageFile)
@@ -125,6 +126,96 @@ func TestFollowupPinsThreadAndRespawnsPane(t *testing.T) {
 	wantCommand := fmt.Sprintf(`codex --profile tcm-delegate -c mcp_servers.just.enabled=false resume %s "Read %s and address it"`, uuid, body.MessageFile)
 	if respawnArgs[4] != wantCommand {
 		t.Fatalf("command = %q, want %q", respawnArgs[4], wantCommand)
+	}
+}
+
+func TestFollowupAnswersOneUnansweredAskBeforeRunningRefusal(t *testing.T) {
+	threadID := "33333333-3333-3333-3333-333333333333"
+	store, delegationID := createFollowupDelegation(t, threadID)
+	ask, err := store.AppendMessage(delegationID, delegation.Message{From: "delegate", Kind: "ask", Text: "continue?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "delegate", Agent: "codex", ThreadID: threadID, PaneID: "%42", Status: wire.StatusRunning}, false)
+	respawned := false
+	s := &Server{
+		Tracker: tr, Delegations: store,
+		Builder: &state.Builder{Tmux: &tmux.Tmux{Run: func(args ...string) (string, error) {
+			respawned = args[0] == "respawn-pane"
+			return "", nil
+		}}},
+	}
+	response := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"delegation":%q,"message":"yes"}`, delegationID)
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(body)))
+	if response.Code != http.StatusOK || respawned {
+		t.Fatalf("status = %d, respawned = %v: %s", response.Code, respawned, response.Body.String())
+	}
+	var result followupResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Mode != "answer" || result.AskID != ask.ID || result.MessageFile != "" || result.RolloutPath != "" {
+		t.Fatalf("response = %+v", result)
+	}
+
+	answered := httptest.NewRecorder()
+	path := "/delegation-answer?delegation=" + delegationID + "&ask=" + ask.ID + "&timeout=0"
+	s.Handler().ServeHTTP(answered, httptest.NewRequest(http.MethodGet, path, nil))
+	var answerBody delegationAnswerResponse
+	if err := json.Unmarshal(answered.Body.Bytes(), &answerBody); err != nil {
+		t.Fatal(err)
+	}
+	if answered.Code != http.StatusOK || !answerBody.Answered || answerBody.Message == nil || answerBody.Message.Text != "yes" {
+		t.Fatalf("answer response = %d %#v", answered.Code, answerBody)
+	}
+
+	double := httptest.NewRecorder()
+	doubleBody := fmt.Sprintf(`{"delegation":%q,"from":"orchestrator","kind":"answer","text":"again","replyTo":%q}`, delegationID, ask.ID)
+	s.Handler().ServeHTTP(double, httptest.NewRequest(http.MethodPost, "/delegation-message", bytes.NewBufferString(doubleBody)))
+	if double.Code != http.StatusConflict || !strings.Contains(double.Body.String(), "ask is already answered") {
+		t.Fatalf("double answer = %d %q", double.Code, double.Body.String())
+	}
+}
+
+func TestFollowupRejectsAmbiguousUnansweredAsks(t *testing.T) {
+	threadID := "33333333-3333-3333-3333-333333333333"
+	store, delegationID := createFollowupDelegation(t, threadID)
+	for _, text := range []string{"first?", "second?"} {
+		if _, err := store.AppendMessage(delegationID, delegation.Message{From: "delegate", Kind: "ask", Text: text}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "delegate", Agent: "codex", ThreadID: threadID, PaneID: "%42", Status: wire.StatusRunning}, false)
+	s := &Server{Tracker: tr, Delegations: store}
+	response := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"delegation":%q,"message":"yes"}`, delegationID)
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(body)))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	var result map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["error"] != "ambiguous-ask: multiple unanswered asks; use tcm answer -ask <id>" {
+		t.Fatalf("error = %q", result["error"])
+	}
+}
+
+func TestFollowupWithNoAskKeepsRunningRefusal(t *testing.T) {
+	threadID := "33333333-3333-3333-3333-333333333333"
+	store, delegationID := createFollowupDelegation(t, threadID)
+	tr := tracker.New()
+	tr.ApplyEvent(wire.AgentEvent{Session: "delegate", Agent: "codex", ThreadID: threadID, PaneID: "%42", Status: wire.StatusRunning}, false)
+	s := &Server{Tracker: tr, Delegations: store}
+	response := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"delegation":%q,"message":"continue"}`, delegationID)
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/followup", bytes.NewBufferString(body)))
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "session is running; refusing to interrupt it") {
+		t.Fatalf("response = %d %q", response.Code, response.Body.String())
 	}
 }
 

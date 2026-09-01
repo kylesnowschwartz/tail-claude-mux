@@ -30,6 +30,11 @@ type delegationAnswerResponse struct {
 	Message  *delegation.Message `json:"message,omitempty"`
 }
 
+type delegationMessageFailure struct {
+	status  int
+	message string
+}
+
 func (s *Server) handleDelegationMessage(w http.ResponseWriter, r *http.Request) {
 	var req delegationMessageRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, delegationMessageBodyLimit))
@@ -57,26 +62,14 @@ func (s *Server) handleDelegationMessage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if req.From == "orchestrator" && req.Kind == "answer" {
-		if req.ReplyTo == "" {
-			writeDelegationMessageError(w, http.StatusBadRequest, "answer replyTo is required")
+		stored, failure := s.appendDelegationAnswer(req.Delegation, req.ReplyTo, req.Text)
+		if failure != nil {
+			writeDelegationMessageError(w, failure.status, failure.message)
 			return
 		}
-		messages, err := s.Delegations.Messages(req.Delegation)
-		if err != nil {
-			writeDelegationStoreError(w, err)
-			return
-		}
-		if !containsAsk(messages, req.ReplyTo) {
-			writeDelegationMessageError(w, http.StatusBadRequest, "replyTo must name an existing ask")
-			return
-		}
-		if _, answered, err := s.Delegations.AnswerFor(req.Delegation, req.ReplyTo); err != nil {
-			writeDelegationStoreError(w, err)
-			return
-		} else if answered {
-			writeDelegationMessageError(w, http.StatusConflict, "ask is already answered")
-			return
-		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(stored)
+		return
 	}
 	stored, err := s.Delegations.AppendMessage(req.Delegation, delegation.Message{
 		From: req.From, Kind: req.Kind, Text: req.Text, ReplyTo: req.ReplyTo,
@@ -91,6 +84,42 @@ func (s *Server) handleDelegationMessage(w http.ResponseWriter, r *http.Request)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(stored)
+}
+
+// appendDelegationAnswer validates and stores an answer while messageMu is held.
+func (s *Server) appendDelegationAnswer(delegationID, askID, text string) (delegation.Message, *delegationMessageFailure) {
+	if askID == "" {
+		return delegation.Message{}, &delegationMessageFailure{status: http.StatusBadRequest, message: "answer replyTo is required"}
+	}
+	messages, err := s.Delegations.Messages(delegationID)
+	if err != nil {
+		return delegation.Message{}, delegationStoreFailure(err)
+	}
+	if !containsAsk(messages, askID) {
+		return delegation.Message{}, &delegationMessageFailure{status: http.StatusBadRequest, message: "replyTo must name an existing ask"}
+	}
+	if _, answered, err := s.Delegations.AnswerFor(delegationID, askID); err != nil {
+		return delegation.Message{}, delegationStoreFailure(err)
+	} else if answered {
+		return delegation.Message{}, &delegationMessageFailure{status: http.StatusConflict, message: "ask is already answered"}
+	}
+	stored, err := s.Delegations.AppendMessage(delegationID, delegation.Message{
+		From: "orchestrator", Kind: "answer", Text: text, ReplyTo: askID,
+	})
+	if err != nil {
+		if errors.Is(err, delegation.ErrNotFound) {
+			return delegation.Message{}, &delegationMessageFailure{status: http.StatusNotFound, message: "delegation not found"}
+		}
+		return delegation.Message{}, &delegationMessageFailure{status: http.StatusBadRequest, message: err.Error()}
+	}
+	return stored, nil
+}
+
+func delegationStoreFailure(err error) *delegationMessageFailure {
+	if errors.Is(err, delegation.ErrNotFound) {
+		return &delegationMessageFailure{status: http.StatusNotFound, message: "delegation not found"}
+	}
+	return &delegationMessageFailure{status: http.StatusInternalServerError, message: "could not read delegation messages"}
 }
 
 func (s *Server) handleDelegationMessages(w http.ResponseWriter, r *http.Request) {
