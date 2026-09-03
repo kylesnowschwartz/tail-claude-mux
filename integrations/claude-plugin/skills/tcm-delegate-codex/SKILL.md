@@ -11,6 +11,9 @@ description: >
   investigation/review/second opinions
   whose output the orchestrator consumes directly — use /codex:rescue for
   those. Headless or tmux-less contexts: fall back to /codex:rescue.
+  The `tcm` binary is NOT expected on PATH: this skill resolves it from its
+  own plugin root (`${CLAUDE_PLUGIN_ROOT}/../../apps/server-go/bin/tcm`), so
+  `which tcm` failing is not a reason to skip the skill or fall back.
 ---
 
 # tcm-delegate-codex — visible Codex delegation via the tcm CLI
