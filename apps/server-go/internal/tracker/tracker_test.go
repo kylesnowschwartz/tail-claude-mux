@@ -766,6 +766,48 @@ func TestAgentTracker(t *testing.T) {
 }
 
 func TestApplyPanePresence(t *testing.T) {
+	t.Run("retires a done row whose dead process was replaced in the same pane", func(t *testing.T) {
+		alive := map[int]bool{200: true}
+		tr := New(fixedNow(), WithIsPidAlive(func(pid int) bool { return alive[pid] }))
+		// Old occupant: finished, process gone, still bound to %1.
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "s1", Agent: "claude-code", ThreadID: "a", Status: wire.StatusDone, PID: 100}), false)
+		tr.ApplyPanePresence("s1", []PanePresence{{Agent: "claude-code", PaneID: "%1", PID: 100, ThreadID: "a"}})
+
+		// New claude starts in the same pane.
+		changed := tr.ApplyPanePresence("s1", []PanePresence{{Agent: "claude-code", PaneID: "%1", PID: 200, ThreadID: "b"}})
+		if !changed {
+			t.Error("changed = false, want true")
+		}
+		if a := findThread(tr.GetAgents("s1"), "a"); a == nil || a.Liveness != wire.LivenessExited || a.PaneID != "" {
+			t.Errorf("old row = %+v, want liveness exited with no pane", a)
+		}
+
+		tr.PruneTerminal()
+		agents := tr.GetAgents("s1")
+		if len(agents) != 1 {
+			t.Fatalf("agents = %d, want 1: %+v", len(agents), agents)
+		}
+		if agents[0].ThreadID != "b" || agents[0].PaneID != "%1" || agents[0].PID != 200 {
+			t.Errorf("surviving row = %+v, want thread b on %%1 pid 200", agents[0])
+		}
+	})
+
+	t.Run("keeps a same-pane row whose different pid is still alive", func(t *testing.T) {
+		tr := New(fixedNow(), WithIsPidAlive(func(int) bool { return true }))
+		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "s1", Agent: "claude-code", ThreadID: "a", Status: wire.StatusDone, PID: 100}), false)
+		tr.ApplyPanePresence("s1", []PanePresence{{Agent: "claude-code", PaneID: "%1", PID: 100, ThreadID: "a"}})
+
+		tr.ApplyPanePresence("s1", []PanePresence{{Agent: "claude-code", PaneID: "%1", PID: 200, ThreadID: "b"}})
+		tr.PruneTerminal()
+		agents := tr.GetAgents("s1")
+		if len(agents) != 2 {
+			t.Fatalf("agents = %d, want 2: %+v", len(agents), agents)
+		}
+		if a := findThread(agents, "a"); a == nil || a.Liveness != wire.LivenessAlive {
+			t.Errorf("old row = %+v, want still alive", a)
+		}
+	})
+
 	t.Run("enriches existing watcher entry with paneId and liveness", func(t *testing.T) {
 		tr := New(fixedNow())
 		tr.ApplyEvent(newEvent(wire.AgentEvent{Session: "sess-1", Agent: "claude-code", ThreadID: "abc", Status: wire.StatusRunning}), false)

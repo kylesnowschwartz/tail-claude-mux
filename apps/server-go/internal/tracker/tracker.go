@@ -722,6 +722,9 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 			if t.retireSupersededPidRows(session, pa.Agent, bestKey, pa.PID) {
 				changed = true
 			}
+			if t.retireDisplacedPaneRows(session, pa.Agent, bestKey, pa.PaneID, pa.PID) {
+				changed = true
+			}
 			if wasDifferent {
 				changed = true
 			}
@@ -790,6 +793,9 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 		if t.retireSupersededPidRows(session, pa.Agent, sk, pa.PID) {
 			changed = true
 		}
+		if t.retireDisplacedPaneRows(session, pa.Agent, sk, pa.PaneID, pa.PID) {
+			changed = true
+		}
 	}
 
 	// 3. Unclaimed seed ghosts (liveness unset, terminal-ish status) are
@@ -826,6 +832,36 @@ func (t *Tracker) retireSupersededPidRows(session, agent, keepKey string, pid in
 		}
 		// keepKey exists in the map, so the delete can't empty the session.
 		t.deleteInstance(session, k)
+		changed = true
+	}
+	return changed
+}
+
+// retireDisplacedPaneRows enforces one-pane-one-alive-row per agent after a
+// pane scan binds paneID to keepKey with process pid: any other same-agent
+// row still claiming that pane under a different pid is a previous occupant
+// whose process ended and whose pane was reused. Such a row never takes
+// pane misses (the pane exists) and, when its status is terminal, the pid
+// sweep leaves it alone — so this is the only place it can be retired. A
+// row whose different pid is still alive is left for the existing rules,
+// since two live processes on one pane is not a case this rule owns.
+// Marks the row exited and unbinds its pane; PruneTerminal removes done rows
+// and PruneStuck ages out running ones. Reports whether anything changed.
+func (t *Tracker) retireDisplacedPaneRows(session, agent, keepKey, paneID string, pid int) bool {
+	if paneID == "" {
+		return false
+	}
+	changed := false
+	for k, ev := range t.instances[session] {
+		if k == keepKey || ev.Agent != agent || ev.PaneID != paneID || ev.Liveness != wire.LivenessAlive || ev.PID == pid {
+			continue
+		}
+		if ev.PID != 0 && t.isPidAlive(ev.PID) {
+			continue
+		}
+		ev.Liveness = wire.LivenessExited
+		ev.PaneID = ""
+		t.clearMissState(session, k)
 		changed = true
 	}
 	return changed
