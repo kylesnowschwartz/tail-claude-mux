@@ -1127,6 +1127,12 @@ func TestClassifySessionStatus(t *testing.T) {
 			&registry.Live{SessionID: "t", Status: "busy"}, tracker.ProbeWorking},
 		{"sessionId mismatch (pid reused) → ended even if busy",
 			&registry.Live{SessionID: "other", Status: "busy", UpdatedAt: registry.EpochMS(now)}, tracker.ProbeEnded},
+		{"shell + fresh updatedAt → working",
+			&registry.Live{SessionID: "t", Status: "shell", UpdatedAt: registry.EpochMS(now - 1000)}, tracker.ProbeWorking},
+		{"shell + updatedAt older than hung ceiling → still working",
+			&registry.Live{SessionID: "t", Status: "shell", UpdatedAt: registry.EpochMS(now - hung - 1)}, tracker.ProbeWorking},
+		{"sessionId mismatch with shell → ended",
+			&registry.Live{SessionID: "other", Status: "shell", UpdatedAt: registry.EpochMS(now)}, tracker.ProbeEnded},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1142,6 +1148,40 @@ func TestClassifySessionStatus(t *testing.T) {
 			if got := ClassifySessionStatus(file, "t", now); got != tracker.ProbeEnded {
 				t.Errorf("ClassifySessionStatus(status=%q) = %v, want ProbeEnded", status, got)
 			}
+		}
+	})
+}
+
+func TestScanStateForPid(t *testing.T) {
+	sessionsDir := t.TempDir()
+	a := New(t.TempDir(), sessionsDir)
+
+	cases := []struct {
+		pid    int
+		status string
+		want   tracker.ProbeVerdict
+	}{
+		{601, "shell", tracker.ProbeWorking},
+		{602, "idle", tracker.ProbeNoSignal},
+		{603, "busy", tracker.ProbeNoSignal},
+	}
+	for _, c := range cases {
+		t.Run(c.status, func(t *testing.T) {
+			writeSessionFile(t, sessionsDir, c.pid, map[string]any{
+				"pid": c.pid, "sessionId": "sid-" + c.status, "name": "name-" + c.status, "status": c.status,
+			})
+			id, name, verdict := a.ScanStateForPid(c.pid, "")
+			if id != "sid-"+c.status || name != "name-"+c.status || verdict != c.want {
+				t.Errorf("ScanStateForPid = (%q, %q, %v), want (%q, %q, %v)",
+					id, name, verdict, "sid-"+c.status, "name-"+c.status, c.want)
+			}
+		})
+	}
+
+	t.Run("missing file", func(t *testing.T) {
+		id, name, verdict := a.ScanStateForPid(999, "")
+		if id != "" || name != "" || verdict != tracker.ProbeNoSignal {
+			t.Errorf("ScanStateForPid = (%q, %q, %v), want empty ProbeNoSignal", id, name, verdict)
 		}
 	})
 }

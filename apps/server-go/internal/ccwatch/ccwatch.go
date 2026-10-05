@@ -52,6 +52,11 @@ const staleMS = 5 * 60 * 1000
 // tool call so a long Bash/build is never misread as stuck.
 const busyHungMS = 30 * 60 * 1000
 
+// sessionStatusShell is the sessions/<pid>.json status for a session whose
+// turn ended while a background Bash job is still running. It clears when the
+// job ends.
+const sessionStatusShell = "shell"
+
 // hookStatusMap is HOOK_STATUS_MAP: hook event → agent status.
 // StopFailure (API-error turn death) surfaces as "error" — the truthful
 // terminal state; without it the "running" spinner would never clear.
@@ -188,8 +193,19 @@ func (a *Adapter) ResultForThread(threadID string) (ResultSnapshot, error) {
 	return ResultSnapshot{}, nil
 }
 
+// ScanStateForPid reports the session's ids plus a working verdict while
+// Claude Code records status "shell" (turn ended, background Bash job still
+// running). Hooks own every other transition, so all other statuses are
+// ProbeNoSignal.
 func (a *Adapter) ScanStateForPid(pid int, _ string) (threadID, name string, verdict tracker.ProbeVerdict) {
-	threadID, name = a.SessionInfoForPid(pid)
+	l := a.readSessionFile(pid)
+	if l == nil {
+		return "", "", tracker.ProbeNoSignal
+	}
+	threadID, name = l.SessionID, textutil.SanitizeSessionName(l.Name)
+	if l.Status == sessionStatusShell {
+		return threadID, name, tracker.ProbeWorking
+	}
 	return threadID, name, tracker.ProbeNoSignal
 }
 
@@ -443,6 +459,8 @@ func (a *Adapter) resolvePidFromSessions(threadID string) int {
 //   - sessionId mismatch (pid reused for another session) → ProbeEnded
 //   - busy + fresh updatedAt → ProbeWorking
 //   - busy + updatedAt older than busyHungMS → ProbeEnded (hung)
+//   - shell → ProbeWorking (background job; no hung cutoff, updatedAt is
+//     frozen while it runs)
 //   - idle | waiting | done → ProbeEnded
 func ClassifySessionStatus(file *registry.Live, threadID string, nowMS int64) tracker.ProbeVerdict {
 	if file == nil {
@@ -456,6 +474,8 @@ func ClassifySessionStatus(file *registry.Live, threadID string, nowMS int64) tr
 		if file.UpdatedAt != 0 && nowMS-int64(file.UpdatedAt) > busyHungMS {
 			return tracker.ProbeEnded
 		}
+		return tracker.ProbeWorking
+	case sessionStatusShell:
 		return tracker.ProbeWorking
 	case "idle", "waiting", "done":
 		return tracker.ProbeEnded
