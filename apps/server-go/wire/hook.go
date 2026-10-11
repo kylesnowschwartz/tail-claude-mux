@@ -11,6 +11,7 @@ const (
 	maxSessionIDLen        = 256
 	maxDelegationIDLen     = 128
 	maxAgentLen            = 64
+	maxSubagentIDLen       = 128
 	maxToolNameLen         = 128
 	maxNotificationTypeLen = 64
 	maxSessionNameLen      = 256
@@ -29,13 +30,17 @@ var validShutdownReasons = map[string]bool{
 
 // HookPayload is the validated POST /hook body (contracts/agent-watcher.ts
 // HookPayload). Required fields are Event, SessionID, and Cwd; everything
-// else is optional and zero-valued when absent or malformed.
+// else is optional and zero-valued when absent or malformed. SubagentID is
+// Claude Code's agent_id, set only on hooks fired inside a subagent (which
+// carry the parent's session_id); it is distinct from Agent, the
+// claude-code/codex discriminator.
 type HookPayload struct {
 	Event            string                     `json:"event"`
 	SessionID        string                     `json:"session_id"`
 	Cwd              string                     `json:"cwd"`
 	DelegationID     string                     `json:"delegation_id,omitempty"`
 	Agent            string                     `json:"agent,omitempty"`
+	SubagentID       string                     `json:"agent_id,omitempty"`
 	ToolName         string                     `json:"tool_name,omitempty"`
 	Prompt           string                     `json:"prompt,omitempty"`
 	ToolInput        map[string]json.RawMessage `json:"tool_input,omitempty"`
@@ -90,6 +95,7 @@ func ParseHookPayload(body []byte) (HookPayload, bool) {
 		Cwd:              cwd,
 		DelegationID:     optBoundedString(raw["delegation_id"], maxDelegationIDLen),
 		Agent:            optBoundedString(raw["agent"], maxAgentLen),
+		SubagentID:       optBoundedString(raw["agent_id"], maxSubagentIDLen),
 		ToolName:         optBoundedString(raw["tool_name"], maxToolNameLen),
 		Prompt:           optBoundedString(raw["prompt"], maxStringLen),
 		ToolInput:        optPlainObject(raw["tool_input"], maxToolInputKeys),

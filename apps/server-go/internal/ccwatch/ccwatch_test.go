@@ -61,6 +61,12 @@ func toolHook(event, sessionID, cwd, toolName string, toolInput map[string]json.
 	return p
 }
 
+// fromSubagent marks a hook as fired inside the given subagent.
+func fromSubagent(p wire.HookPayload, subagentID string) wire.HookPayload {
+	p.SubagentID = subagentID
+	return p
+}
+
 func notifHook(event, sessionID, cwd, notificationType string) wire.HookPayload {
 	p := hook(event, sessionID, cwd)
 	p.NotificationType = notificationType
@@ -239,6 +245,59 @@ func TestClaudeCodeHookAdapter(t *testing.T) {
 		wantLen(t, tc.events, 1)
 		if got := a.threads["sess-1"].lastToolDescription; got != "Running rm -rf build" {
 			t.Errorf("lastToolDescription = %q, want the denied call's description kept", got)
+		}
+	})
+
+	// --- Subagent hooks while a dialog is open ---
+
+	t.Run("a subagent clears its own wait", func(t *testing.T) {
+		a, tc := setup(t)
+		a.HandleHook(fromSubagent(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "Bash", nil), "sub-1"))
+		a.HandleHook(fromSubagent(toolHook("PostToolUse", "sess-1", "/tmp/myproject", "Bash", nil), "sub-1"))
+
+		wantLen(t, tc.events, 2)
+		if tc.events[1].Status != wire.StatusRunning {
+			t.Errorf("status = %q, want running", tc.events[1].Status)
+		}
+	})
+
+	t.Run("main-session lifecycle events apply while a subagent's dialog is open", func(t *testing.T) {
+		for _, tt := range []struct{ event, want string }{
+			{"UserPromptSubmit", wire.StatusRunning},
+			{"Stop", wire.StatusDone},
+		} {
+			a, tc := setup(t)
+			a.HandleHook(fromSubagent(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "Bash", nil), "sub-1"))
+			a.HandleHook(hook(tt.event, "sess-1", "/tmp/myproject"))
+
+			wantLen(t, tc.events, 2)
+			if tc.events[1].Status != tt.want {
+				t.Errorf("%s: status = %q, want %q", tt.event, tc.events[1].Status, tt.want)
+			}
+		}
+	})
+
+	t.Run("subagent tool events emit running when nothing is waiting", func(t *testing.T) {
+		a, tc := setup(t)
+		a.HandleHook(fromSubagent(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Bash", nil), "sub-1"))
+
+		wantLen(t, tc.events, 1)
+		if tc.events[0].Status != wire.StatusRunning {
+			t.Errorf("status = %q, want running", tc.events[0].Status)
+		}
+	})
+
+	t.Run("SessionEnd ends a thread whose wait a subagent opened", func(t *testing.T) {
+		a, tc := setup(t)
+		a.HandleHook(fromSubagent(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "Bash", nil), "sub-1"))
+		a.HandleHook(hook("SessionEnd", "sess-1", "/tmp/myproject"))
+
+		wantLen(t, tc.events, 2)
+		if !tc.events[1].Ended {
+			t.Errorf("events[1] = %+v, want Ended", tc.events[1])
+		}
+		if _, ok := a.threads["sess-1"]; ok {
+			t.Error("thread still tracked after SessionEnd")
 		}
 	})
 
@@ -1471,6 +1530,102 @@ func TestClassifyTitleStatus(t *testing.T) {
 			if got := ClassifyTitleStatus(title); got != tracker.ProbeNoSignal {
 				t.Errorf("ClassifyTitleStatus(%q) = %v, want ProbeNoSignal", title, got)
 			}
+		}
+	})
+}
+
+// describe("ClaudeCodeHookAdapter wait ownership")
+func TestClaudeCodeHookAdapterWaitOwnership(t *testing.T) {
+	const pid = 43000
+	setup := func(t *testing.T, sessionStatus string) (*Adapter, *testCtx, func(status string)) {
+		sessionsDir := t.TempDir()
+		a := New(t.TempDir(), sessionsDir)
+		tc := makeCtx(map[string]string{"/tmp/myproject": "myproject"}, nil)
+		tc.ctx.ResolveSessionByPid = func(int) string { return "myproject" }
+		a.Start(&tc.ctx)
+		write := func(status string) {
+			if status == "" {
+				return
+			}
+			writeSessionFile(t, sessionsDir, pid, map[string]any{
+				"pid": pid, "sessionId": "sess-1", "status": status,
+			})
+		}
+		write(sessionStatus)
+		return a, tc, write
+	}
+	question := map[string]json.RawMessage{"question": json.RawMessage(`"Which framework?"`)}
+	bash := map[string]json.RawMessage{"command": json.RawMessage(`"ls"`)}
+
+	t.Run("subagent tool events do not clear a main-session wait", func(t *testing.T) {
+		a, tc, _ := setup(t, "waiting")
+		a.HandleHook(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "AskUserQuestion", question))
+		a.HandleHook(fromSubagent(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Bash", bash), "sub-1"))
+		a.HandleHook(fromSubagent(toolHook("PostToolUse", "sess-1", "/tmp/myproject", "Bash", bash), "sub-1"))
+
+		wantLen(t, tc.events, 1)
+		state := a.threads["sess-1"]
+		if state.status != wire.StatusWaiting {
+			t.Errorf("status = %q, want waiting", state.status)
+		}
+		if state.lastToolDescription != "Question: Which framework?" {
+			t.Errorf("lastToolDescription = %q, want the open question", state.lastToolDescription)
+		}
+
+		a.HandleHook(toolHook("PostToolUse", "sess-1", "/tmp/myproject", "AskUserQuestion", question))
+		wantLen(t, tc.events, 2)
+		if tc.events[1].Status != wire.StatusRunning {
+			t.Errorf("status = %q, want running", tc.events[1].Status)
+		}
+	})
+
+	t.Run("main-session tool events are ignored while the session file shows a subagent's dialog open", func(t *testing.T) {
+		a, tc, _ := setup(t, "waiting")
+		a.HandleHook(fromSubagent(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "Bash", nil), "sub-1"))
+		a.HandleHook(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Read", nil))
+
+		wantLen(t, tc.events, 1)
+		if got := a.threads["sess-1"].status; got != wire.StatusWaiting {
+			t.Errorf("status = %q, want waiting", got)
+		}
+	})
+
+	t.Run("main-session tool events apply once the session file leaves waiting", func(t *testing.T) {
+		for _, tt := range []struct{ name, fileStatus, event string }{
+			{"answered", "busy", "PreToolUse"},
+			{"declined", "idle", "PostToolUse"},
+		} {
+			a, tc, write := setup(t, "waiting")
+			a.HandleHook(fromSubagent(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "Bash", nil), "sub-1"))
+			write(tt.fileStatus)
+			a.HandleHook(toolHook(tt.event, "sess-1", "/tmp/myproject", "Read", nil))
+
+			wantLen(t, tc.events, 2)
+			if tc.events[1].Status != wire.StatusRunning {
+				t.Errorf("%s: status = %q, want running", tt.name, tc.events[1].Status)
+			}
+		}
+	})
+
+	t.Run("main-session tool events apply when no session file exists", func(t *testing.T) {
+		a, tc, _ := setup(t, "")
+		a.HandleHook(fromSubagent(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "Bash", nil), "sub-1"))
+		a.HandleHook(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Read", nil))
+
+		wantLen(t, tc.events, 2)
+		if tc.events[1].Status != wire.StatusRunning {
+			t.Errorf("status = %q, want running", tc.events[1].Status)
+		}
+	})
+
+	t.Run("the owning subagent's events apply while the session file shows waiting", func(t *testing.T) {
+		a, tc, _ := setup(t, "waiting")
+		a.HandleHook(fromSubagent(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "Bash", nil), "sub-1"))
+		a.HandleHook(fromSubagent(toolHook("PostToolUse", "sess-1", "/tmp/myproject", "Bash", nil), "sub-1"))
+
+		wantLen(t, tc.events, 2)
+		if tc.events[1].Status != wire.StatusRunning {
+			t.Errorf("status = %q, want running", tc.events[1].Status)
 		}
 	})
 }

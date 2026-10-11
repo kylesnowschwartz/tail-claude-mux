@@ -52,11 +52,13 @@ const staleMS = 5 * 60 * 1000
 // tool call so a long Bash/build is never misread as stuck.
 const busyHungMS = 30 * 60 * 1000
 
-// sessionStatusBusy and sessionStatusIdle are the sessions/<pid>.json
-// statuses for a session mid-turn and at its prompt.
+// sessionStatusBusy, sessionStatusIdle, and sessionStatusWaiting are the
+// sessions/<pid>.json statuses for a session mid-turn, at its prompt, and
+// blocked on an open dialog.
 const (
-	sessionStatusBusy = "busy"
-	sessionStatusIdle = "idle"
+	sessionStatusBusy    = "busy"
+	sessionStatusIdle    = "idle"
+	sessionStatusWaiting = "waiting"
 )
 
 // sessionStatusShell is the sessions/<pid>.json status for a session whose
@@ -117,6 +119,9 @@ type threadState struct {
 	// subagent from sessions/<pid>.json `agent`, "" when the parent thread
 	// is in control.
 	subagent string
+	// waitingSubagent is the subagent id whose hook opened the current
+	// wait; "" means the main session opened it.
+	waitingSubagent string
 	// nonTmuxLogged fires once per thread: after the first "dropped" hook
 	// from a classified non-tmux agent (registry Kind != "interactive", e.g.
 	// claude bg-spare), further drops for the same thread stay silent
@@ -374,6 +379,20 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		return
 	}
 
+	// Subagent hooks arrive under the parent's session_id. While the
+	// session file shows a dialog still open, only the agent that opened it
+	// may change the row through tool and notification events, so a
+	// background subagent's tool calls cannot clear a question the user has
+	// not answered. The file is the authority because a declined dialog
+	// fires no hook and the pane scan can resolve a wait without touching
+	// this state; when it is absent, mismatched, or no longer waiting, the
+	// wait is over or unknowable and the event applies. Lifecycle events
+	// always apply.
+	if state.status == wire.StatusWaiting && waitOwnedEvents[payload.Event] &&
+		payload.SubagentID != state.waitingSubagent && a.dialogOpen(threadID, state.pid) {
+		return
+	}
+
 	hasToolContext := payload.Event == "PreToolUse" || payload.Event == "PermissionRequest"
 	// PreToolUse fires exactly once per tool call, BEFORE the permission
 	// system evaluates (its hook output can allow/deny), and never re-fires
@@ -402,6 +421,9 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	}
 
 	state.status = newStatus
+	if newStatus == wire.StatusWaiting {
+		state.waitingSubagent = payload.SubagentID
+	}
 	a.emit(threadID, state, session, kind)
 }
 
@@ -411,6 +433,17 @@ var toolOutcomeEvents = map[string]bool{
 	"PostToolUse":        true,
 	"PostToolUseFailure": true,
 	"PermissionDenied":   true,
+}
+
+// waitOwnedEvents concern a tool call or its dialog; while a row is waiting,
+// only the agent that opened the wait may change the row through them.
+var waitOwnedEvents = map[string]bool{
+	"PreToolUse":         true,
+	"PermissionRequest":  true,
+	"PostToolUse":        true,
+	"PostToolUseFailure": true,
+	"PermissionDenied":   true,
+	"Notification":       true,
 }
 
 // waiting/idle Notification subtypes (user must act / agent idle at prompt).
@@ -501,6 +534,16 @@ func (a *Adapter) readSessionFile(pid int) *registry.Live {
 	return &l
 }
 
+// dialogOpen reports whether sessions/<pid>.json identifies this thread and
+// records an open dialog.
+func (a *Adapter) dialogOpen(threadID string, pid int) bool {
+	if pid == 0 {
+		return false
+	}
+	file := a.readSessionFile(pid)
+	return file != nil && file.SessionID == threadID && file.Status == sessionStatusWaiting
+}
+
 // resolvePidFromSessions walks the sessions registry once and returns the
 // pid whose file matches threadID (0 = none).
 func (a *Adapter) resolvePidFromSessions(threadID string) int {
@@ -537,7 +580,7 @@ func ClassifySessionStatus(file *registry.Live, threadID string, nowMS int64) tr
 		return tracker.ProbeWorking
 	case sessionStatusShell:
 		return tracker.ProbeWorking
-	case sessionStatusIdle, "waiting", "done":
+	case sessionStatusIdle, sessionStatusWaiting, "done":
 		return tracker.ProbeEnded
 	default:
 		return tracker.ProbeNoSignal // status absent — defer to prune ceiling

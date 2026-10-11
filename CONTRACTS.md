@@ -66,6 +66,14 @@ agent that fired it.
   `StopFailure`, not `Stop` — without it the row sticks on `running`).
   `Notification` branches on `notification_type`: `permission_prompt` →
   `waiting`, `idle_prompt` → `done`, others ignored.
+- Hooks fired inside a subagent carry the parent's `session_id` plus
+  `agent_id`. While a row is `waiting` and `~/.claude/sessions/<pid>.json`
+  still records `status: "waiting"` for the thread, only tool and
+  notification hooks from the agent that opened the wait change the row.
+  When that file is absent, names another session, or shows any other
+  status, the wait is over and every hook applies. Lifecycle hooks
+  (`UserPromptSubmit`, `Stop`, `StopFailure`, `SessionStart`) and
+  `SessionEnd` always apply.
 - Routing is pid-first: resolve the long-lived `claude` pid from
   `process_snapshot` (ancestor walk against the tmux pane table), then
   pid → session. If the pid resolves but no pane matches, the event is
