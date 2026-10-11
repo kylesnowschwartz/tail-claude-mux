@@ -351,14 +351,15 @@ func (a *Adapter) SessionInfoForPid(pid int) (threadID, name string) {
 }
 
 // ScanStateForPid resolves identity and status from one rollout lookup so the
-// three-second pane scan launches lsof only once per Codex process.
-func (a *Adapter) ScanStateForPid(pid int, _ string) (threadID, name string, verdict tracker.ProbeVerdict) {
+// three-second pane scan launches lsof only once per Codex process. The
+// rollout records no permission-prompt answer, so Prompt stays empty.
+func (a *Adapter) ScanStateForPid(pid int, _ string) tracker.ScanState {
 	path := a.rolloutPathForPID(pid, "")
-	threadID, name = a.sessionInfoForRollout(path)
+	threadID, name := a.sessionInfoForRollout(path)
 	if threadID == "" {
-		return "", "", tracker.ProbeNoSignal
+		return tracker.ScanState{}
 	}
-	return threadID, name, scanRolloutPath(path)
+	return tracker.ScanState{ThreadID: threadID, ThreadName: name, Verdict: scanRolloutPath(path)}
 }
 
 func (a *Adapter) sessionInfoForRollout(path string) (threadID, name string) {

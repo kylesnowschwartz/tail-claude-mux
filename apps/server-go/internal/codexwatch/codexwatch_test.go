@@ -541,9 +541,10 @@ func TestScanStateForPidReusesRolloutLookup(t *testing.T) {
 		return []string{path}
 	}
 
-	gotID, gotName, verdict := a.ScanStateForPid(4242, "ignored")
-	if gotID != threadID || gotName != "Primary task" || verdict != tracker.ProbeWorking {
-		t.Fatalf("ScanStateForPid = (%q, %q, %v), want (%q, %q, ProbeWorking)", gotID, gotName, verdict, threadID, "Primary task")
+	got := a.ScanStateForPid(4242, "ignored")
+	want := tracker.ScanState{ThreadID: threadID, ThreadName: "Primary task", Verdict: tracker.ProbeWorking}
+	if got != want {
+		t.Fatalf("ScanStateForPid = %+v, want %+v", got, want)
 	}
 	if lookups != 1 {
 		t.Fatalf("rollout lookups = %d, want 1", lookups)
@@ -558,9 +559,9 @@ func TestScanStateForPidClassifiesCompletedRollout(t *testing.T) {
 	a := New(filepath.Join(dir, "sessions"), filepath.Join(dir, "index.jsonl"))
 	a.openFilesForPID = func(int) []string { return []string{path} }
 
-	gotID, _, verdict := a.ScanStateForPid(4242, "")
-	if gotID != threadID || verdict != tracker.ProbeDone {
-		t.Fatalf("ScanStateForPid = (%q, %v), want (%q, ProbeDone)", gotID, verdict, threadID)
+	got := a.ScanStateForPid(4242, "")
+	if got.ThreadID != threadID || got.Verdict != tracker.ProbeDone {
+		t.Fatalf("ScanStateForPid = %+v, want thread %q with ProbeDone", got, threadID)
 	}
 }
 

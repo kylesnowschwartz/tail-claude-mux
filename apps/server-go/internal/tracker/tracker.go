@@ -85,6 +85,33 @@ const (
 	ProbeError
 )
 
+// ScanState is one watcher's pane-scan reading of an agent process: its
+// thread identity, the status verdict for rows in any state but waiting,
+// and the separate verdict that may clear a waiting row.
+type ScanState struct {
+	ThreadID   string
+	ThreadName string
+	Verdict    ProbeVerdict
+	Prompt     PromptResolution
+}
+
+// PromptResolution is the agent's own record that a permission prompt was
+// answered: ProbeWorking when approved (the tool is running), ProbeDone
+// when declined (the agent is back at its prompt), ProbeNoSignal when the
+// record says nothing about a prompt. AtMS is when the agent recorded that
+// status.
+type PromptResolution struct {
+	Verdict ProbeVerdict
+	AtMS    int64
+}
+
+// Clears reports whether the resolution answers the prompt of a row that
+// went waiting at waitingSinceMS. Only a status recorded after the row went
+// waiting can describe that prompt; an earlier one predates the request.
+func (r PromptResolution) Clears(waitingSinceMS int64) bool {
+	return r.Verdict != ProbeNoSignal && r.AtMS > waitingSinceMS
+}
+
 // Tracker is the AgentTracker port.
 type Tracker struct {
 	// instances: session → instance key → event.

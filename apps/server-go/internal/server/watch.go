@@ -48,7 +48,7 @@ const (
 
 type agentStateSource interface {
 	Name() string
-	ScanStateForPid(pid int, paneTitle string) (threadID, name string, verdict tracker.ProbeVerdict)
+	ScanStateForPid(pid int, paneTitle string) tracker.ScanState
 	ProbeLiveStatus(pid int, threadID, paneTitle string) tracker.ProbeVerdict
 }
 
@@ -72,17 +72,46 @@ func (s *Server) agentStateSources() []agentStateSource {
 	return sources
 }
 
-func scanStateForPane(pa tracker.PanePresence, sources ...agentStateSource) (tracker.PanePresence, tracker.ProbeVerdict) {
+func scanStateForPane(pa tracker.PanePresence, sources ...agentStateSource) (tracker.PanePresence, tracker.ScanState) {
 	if pa.PID == 0 {
-		return pa, tracker.ProbeNoSignal
+		return pa, tracker.ScanState{}
 	}
 	source := stateSourceForAgent(pa.Agent, sources...)
 	if source == nil {
-		return pa, tracker.ProbeNoSignal
+		return pa, tracker.ScanState{}
 	}
-	var verdict tracker.ProbeVerdict
-	pa.ThreadID, pa.ThreadName, verdict = source.ScanStateForPid(pa.PID, pa.PaneTitle)
-	return pa, verdict
+	state := source.ScanStateForPid(pa.PID, pa.PaneTitle)
+	pa.ThreadID, pa.ThreadName = state.ThreadID, state.ThreadName
+	return pa, state
+}
+
+// scanEventOver decides what one scan reading does to the row it describes,
+// given that row's current event (nil = no row yet). A waiting row comes
+// from a hook's permission request, which is more specific than a scan's
+// generic working signal, so only a prompt resolution recorded after the
+// row went waiting clears it; an approval keeps the description of the
+// call the prompt was about. Every other row takes the general verdict.
+// ok=false leaves the row untouched.
+func scanEventOver(previous *wire.AgentEvent, ev wire.AgentEvent, state tracker.ScanState) (wire.AgentEvent, bool) {
+	if previous != nil && previous.Status == wire.StatusWaiting {
+		if !state.Prompt.Clears(previous.TS) {
+			return ev, false
+		}
+		ev.Status = scanStatus(state.Prompt.Verdict)
+		if ev.Status == wire.StatusRunning {
+			ev.ToolDescription = previous.ToolDescription
+			ev.ToolVerb = previous.ToolVerb
+		}
+		return ev, ev.Status != ""
+	}
+	ev.Status = scanStatus(state.Verdict)
+	return ev, ev.Status != ""
+}
+
+// scanReading is one pane's scan result awaiting the fold under the lock.
+type scanReading struct {
+	ev    wire.AgentEvent
+	state tracker.ScanState
 }
 
 func (s *Server) bindDelegation(delegationID, agent, threadID string) {
@@ -315,33 +344,35 @@ func (s *Server) paneScanLoop() {
 		// from birth instead of waiting for a hook to graduate them. File IO,
 		// so outside the lock.
 		stateSources := s.agentStateSources()
-		var scanUpdates []wire.AgentEvent
+		var readings []scanReading
 		for session, paneAgents := range next {
 			for i, pa := range paneAgents {
-				var verdict tracker.ProbeVerdict
-				paneAgents[i], verdict = scanStateForPane(pa, stateSources...)
-				if status := scanStatus(verdict); status != "" {
-					scanUpdates = append(scanUpdates, wire.AgentEvent{
+				var state tracker.ScanState
+				paneAgents[i], state = scanStateForPane(pa, stateSources...)
+				if state.Verdict == tracker.ProbeNoSignal && state.Prompt.Verdict == tracker.ProbeNoSignal {
+					continue
+				}
+				readings = append(readings, scanReading{
+					ev: wire.AgentEvent{
 						Agent:      paneAgents[i].Agent,
 						Session:    session,
-						Status:     status,
 						TS:         time.Now().UnixMilli(),
 						ThreadID:   paneAgents[i].ThreadID,
 						ThreadName: paneAgents[i].ThreadName,
 						PID:        paneAgents[i].PID,
-					})
-				}
+					},
+					state: state,
+				})
 			}
 		}
 		s.bindDelegationsFromPaneScan(next)
 
 		s.mu.Lock()
 		changed := false
-		for _, ev := range scanUpdates {
-			previous := s.Tracker.GetEvent(ev.Session, ev.Agent, ev.ThreadID, "")
-			// A hook's permission/request state is more specific than a
-			// rollout's generic "working" signal.
-			if previous != nil && previous.Status == wire.StatusWaiting {
+		for _, reading := range readings {
+			previous := s.Tracker.GetEvent(reading.ev.Session, reading.ev.Agent, reading.ev.ThreadID, "")
+			ev, ok := scanEventOver(previous, reading.ev, reading.state)
+			if !ok {
 				continue
 			}
 			if previous == nil || previous.Status != ev.Status {

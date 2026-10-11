@@ -1199,34 +1199,79 @@ func TestScanStateForPid(t *testing.T) {
 	sessionsDir := t.TempDir()
 	a := New(t.TempDir(), sessionsDir)
 
+	const now = int64(1_000_000_000_000)
+	a.now = func() int64 { return now }
+	const changedAt = now - 1000
+
 	cases := []struct {
 		pid    int
 		status string
 		want   tracker.ProbeVerdict
+		prompt tracker.PromptResolution
 	}{
-		{601, "shell", tracker.ProbeWorking},
-		{602, "idle", tracker.ProbeNoSignal},
-		{603, "busy", tracker.ProbeNoSignal},
+		{601, "shell", tracker.ProbeWorking, tracker.PromptResolution{}},
+		{602, "idle", tracker.ProbeNoSignal, tracker.PromptResolution{Verdict: tracker.ProbeDone, AtMS: changedAt}},
+		{603, "busy", tracker.ProbeNoSignal, tracker.PromptResolution{Verdict: tracker.ProbeWorking, AtMS: changedAt}},
+		{604, "waiting", tracker.ProbeNoSignal, tracker.PromptResolution{}},
 	}
 	for _, c := range cases {
 		t.Run(c.status, func(t *testing.T) {
 			writeSessionFile(t, sessionsDir, c.pid, map[string]any{
 				"pid": c.pid, "sessionId": "sid-" + c.status, "name": "name-" + c.status, "status": c.status,
+				"updatedAt": changedAt, "statusUpdatedAt": changedAt,
 			})
-			id, name, verdict := a.ScanStateForPid(c.pid, "")
-			if id != "sid-"+c.status || name != "name-"+c.status || verdict != c.want {
-				t.Errorf("ScanStateForPid = (%q, %q, %v), want (%q, %q, %v)",
-					id, name, verdict, "sid-"+c.status, "name-"+c.status, c.want)
+			got := a.ScanStateForPid(c.pid, "")
+			want := tracker.ScanState{ThreadID: "sid-" + c.status, ThreadName: "name-" + c.status, Verdict: c.want, Prompt: c.prompt}
+			if got != want {
+				t.Errorf("ScanStateForPid = %+v, want %+v", got, want)
 			}
 		})
 	}
 
 	t.Run("missing file", func(t *testing.T) {
-		id, name, verdict := a.ScanStateForPid(999, "")
-		if id != "" || name != "" || verdict != tracker.ProbeNoSignal {
-			t.Errorf("ScanStateForPid = (%q, %q, %v), want empty ProbeNoSignal", id, name, verdict)
+		if got := a.ScanStateForPid(999, ""); got != (tracker.ScanState{}) {
+			t.Errorf("ScanStateForPid = %+v, want empty", got)
 		}
 	})
+}
+
+func TestClassifyPromptResolution(t *testing.T) {
+	const now = int64(1_000_000_000_000)
+	const hung = int64(30 * 60 * 1000)
+	const changedAt = now - 1000
+
+	cases := []struct {
+		name string
+		file *registry.Live
+		want tracker.PromptResolution
+	}{
+		{"absent file → no signal", nil, tracker.PromptResolution{}},
+		{"busy (approved) → working at statusUpdatedAt",
+			&registry.Live{Status: "busy", UpdatedAt: registry.EpochMS(changedAt), StatusUpdatedAt: registry.EpochMS(changedAt)},
+			tracker.PromptResolution{Verdict: tracker.ProbeWorking, AtMS: changedAt}},
+		{"busy with updatedAt past the hung cutoff → no signal",
+			&registry.Live{Status: "busy", UpdatedAt: registry.EpochMS(now - hung - 1), StatusUpdatedAt: registry.EpochMS(now - hung - 1)},
+			tracker.PromptResolution{}},
+		{"idle (declined) → done at statusUpdatedAt",
+			&registry.Live{Status: "idle", UpdatedAt: registry.EpochMS(changedAt), StatusUpdatedAt: registry.EpochMS(changedAt)},
+			tracker.PromptResolution{Verdict: tracker.ProbeDone, AtMS: changedAt}},
+		{"waiting (dialog still open) → no signal",
+			&registry.Live{Status: "waiting", StatusUpdatedAt: registry.EpochMS(changedAt)},
+			tracker.PromptResolution{}},
+		{"shell → no signal",
+			&registry.Live{Status: "shell", StatusUpdatedAt: registry.EpochMS(changedAt)},
+			tracker.PromptResolution{}},
+		{"busy without statusUpdatedAt → no signal (cannot order against the request)",
+			&registry.Live{Status: "busy", UpdatedAt: registry.EpochMS(changedAt)},
+			tracker.PromptResolution{}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := ClassifyPromptResolution(c.file, now); got != c.want {
+				t.Errorf("ClassifyPromptResolution = %+v, want %+v", got, c.want)
+			}
+		})
+	}
 }
 
 // describe("ClaudeCodeHookAdapter.probeLiveStatus")

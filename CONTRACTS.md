@@ -79,7 +79,16 @@ agent that fired it.
   `updatedAt`), `ended` (status `idle`/`waiting`, stale `busy`, or pid
   reused), or `null` (file absent / no status). `ended` also drops the
   cached thread so a resumed session re-emits cleanly.
-- No polling or file watching after startup.
+- The 3 s pane scan reads `~/.claude/sessions/<pid>.json` for each
+  Claude pane. Status `shell` (turn ended, background Bash job still
+  running) marks a row `running` unless the row is `waiting`. A `waiting`
+  row changes only when the file records a status change after the row
+  went waiting (`statusUpdatedAt` later than the row's timestamp): `busy`
+  with a fresh `updatedAt` → `running` (the permission dialog was approved,
+  keeping the tool description), `idle` → `done` (the dialog was declined;
+  no hook fires on a decline). A `busy` older than the hung cutoff, or one
+  recorded before the request, leaves `waiting` in place. Hooks own every
+  other transition; no file watching beyond the scan.
 
 ### Codex (Hook-Based)
 

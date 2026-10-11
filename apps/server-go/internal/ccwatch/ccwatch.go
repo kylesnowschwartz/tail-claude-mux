@@ -52,6 +52,13 @@ const staleMS = 5 * 60 * 1000
 // tool call so a long Bash/build is never misread as stuck.
 const busyHungMS = 30 * 60 * 1000
 
+// sessionStatusBusy and sessionStatusIdle are the sessions/<pid>.json
+// statuses for a session mid-turn and at its prompt.
+const (
+	sessionStatusBusy = "busy"
+	sessionStatusIdle = "idle"
+)
+
 // sessionStatusShell is the sessions/<pid>.json status for a session whose
 // turn ended while a background Bash job is still running. It clears when the
 // job ends.
@@ -198,20 +205,60 @@ func (a *Adapter) ResultForThread(threadID string) (ResultSnapshot, error) {
 	return ResultSnapshot{}, nil
 }
 
-// ScanStateForPid reports the session's ids plus a working verdict while
-// Claude Code records status "shell" (turn ended, background Bash job still
-// running). Hooks own every other transition, so all other statuses are
-// ProbeNoSignal.
-func (a *Adapter) ScanStateForPid(pid int, _ string) (threadID, name string, verdict tracker.ProbeVerdict) {
+// ScanStateForPid reports the session's ids, a working verdict while Claude
+// Code records status "shell" (turn ended, background Bash job still
+// running), and the prompt resolution that may clear a waiting row. Hooks
+// own every other transition, so every other status leaves the general
+// verdict at ProbeNoSignal.
+func (a *Adapter) ScanStateForPid(pid int, _ string) tracker.ScanState {
 	l := a.readSessionFile(pid)
 	if l == nil {
-		return "", "", tracker.ProbeNoSignal
+		return tracker.ScanState{}
 	}
-	threadID, name = l.SessionID, textutil.SanitizeSessionName(l.Name)
+	state := tracker.ScanState{
+		ThreadID:   l.SessionID,
+		ThreadName: textutil.SanitizeSessionName(l.Name),
+		Prompt:     ClassifyPromptResolution(l, a.now()),
+	}
 	if l.Status == sessionStatusShell {
-		return threadID, name, tracker.ProbeWorking
+		state.Verdict = tracker.ProbeWorking
 	}
-	return threadID, name, tracker.ProbeNoSignal
+	return state
+}
+
+// ClassifyPromptResolution reads a permission prompt's answer from the
+// session file. Claude Code records "waiting" while a permission dialog is
+// open and moves to "busy" the moment it is approved or "idle" the moment
+// it is declined. No hook marks either moment: PostToolUse waits for the
+// approved tool to finish, and a decline fires no hook at all. Pure —
+// unit-testable off disk.
+//
+//   - busy, fresh updatedAt → ProbeWorking at statusUpdatedAt
+//   - busy, updatedAt older than busyHungMS → ProbeNoSignal (hung)
+//   - idle → ProbeDone at statusUpdatedAt
+//   - no statusUpdatedAt, or any other status → ProbeNoSignal
+func ClassifyPromptResolution(file *registry.Live, nowMS int64) tracker.PromptResolution {
+	if file == nil || file.StatusUpdatedAt == 0 {
+		return tracker.PromptResolution{}
+	}
+	at := int64(file.StatusUpdatedAt)
+	switch file.Status {
+	case sessionStatusBusy:
+		if busyHung(file, nowMS) {
+			return tracker.PromptResolution{}
+		}
+		return tracker.PromptResolution{Verdict: tracker.ProbeWorking, AtMS: at}
+	case sessionStatusIdle:
+		return tracker.PromptResolution{Verdict: tracker.ProbeDone, AtMS: at}
+	default:
+		return tracker.PromptResolution{}
+	}
+}
+
+// busyHung reports a busy session file whose updatedAt is older than
+// busyHungMS.
+func busyHung(file *registry.Live, nowMS int64) bool {
+	return file.UpdatedAt != 0 && nowMS-int64(file.UpdatedAt) > busyHungMS
 }
 
 // shortThread is the last-4 thread id used across tcm's log surfaces.
@@ -483,14 +530,14 @@ func ClassifySessionStatus(file *registry.Live, threadID string, nowMS int64) tr
 		return tracker.ProbeEnded
 	}
 	switch file.Status {
-	case "busy":
-		if file.UpdatedAt != 0 && nowMS-int64(file.UpdatedAt) > busyHungMS {
+	case sessionStatusBusy:
+		if busyHung(file, nowMS) {
 			return tracker.ProbeEnded
 		}
 		return tracker.ProbeWorking
 	case sessionStatusShell:
 		return tracker.ProbeWorking
-	case "idle", "waiting", "done":
+	case sessionStatusIdle, "waiting", "done":
 		return tracker.ProbeEnded
 	default:
 		return tracker.ProbeNoSignal // status absent — defer to prune ceiling

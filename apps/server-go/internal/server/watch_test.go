@@ -53,9 +53,9 @@ type fakeAgentStateSource struct {
 
 func (f *fakeAgentStateSource) Name() string { return f.name }
 
-func (f *fakeAgentStateSource) ScanStateForPid(int, string) (string, string, tracker.ProbeVerdict) {
+func (f *fakeAgentStateSource) ScanStateForPid(int, string) tracker.ScanState {
 	f.scanCalls++
-	return f.threadID, f.threadName, f.verdict
+	return tracker.ScanState{ThreadID: f.threadID, ThreadName: f.threadName, Verdict: f.verdict}
 }
 
 func (f *fakeAgentStateSource) ProbeLiveStatus(int, string, string) tracker.ProbeVerdict {
@@ -89,20 +89,20 @@ func TestScanStateForPaneResolvesIdentityAndWorkingStatus(t *testing.T) {
 	claude := &fakeAgentStateSource{name: "claude-code", threadID: "claude-thread"}
 	codex := &fakeAgentStateSource{name: "codex", threadID: "codex-thread", threadName: "Fix state", verdict: tracker.ProbeWorking}
 
-	pa, verdict := scanStateForPane(tracker.PanePresence{Agent: "codex", PID: 42, PaneTitle: "Codex"}, claude, codex)
+	pa, state := scanStateForPane(tracker.PanePresence{Agent: "codex", PID: 42, PaneTitle: "Codex"}, claude, codex)
 	if pa.ThreadID != "codex-thread" || pa.ThreadName != "Fix state" {
 		t.Fatalf("scan identity = (%q, %q), want codex thread identity", pa.ThreadID, pa.ThreadName)
 	}
-	if verdict != tracker.ProbeWorking {
-		t.Fatalf("scan verdict = %v, want ProbeWorking", verdict)
+	if state.Verdict != tracker.ProbeWorking {
+		t.Fatalf("scan verdict = %v, want ProbeWorking", state.Verdict)
 	}
 	if codex.scanCalls != 1 || claude.scanCalls != 0 {
 		t.Fatalf("scan calls = claude %d, codex %d", claude.scanCalls, codex.scanCalls)
 	}
 
-	pa, verdict = scanStateForPane(tracker.PanePresence{Agent: "claude-code", PID: 43}, claude, codex)
-	if pa.ThreadID != "claude-thread" || verdict != tracker.ProbeNoSignal {
-		t.Fatalf("claude scan = thread %q, verdict %v; want identity without a scan probe", pa.ThreadID, verdict)
+	pa, state = scanStateForPane(tracker.PanePresence{Agent: "claude-code", PID: 43}, claude, codex)
+	if pa.ThreadID != "claude-thread" || state.Verdict != tracker.ProbeNoSignal {
+		t.Fatalf("claude scan = thread %q, verdict %v; want identity without a scan probe", pa.ThreadID, state.Verdict)
 	}
 	if claude.scanCalls != 1 || claude.calls != 0 {
 		t.Fatalf("claude calls = scan %d, live probe %d; want identity-only scan", claude.scanCalls, claude.calls)
@@ -139,8 +139,8 @@ func TestPaneScanBindsDelegation(t *testing.T) {
 
 func TestColdScanCompletedCodexPaneStartsDone(t *testing.T) {
 	codex := &fakeAgentStateSource{name: "codex", threadID: "codex-thread", verdict: tracker.ProbeDone}
-	pa, verdict := scanStateForPane(tracker.PanePresence{Agent: "codex", PaneID: "%7", PID: 42}, codex)
-	status := scanStatus(verdict)
+	pa, state := scanStateForPane(tracker.PanePresence{Agent: "codex", PaneID: "%7", PID: 42}, codex)
+	status := scanStatus(state.Verdict)
 	if status != wire.StatusDone {
 		t.Fatalf("scan status = %q, want done", status)
 	}
@@ -154,6 +154,102 @@ func TestColdScanCompletedCodexPaneStartsDone(t *testing.T) {
 	if got == nil || got.Status != wire.StatusDone || got.Liveness != wire.LivenessAlive || got.PaneID != "%7" {
 		t.Fatalf("cold-scan state = %#v, want alive done state on pane %%7", got)
 	}
+}
+
+func TestScanEventOverWaitingPrecedence(t *testing.T) {
+	const waitingSince = int64(1_000_000)
+	waiting := &wire.AgentEvent{
+		Agent: "claude-code", Session: "work", ThreadID: "t", Status: wire.StatusWaiting, TS: waitingSince,
+		ToolDescription: "Running sleep 20", ToolVerb: "Running",
+	}
+	scanned := wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", TS: waitingSince + 5000}
+	approved := tracker.PromptResolution{Verdict: tracker.ProbeWorking, AtMS: waitingSince + 4000}
+	declined := tracker.PromptResolution{Verdict: tracker.ProbeDone, AtMS: waitingSince + 4000}
+
+	t.Run("approval recorded after the request clears waiting to running", func(t *testing.T) {
+		ev, ok := scanEventOver(waiting, scanned, tracker.ScanState{ThreadID: "t", Prompt: approved})
+		if !ok || ev.Status != wire.StatusRunning {
+			t.Fatalf("scanEventOver = (%q, %v), want running", ev.Status, ok)
+		}
+		if ev.ToolDescription != "Running sleep 20" || ev.ToolVerb != "Running" {
+			t.Errorf("tool = (%q, %q), want the approved call's description kept", ev.ToolDescription, ev.ToolVerb)
+		}
+		if ev.ToolInvoked {
+			t.Error("ToolInvoked = true, want false (the call was counted at PreToolUse)")
+		}
+	})
+
+	t.Run("decline recorded after the request clears waiting to done", func(t *testing.T) {
+		ev, ok := scanEventOver(waiting, scanned, tracker.ScanState{ThreadID: "t", Prompt: declined})
+		if !ok || ev.Status != wire.StatusDone {
+			t.Fatalf("scanEventOver = (%q, %v), want done", ev.Status, ok)
+		}
+		if ev.ToolDescription != "" {
+			t.Errorf("toolDescription = %q, want cleared at the prompt", ev.ToolDescription)
+		}
+	})
+
+	t.Run("busy recorded before the request leaves waiting alone", func(t *testing.T) {
+		// The file still shows the turn's busy from before PermissionRequest.
+		stale := tracker.PromptResolution{Verdict: tracker.ProbeWorking, AtMS: waitingSince - 200}
+		if ev, ok := scanEventOver(waiting, scanned, tracker.ScanState{ThreadID: "t", Prompt: stale}); ok {
+			t.Fatalf("scanEventOver = (%q, true), want waiting untouched", ev.Status)
+		}
+		sameMS := tracker.PromptResolution{Verdict: tracker.ProbeWorking, AtMS: waitingSince}
+		if ev, ok := scanEventOver(waiting, scanned, tracker.ScanState{ThreadID: "t", Prompt: sameMS}); ok {
+			t.Fatalf("scanEventOver at the same ms = (%q, true), want waiting untouched", ev.Status)
+		}
+	})
+
+	t.Run("hung busy carries no resolution and leaves waiting alone", func(t *testing.T) {
+		// ClassifyPromptResolution reports a hung busy as no signal.
+		if ev, ok := scanEventOver(waiting, scanned, tracker.ScanState{ThreadID: "t"}); ok {
+			t.Fatalf("scanEventOver = (%q, true), want waiting untouched", ev.Status)
+		}
+	})
+
+	t.Run("general working verdict never clears waiting", func(t *testing.T) {
+		// Codex rollout "working" and claude "shell" stay below a hook's waiting.
+		state := tracker.ScanState{ThreadID: "t", Verdict: tracker.ProbeWorking}
+		if ev, ok := scanEventOver(waiting, scanned, state); ok {
+			t.Fatalf("scanEventOver = (%q, true), want waiting untouched", ev.Status)
+		}
+	})
+}
+
+func TestScanEventOverNonWaitingRows(t *testing.T) {
+	scanned := wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", TS: 2_000_000}
+	declined := tracker.PromptResolution{Verdict: tracker.ProbeDone, AtMS: 1_999_000}
+	approved := tracker.PromptResolution{Verdict: tracker.ProbeWorking, AtMS: 1_999_000}
+
+	for _, status := range []string{wire.StatusRunning, wire.StatusDone, wire.StatusIdle} {
+		t.Run(status+" row ignores prompt resolutions", func(t *testing.T) {
+			previous := &wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", Status: status, TS: 1_000_000}
+			for _, prompt := range []tracker.PromptResolution{declined, approved} {
+				if ev, ok := scanEventOver(previous, scanned, tracker.ScanState{ThreadID: "t", Prompt: prompt}); ok {
+					t.Fatalf("scanEventOver = (%q, true), want row untouched", ev.Status)
+				}
+			}
+		})
+	}
+
+	t.Run("shell verdict still marks a done row running", func(t *testing.T) {
+		previous := &wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", Status: wire.StatusDone, TS: 1_000_000}
+		ev, ok := scanEventOver(previous, scanned, tracker.ScanState{ThreadID: "t", Verdict: tracker.ProbeWorking})
+		if !ok || ev.Status != wire.StatusRunning {
+			t.Fatalf("scanEventOver = (%q, %v), want running", ev.Status, ok)
+		}
+	})
+
+	t.Run("no row yet takes the general verdict only", func(t *testing.T) {
+		if ev, ok := scanEventOver(nil, scanned, tracker.ScanState{ThreadID: "t", Prompt: declined}); ok {
+			t.Fatalf("scanEventOver = (%q, true), want no row minted from a prompt resolution", ev.Status)
+		}
+		ev, ok := scanEventOver(nil, scanned, tracker.ScanState{ThreadID: "t", Verdict: tracker.ProbeDone})
+		if !ok || ev.Status != wire.StatusDone {
+			t.Fatalf("scanEventOver = (%q, %v), want done", ev.Status, ok)
+		}
+	})
 }
 
 // deriveLogEntriesLocked is the seismograph's data source: every entry it
