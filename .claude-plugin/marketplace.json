@@ -4,13 +4,18 @@
     "name": "kylesnowschwartz"
   },
   "metadata": {
-    "description": "Personal marketplace for tail-claude-mux (TCM) tooling: the tcm-delegation plugin."
+    "description": "Personal marketplace for tail-claude-mux (TCM) tooling: the tcm-delegation and branch-pane plugins."
   },
   "plugins": [
     {
       "name": "tcm-delegation",
       "source": "./integrations/claude-plugin",
       "description": "TCM codex delegation: the tcm-delegate-codex skill, driving the full delegate lifecycle — spawn, wait, follow-up, result, and window tidy — through the tcm CLI's delegate/wait/followup/result/tidy subcommands."
+    },
+    {
+      "name": "branch-pane",
+      "source": "./integrations/branch-pane",
+      "description": "/branch opens a fork of this conversation in a new tmux window and leaves this session running."
     }
   ]
 }

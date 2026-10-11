@@ -1,0 +1,8 @@
+{
+  "name": "branch-pane",
+  "version": "0.1.0",
+  "description": "/branch opens a fork of this conversation in a new tmux window and leaves this session running",
+  "author": {
+    "name": "kylesnowschwartz"
+  }
+}
