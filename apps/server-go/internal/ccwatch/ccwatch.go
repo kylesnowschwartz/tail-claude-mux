@@ -119,9 +119,6 @@ type threadState struct {
 	// subagent from sessions/<pid>.json `agent`, "" when the parent thread
 	// is in control.
 	subagent string
-	// waitingSubagent is the subagent id whose hook opened the current
-	// wait; "" means the main session opened it.
-	waitingSubagent string
 	// nonTmuxLogged fires once per thread: after the first "dropped" hook
 	// from a classified non-tmux agent (registry Kind != "interactive", e.g.
 	// claude bg-spare), further drops for the same thread stay silent
@@ -379,17 +376,18 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		return
 	}
 
-	// Subagent hooks arrive under the parent's session_id. While the
-	// session file shows a dialog still open, only the agent that opened it
-	// may change the row through tool and notification events, so a
-	// background subagent's tool calls cannot clear a question the user has
-	// not answered. The file is the authority because a declined dialog
-	// fires no hook and the pane scan can resolve a wait without touching
-	// this state; when it is absent, mismatched, or no longer waiting, the
-	// wait is over or unknowable and the event applies. Lifecycle events
+	// A tool or notification event that would leave waiting is ignored
+	// while the session file still shows the dialog open. Concurrent work
+	// reports under the same session_id (a background subagent, or a
+	// sibling call of the same agent finishing) and must not clear a
+	// question the user has not answered. The file is the authority
+	// because a declined dialog fires no hook; when it is absent,
+	// mismatched, or no longer waiting, the event applies, and the pane
+	// scan moves the row once the file leaves waiting. Events that keep the
+	// row waiting still refresh its description, and lifecycle events
 	// always apply.
-	if state.status == wire.StatusWaiting && waitOwnedEvents[payload.Event] &&
-		payload.SubagentID != state.waitingSubagent && a.dialogOpen(threadID, state.pid) {
+	if state.status == wire.StatusWaiting && newStatus != wire.StatusWaiting &&
+		waitOwnedEvents[payload.Event] && a.dialogOpen(threadID, state.pid) {
 		return
 	}
 
@@ -421,9 +419,6 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	}
 
 	state.status = newStatus
-	if newStatus == wire.StatusWaiting {
-		state.waitingSubagent = payload.SubagentID
-	}
 	a.emit(threadID, state, session, kind)
 }
 
@@ -435,8 +430,8 @@ var toolOutcomeEvents = map[string]bool{
 	"PermissionDenied":   true,
 }
 
-// waitOwnedEvents concern a tool call or its dialog; while a row is waiting,
-// only the agent that opened the wait may change the row through them.
+// waitOwnedEvents concern a tool call or its dialog; while the session file
+// shows the dialog open, they cannot move a waiting row out of waiting.
 var waitOwnedEvents = map[string]bool{
 	"PreToolUse":         true,
 	"PermissionRequest":  true,
