@@ -199,6 +199,49 @@ func TestClaudeCodeHookAdapter(t *testing.T) {
 		}
 	})
 
+	t.Run("PermissionRequest followed by PostToolUseFailure transitions to running", func(t *testing.T) {
+		a, tc := setup(t)
+		input := map[string]json.RawMessage{"command": json.RawMessage(`"git push origin main"`)}
+		a.HandleHook(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "Bash", input))
+		a.HandleHook(toolHook("PostToolUseFailure", "sess-1", "/tmp/myproject", "Bash", input))
+
+		wantLen(t, tc.events, 2)
+		if tc.events[1].Status != wire.StatusRunning {
+			t.Errorf("events[1].status = %q, want running", tc.events[1].Status)
+		}
+		if tc.events[1].ToolDescription != "Running git push origin main" {
+			t.Errorf("toolDescription = %q, want the failed call's description kept", tc.events[1].ToolDescription)
+		}
+		if tc.events[1].ToolInvoked {
+			t.Errorf("PostToolUseFailure toolInvoked = true, want false")
+		}
+	})
+
+	t.Run("PermissionDenied maps to running", func(t *testing.T) {
+		a, tc := setup(t)
+		a.HandleHook(toolHook("PermissionRequest", "sess-1", "/tmp/myproject", "Bash", nil))
+		a.HandleHook(toolHook("PermissionDenied", "sess-1", "/tmp/myproject", "Bash", nil))
+
+		wantLen(t, tc.events, 2)
+		if tc.events[1].Status != wire.StatusRunning {
+			t.Errorf("events[1].status = %q, want running", tc.events[1].Status)
+		}
+	})
+
+	t.Run("PermissionDenied after PreToolUse dedups and keeps the description", func(t *testing.T) {
+		a, tc := setup(t)
+		input := map[string]json.RawMessage{"command": json.RawMessage(`"rm -rf build"`)}
+		a.HandleHook(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Bash", input))
+		a.HandleHook(toolHook("PermissionDenied", "sess-1", "/tmp/myproject", "Bash", input))
+
+		// Auto mode denies without a dialog: PreToolUse already set running,
+		// so the denial carries no status change and emits nothing.
+		wantLen(t, tc.events, 1)
+		if got := a.threads["sess-1"].lastToolDescription; got != "Running rm -rf build" {
+			t.Errorf("lastToolDescription = %q, want the denied call's description kept", got)
+		}
+	})
+
 	// --- ToolInvoked ---
 
 	t.Run("consecutive identical PreToolUse events each mark ToolInvoked", func(t *testing.T) {

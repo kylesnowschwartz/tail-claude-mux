@@ -51,13 +51,16 @@ agent that fired it.
 
 - `scripts/hook.sh <Event>` is registered in `~/.claude/settings.json`
   for `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
-  `PermissionRequest`, `PostToolUse`, `Stop`, `StopFailure`,
-  `Notification`, `SessionEnd`. It injects `event`, `pid`, and
+  `PermissionRequest`, `PostToolUse`, `PostToolUseFailure`,
+  `PermissionDenied`, `Stop`, `StopFailure`, `Notification`,
+  `SessionEnd`. It injects `event`, `pid`, and
   `process_snapshot` into the hook's stdin JSON and POSTs it.
   Register with `tcm server -register-hooks` (idempotent; entries are
   async so hooks never block a turn).
 - Status mapping: `SessionStart` → `idle`;
   `UserPromptSubmit`/`PreToolUse`/`PostToolUse` → `running`;
+  `PostToolUseFailure` (an approved call that errored) and
+  `PermissionDenied` (an auto-mode denial) → `running`;
   `PermissionRequest` → `waiting`; `Stop`/`SessionEnd` → `done`;
   `StopFailure` → `error` (a turn killed by an API error fires
   `StopFailure`, not `Stop` — without it the row sticks on `running`).

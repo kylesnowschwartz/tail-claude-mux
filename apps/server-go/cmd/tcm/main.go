@@ -252,12 +252,18 @@ func restartInPlace(reloadTUI bool) {
 // StopFailure fires when a turn ends on an API error (rate limit, server
 // error, max output tokens) instead of a normal Stop — without it a turn
 // that dies mid-flight leaves the agent stuck showing "running".
+// PostToolUseFailure (an approved call that errored) and PermissionDenied
+// (an auto-mode denial) resolve a tool call without a PostToolUse; without
+// PostToolUseFailure a row set "waiting" by PermissionRequest stays waiting
+// after the approved call fails.
 var hookEvents = []string{
 	"SessionStart",
 	"UserPromptSubmit",
 	"PreToolUse",
 	"PermissionRequest",
 	"PostToolUse",
+	"PostToolUseFailure",
+	"PermissionDenied",
 	"Stop",
 	"StopFailure",
 	"Notification",

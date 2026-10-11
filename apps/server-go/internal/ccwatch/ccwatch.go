@@ -2,10 +2,10 @@
 // claude-code-hooks.ts — the hook-based Claude Code agent watcher.
 //
 // Lifecycle events (SessionStart, UserPromptSubmit, PreToolUse,
-// PermissionRequest, PostToolUse, Stop, StopFailure, Notification,
-// SessionEnd) arrive via POST /hook. JSONL reading is kept for two bounded
-// purposes: a cold-start seed of recent files, and a one-time thread-name
-// read when a new session_id appears.
+// PermissionRequest, PostToolUse, PostToolUseFailure, PermissionDenied, Stop,
+// StopFailure, Notification, SessionEnd) arrive via POST /hook. JSONL reading
+// is kept for two bounded purposes: a cold-start seed of recent files, and a
+// one-time thread-name read when a new session_id appears.
 //
 // Claude's on-disk formats decode through agent-ouija: registry.Live for
 // ~/.claude/sessions/<pid>.json (the authoritative liveness map, incl. the
@@ -60,16 +60,21 @@ const sessionStatusShell = "shell"
 // hookStatusMap is HOOK_STATUS_MAP: hook event → agent status.
 // StopFailure (API-error turn death) surfaces as "error" — the truthful
 // terminal state; without it the "running" spinner would never clear.
+// PostToolUseFailure (an approved call that errored) and PermissionDenied
+// (an auto-mode classifier denial) both hand control back to the model, so
+// they resume "running" the same way PostToolUse does.
 // Notification is handled separately (status depends on notification_type).
 var hookStatusMap = map[string]string{
-	"UserPromptSubmit":  wire.StatusRunning,
-	"SessionStart":      wire.StatusIdle,
-	"PreToolUse":        wire.StatusRunning,
-	"PermissionRequest": wire.StatusWaiting,
-	"PostToolUse":       wire.StatusRunning,
-	"Stop":              wire.StatusDone,
-	"StopFailure":       wire.StatusError,
-	"SessionEnd":        wire.StatusDone,
+	"UserPromptSubmit":   wire.StatusRunning,
+	"SessionStart":       wire.StatusIdle,
+	"PreToolUse":         wire.StatusRunning,
+	"PermissionRequest":  wire.StatusWaiting,
+	"PostToolUse":        wire.StatusRunning,
+	"PostToolUseFailure": wire.StatusRunning,
+	"PermissionDenied":   wire.StatusRunning,
+	"Stop":               wire.StatusDone,
+	"StopFailure":        wire.StatusError,
+	"SessionEnd":         wire.StatusDone,
 }
 
 // Context is what the server provides the adapter: session routing, event
@@ -336,9 +341,9 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	if hasToolContext {
 		state.lastToolDescription = ToolDescription(payload.ToolName, payload.ToolInput)
 		state.lastToolVerb = ToolVerb(payload.ToolName)
-	} else if payload.Event != "PostToolUse" {
-		// Clear on non-tool events; PostToolUse keeps the prior description
-		// (a tool just finished).
+	} else if !toolOutcomeEvents[payload.Event] {
+		// Clear on non-tool events; a tool outcome keeps the prior
+		// description (the call it describes just resolved).
 		state.lastToolDescription = ""
 		state.lastToolVerb = ""
 	}
@@ -351,6 +356,14 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 
 	state.status = newStatus
 	a.emit(threadID, state, session, kind)
+}
+
+// toolOutcomeEvents resolve the tool call named by the last PreToolUse /
+// PermissionRequest: it succeeded, failed, or auto mode denied it.
+var toolOutcomeEvents = map[string]bool{
+	"PostToolUse":        true,
+	"PostToolUseFailure": true,
+	"PermissionDenied":   true,
 }
 
 // waiting/idle Notification subtypes (user must act / agent idle at prompt).

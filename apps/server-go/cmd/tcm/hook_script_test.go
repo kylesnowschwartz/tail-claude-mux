@@ -64,6 +64,18 @@ exit 1
 	}
 }
 
+func TestHookEventsRegisterToolOutcomes(t *testing.T) {
+	registered := map[string]bool{}
+	for _, event := range hookEvents {
+		registered[event] = true
+	}
+	for _, event := range []string{"PermissionRequest", "PostToolUse", "PostToolUseFailure", "PermissionDenied"} {
+		if !registered[event] {
+			t.Errorf("hookEvents missing %s", event)
+		}
+	}
+}
+
 func mustJSON(t *testing.T, value any) []byte {
 	t.Helper()
 	raw, err := json.Marshal(value)
