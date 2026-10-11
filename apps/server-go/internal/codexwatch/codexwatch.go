@@ -155,13 +155,24 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		a.resolveThreadNameAsync(threadID, state)
 	}
 
-	if state.routingPID == 0 && payload.PID != 0 && payload.ProcessSnapshot != "" {
+	// Every hook with a process snapshot names the codex process that sent
+	// it. A resumed thread (`codex resume`) keeps its id in a new process, so
+	// a different process re-routes the thread and re-checks ownership; a
+	// snapshot with no codex process keeps the prior routing pid.
+	if payload.PID != 0 && payload.ProcessSnapshot != "" {
 		processes := procwalk.ParseProcessSnapshot(payload.ProcessSnapshot)
 		resolved := procwalk.ResolveAgentSessionPid(payload.PID, codexCmdRE, processes)
+		senderPID := 0
 		if resolved != payload.PID {
-			state.routingPID = resolved
+			senderPID = resolved
 		} else if info, ok := processes[payload.PID]; ok && codexCmdRE.MatchString(info.Command) {
-			state.routingPID = payload.PID
+			senderPID = payload.PID
+		}
+		if senderPID != 0 && senderPID != state.routingPID {
+			state.routingPID = senderPID
+			state.pid = 0
+			state.ownershipChecked = false
+			state.dropLogged = false
 		}
 		if state.routingPID == 0 {
 			log.Printf("codex-hook %s: pid unresolved (reported=%d, snapshot=%dB)", shortThread(threadID), payload.PID, len(payload.ProcessSnapshot))

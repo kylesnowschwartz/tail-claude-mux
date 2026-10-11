@@ -302,6 +302,43 @@ func TestHookPidRequiresRolloutOwnership(t *testing.T) {
 	})
 }
 
+func TestResumedThreadReroutesToNewCodexProcess(t *testing.T) {
+	const threadID = "12345678-1234-1234-1234-123456789abc"
+	h := newHarness(t)
+	rolloutPath := writeRollout(t, h.adapter.SessionsDir, threadID, `"cli"`, "")
+	ownerPID := 200
+	h.adapter.openFilesForPID = func(pid int) []string {
+		if pid == ownerPID {
+			return []string{rolloutPath}
+		}
+		return nil
+	}
+	panes := map[int]string{200: "old-session"}
+	h.adapter.ctx.ResolveSessionByPid = func(pid int) string { return panes[pid] }
+
+	h.adapter.HandleHook(wire.HookPayload{
+		Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project",
+		PID: 300, ProcessSnapshot: "300 200 /bin/sh hook\n200 100 /usr/local/bin/codex",
+	})
+
+	// Process 200 exits; `codex resume` continues the thread in process 700.
+	ownerPID = 700
+	delete(panes, 200)
+	panes[700] = "new-session"
+	h.adapter.HandleHook(wire.HookPayload{
+		Agent: "codex", Event: "PermissionRequest", SessionID: threadID, Cwd: "/project",
+		PID: 800, ProcessSnapshot: "800 700 /bin/sh hook\n700 100 /usr/local/bin/codex resume",
+	})
+
+	got := h.snapshot()
+	if len(got) != 2 {
+		t.Fatalf("events = %#v, want 2", got)
+	}
+	if got[1].Session != "new-session" || got[1].PID != 700 || got[1].Status != wire.StatusWaiting {
+		t.Fatalf("event = session %q pid %d status %q, want new-session 700 waiting", got[1].Session, got[1].PID, got[1].Status)
+	}
+}
+
 func TestHandleHookLogsUnroutableThreadOnce(t *testing.T) {
 	h := newHarness(t)
 	var logs bytes.Buffer

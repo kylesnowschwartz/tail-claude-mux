@@ -87,12 +87,45 @@ const (
 
 // ScanState is one watcher's pane-scan reading of an agent process: its
 // thread identity, the status verdict for rows in any state but waiting,
-// and the separate verdict that may clear a waiting row.
+// the separate verdict that may clear a waiting row, and the agent's own
+// record of an open dialog that may put a row into waiting.
 type ScanState struct {
 	ThreadID   string
 	ThreadName string
 	Verdict    ProbeVerdict
 	Prompt     PromptResolution
+	// WaitingSinceMS is when the agent recorded a dialog open for this
+	// thread; 0 = no open dialog.
+	WaitingSinceMS int64
+}
+
+// HasSignal reports whether the reading can change a row.
+func (s ScanState) HasSignal() bool {
+	return s.Verdict != ProbeNoSignal || s.Prompt.Verdict != ProbeNoSignal || s.WaitingSinceMS != 0
+}
+
+// WaitingOver returns ev as a waiting event when the reading records an
+// open dialog that the row's latest event (previous, nil = no row yet)
+// does not already describe: a row that is waiting stays as it is, and a
+// hook event at or after the dialog's time outranks the older record. The
+// event takes the dialog's time, so a prompt resolution recorded after it
+// clears the row, and keeps the previous row's call description, which
+// names the call the dialog is about. ok=false leaves ev for the other
+// scan verdicts.
+func (s ScanState) WaitingOver(previous *wire.AgentEvent, ev wire.AgentEvent) (wire.AgentEvent, bool) {
+	if s.WaitingSinceMS == 0 {
+		return ev, false
+	}
+	if previous != nil && (previous.Status == wire.StatusWaiting || previous.TS >= s.WaitingSinceMS) {
+		return ev, false
+	}
+	ev.Status = wire.StatusWaiting
+	ev.TS = s.WaitingSinceMS
+	if previous != nil {
+		ev.ToolDescription = previous.ToolDescription
+		ev.ToolVerb = previous.ToolVerb
+	}
+	return ev, true
 }
 
 // PromptResolution is the agent's own record that a permission prompt was

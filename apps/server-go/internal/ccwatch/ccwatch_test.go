@@ -464,6 +464,21 @@ func TestClaudeCodeHookAdapter(t *testing.T) {
 		}
 	})
 
+	t.Run("UserPromptSubmit emits even when the adapter already records running", func(t *testing.T) {
+		// The pane scan can move the row (running → waiting → done from the
+		// session file) without this adapter seeing it; a new turn must
+		// still reach the row.
+		a, tc := setup(t)
+		a.HandleHook(toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Bash",
+			map[string]json.RawMessage{"command": json.RawMessage(`"ls"`)}))
+		a.HandleHook(hook("UserPromptSubmit", "sess-1", "/tmp/myproject"))
+
+		wantLen(t, tc.events, 2)
+		if tc.events[1].Status != wire.StatusRunning || tc.events[1].ToolDescription != "" {
+			t.Errorf("events[1] = status %q desc %q, want running with no description", tc.events[1].Status, tc.events[1].ToolDescription)
+		}
+	})
+
 	// --- Tool descriptions ---
 
 	t.Run("PreToolUse emits toolDescription for Read", func(t *testing.T) {
@@ -934,15 +949,15 @@ func TestClaudeCodeHookAdapterPidResolution(t *testing.T) {
 		}
 	})
 
-	t.Run("subsequent hooks reuse the resolved pid (resolved once per thread)", func(t *testing.T) {
+	t.Run("hooks without a process snapshot reuse the resolved pid", func(t *testing.T) {
 		a, tc := setup(t)
 		p := hook("SessionStart", "sess-1", "/tmp/myproject")
 		p.PID = 400
 		p.ProcessSnapshot = snapshotWithClaudeAt200()
 		a.HandleHook(p)
 
-		// Second hook with a totally different (e.g. stale) pid+snapshot should
-		// not re-resolve — pid is per-thread, captured once.
+		// A reported pid with no snapshot can't be walked to a claude
+		// process, so the cached pid stands.
 		p2 := toolHook("PreToolUse", "sess-1", "/tmp/myproject", "Bash",
 			map[string]json.RawMessage{"command": json.RawMessage(`"ls"`)})
 		p2.PID = 999
@@ -1009,6 +1024,57 @@ func TestClaudeCodeHookAdapterPidFirstSessionRouting(t *testing.T) {
 		wantLen(t, tc.events, 1)
 		if tc.events[0].Session != "cwd-session" {
 			t.Errorf("session = %q, want cwd-session", tc.events[0].Session)
+		}
+	})
+
+	t.Run("re-resolves the pid when a resumed conversation reports from a new claude process", func(t *testing.T) {
+		pidMap := map[int]string{200: "old-session"}
+		tc := makeCtx(map[string]string{"/tmp/myproject": "cwd-session"}, pidMap)
+		a := newStartedAdapter(t, tc)
+		p := hook("SessionStart", "sess-1", "/tmp/myproject")
+		p.PID = 400
+		p.ProcessSnapshot = snapshotClaudeAt200()
+		a.HandleHook(p)
+
+		// Process 200 exits without a SessionEnd reaching the server; the
+		// same session_id resumes in claude 700 in another pane.
+		delete(pidMap, 200)
+		pidMap[700] = "new-session"
+		resumed := notifHook("Notification", "sess-1", "/tmp/myproject", "permission_prompt")
+		resumed.PID = 900
+		resumed.ProcessSnapshot = strings.Join([]string{
+			"  100     1 /sbin/launchd",
+			"  700   100 node /path/@anthropic-ai/claude-code/cli.js --resume",
+			"  900   700 /bin/sh -c hook.sh Notification",
+		}, "\n")
+		a.HandleHook(resumed)
+
+		wantLen(t, tc.events, 2)
+		got := tc.events[1]
+		if got.Session != "new-session" || got.Status != wire.StatusWaiting || got.PID != 700 {
+			t.Errorf("event = session %q status %q pid %d, want new-session waiting 700", got.Session, got.Status, got.PID)
+		}
+	})
+
+	t.Run("keeps the prior pid when a later snapshot shows no claude process", func(t *testing.T) {
+		tc := makeCtx(map[string]string{"/tmp/myproject": "cwd-session"}, map[int]string{200: "pid-session"})
+		a := newStartedAdapter(t, tc)
+		p := hook("SessionStart", "sess-1", "/tmp/myproject")
+		p.PID = 400
+		p.ProcessSnapshot = snapshotClaudeAt200()
+		a.HandleHook(p)
+
+		p2 := notifHook("Notification", "sess-1", "/tmp/myproject", "permission_prompt")
+		p2.PID = 400
+		p2.ProcessSnapshot = strings.Join([]string{
+			"  100     1 /sbin/launchd",
+			"  400   100 /bin/sh -c hook.sh Notification",
+		}, "\n")
+		a.HandleHook(p2)
+
+		wantLen(t, tc.events, 2)
+		if got := tc.events[1]; got.Session != "pid-session" || got.PID != 200 {
+			t.Errorf("event = session %q pid %d, want pid-session 200", got.Session, got.PID)
 		}
 	})
 }
@@ -1204,15 +1270,16 @@ func TestScanStateForPid(t *testing.T) {
 	const changedAt = now - 1000
 
 	cases := []struct {
-		pid    int
-		status string
-		want   tracker.ProbeVerdict
-		prompt tracker.PromptResolution
+		pid          int
+		status       string
+		want         tracker.ProbeVerdict
+		prompt       tracker.PromptResolution
+		waitingSince int64
 	}{
-		{601, "shell", tracker.ProbeWorking, tracker.PromptResolution{}},
-		{602, "idle", tracker.ProbeNoSignal, tracker.PromptResolution{Verdict: tracker.ProbeDone, AtMS: changedAt}},
-		{603, "busy", tracker.ProbeNoSignal, tracker.PromptResolution{Verdict: tracker.ProbeWorking, AtMS: changedAt}},
-		{604, "waiting", tracker.ProbeNoSignal, tracker.PromptResolution{}},
+		{601, "shell", tracker.ProbeWorking, tracker.PromptResolution{}, 0},
+		{602, "idle", tracker.ProbeNoSignal, tracker.PromptResolution{Verdict: tracker.ProbeDone, AtMS: changedAt}, 0},
+		{603, "busy", tracker.ProbeNoSignal, tracker.PromptResolution{Verdict: tracker.ProbeWorking, AtMS: changedAt}, 0},
+		{604, "waiting", tracker.ProbeNoSignal, tracker.PromptResolution{}, changedAt},
 	}
 	for _, c := range cases {
 		t.Run(c.status, func(t *testing.T) {
@@ -1221,7 +1288,7 @@ func TestScanStateForPid(t *testing.T) {
 				"updatedAt": changedAt, "statusUpdatedAt": changedAt,
 			})
 			got := a.ScanStateForPid(c.pid, "")
-			want := tracker.ScanState{ThreadID: "sid-" + c.status, ThreadName: "name-" + c.status, Verdict: c.want, Prompt: c.prompt}
+			want := tracker.ScanState{ThreadID: "sid-" + c.status, ThreadName: "name-" + c.status, Verdict: c.want, Prompt: c.prompt, WaitingSinceMS: c.waitingSince}
 			if got != want {
 				t.Errorf("ScanStateForPid = %+v, want %+v", got, want)
 			}
@@ -1269,6 +1336,32 @@ func TestClassifyPromptResolution(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			if got := ClassifyPromptResolution(c.file, now); got != c.want {
 				t.Errorf("ClassifyPromptResolution = %+v, want %+v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestDialogOpenSince(t *testing.T) {
+	const changedAt = int64(1_000_000_000_000)
+	cases := []struct {
+		name string
+		file *registry.Live
+		want int64
+	}{
+		{"absent file → no dialog", nil, 0},
+		{"waiting → open since statusUpdatedAt",
+			&registry.Live{Status: "waiting", UpdatedAt: registry.EpochMS(changedAt + 50), StatusUpdatedAt: registry.EpochMS(changedAt)},
+			changedAt},
+		{"waiting without statusUpdatedAt → no dialog (cannot order against hooks)",
+			&registry.Live{Status: "waiting", UpdatedAt: registry.EpochMS(changedAt)}, 0},
+		{"busy → no dialog", &registry.Live{Status: "busy", StatusUpdatedAt: registry.EpochMS(changedAt)}, 0},
+		{"idle → no dialog", &registry.Live{Status: "idle", StatusUpdatedAt: registry.EpochMS(changedAt)}, 0},
+		{"shell → no dialog", &registry.Live{Status: "shell", StatusUpdatedAt: registry.EpochMS(changedAt)}, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := DialogOpenSince(c.file); got != c.want {
+				t.Errorf("DialogOpenSince = %d, want %d", got, c.want)
 			}
 		})
 	}
@@ -1396,6 +1489,63 @@ func TestClaudeCodeHookAdapterColdStartSeedRoutesByPid(t *testing.T) {
 		}
 		if seeded.PID != 4242 {
 			t.Errorf("pid = %d, want 4242", seeded.PID)
+		}
+	})
+
+	seedWithDialog := func(t *testing.T, transcriptLine string) (*Adapter, *testCtx, string, int64) {
+		t.Helper()
+		projectsDir := t.TempDir()
+		sessionsDir := t.TempDir()
+		a := New(projectsDir, sessionsDir)
+		const threadID = "seed-thread-dialog"
+		projDir := filepath.Join(projectsDir, "-tmp-myproject")
+		if err := os.MkdirAll(projDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(projDir, threadID+".jsonl"), []byte(transcriptLine+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// The dialog opened before the transcript's last write.
+		dialogAt := time.Now().UnixMilli() - 2000
+		writeSessionFile(t, sessionsDir, 4242, map[string]any{
+			"pid": 4242, "sessionId": threadID, "status": "waiting", "statusUpdatedAt": dialogAt, "updatedAt": dialogAt,
+		})
+		tc := makeCtx(nil, map[int]string{4242: "pid-session"})
+		a.Start(&tc.ctx)
+		return a, tc, threadID, dialogAt
+	}
+
+	t.Run("an open dialog seeds the thread as waiting, cleared by a later prompt resolution", func(t *testing.T) {
+		// The last entry is the unresolved AskUserQuestion tool_use (reads running).
+		toolUse := `{"message":{"role":"assistant","content":[{"type":"tool_use","name":"AskUserQuestion","input":{}}]}}`
+		a, tc, threadID, dialogAt := seedWithDialog(t, toolUse)
+
+		wantLen(t, tc.events, 1)
+		seeded := tc.events[0]
+		if seeded.Status != wire.StatusWaiting || seeded.TS != dialogAt || seeded.Session != "pid-session" {
+			t.Fatalf("seeded = status %q ts %d session %q, want waiting at %d on pid-session", seeded.Status, seeded.TS, seeded.Session, dialogAt)
+		}
+		if got := a.threads[threadID].status; got != wire.StatusWaiting {
+			t.Errorf("adapter status = %q, want waiting", got)
+		}
+
+		// The user declines: the file goes idle after the dialog opened.
+		writeSessionFile(t, a.SessionsDir, 4242, map[string]any{
+			"pid": 4242, "sessionId": threadID, "status": "idle", "statusUpdatedAt": dialogAt + 1500, "updatedAt": dialogAt + 1500,
+		})
+		scan := a.ScanStateForPid(4242, "")
+		if !scan.Prompt.Clears(seeded.TS) || scan.Prompt.Verdict != tracker.ProbeDone {
+			t.Errorf("scan prompt = %+v, want a done resolution that clears the seeded row", scan.Prompt)
+		}
+	})
+
+	t.Run("an open dialog overrides the seed's skip of a finished-looking transcript", func(t *testing.T) {
+		endTurn := `{"message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"ok"}]}}`
+		_, tc, _, _ := seedWithDialog(t, endTurn)
+
+		wantLen(t, tc.events, 1)
+		if tc.events[0].Status != wire.StatusWaiting {
+			t.Errorf("seeded status = %q, want waiting", tc.events[0].Status)
 		}
 	})
 }
@@ -1583,5 +1733,28 @@ func TestClaudeCodeHookAdapterOpenDialog(t *testing.T) {
 		if _, ok := a.threads["sess-1"]; ok {
 			t.Error("thread still tracked after SessionEnd")
 		}
+	})
+
+	t.Run("tool events are held by an open dialog the adapter never saw as waiting", func(t *testing.T) {
+		// The pane scan restored the waiting row from the file; this adapter
+		// last recorded the thread as running.
+		a, tc, write := setup(t, "busy")
+		a.HandleHook(hook("UserPromptSubmit", "sess-1", cwd))
+		write("waiting")
+		a.HandleHook(toolHook("PostToolUse", "sess-1", cwd, "Bash", bash))
+		a.HandleHook(notifHook("Notification", "sess-1", cwd, "idle_prompt"))
+
+		wantLen(t, tc.events, 1)
+		if state := a.threads["sess-1"]; state.status != wire.StatusRunning {
+			t.Errorf("adapter status = %q, want running (held events leave it alone)", state.status)
+		}
+	})
+
+	t.Run("a first hook for an unseen thread is held while the dialog is open", func(t *testing.T) {
+		// After a server restart the adapter has no state for the thread.
+		a, tc, _ := setup(t, "waiting")
+		a.HandleHook(toolHook("PostToolUse", "sess-1", cwd, "Bash", bash))
+
+		wantLen(t, tc.events, 0)
 	})
 }

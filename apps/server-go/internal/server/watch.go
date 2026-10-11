@@ -86,12 +86,13 @@ func scanStateForPane(pa tracker.PanePresence, sources ...agentStateSource) (tra
 }
 
 // scanEventOver decides what one scan reading does to the row it describes,
-// given that row's current event (nil = no row yet). A waiting row comes
-// from a hook's permission request, which is more specific than a scan's
-// generic working signal, so only a prompt resolution recorded after the
-// row went waiting clears it; an approval keeps the description of the
-// call the prompt was about. Every other row takes the general verdict.
-// ok=false leaves the row untouched.
+// given that row's current event (nil = no row yet). A waiting row is more
+// specific than a scan's generic working signal, so only a prompt
+// resolution recorded after the row went waiting clears it; an approval
+// keeps the description of the call the prompt was about. Any other row
+// goes waiting when the agent's own record shows a dialog opened after the
+// row's latest event, and otherwise takes the general verdict. ok=false
+// leaves the row untouched.
 func scanEventOver(previous *wire.AgentEvent, ev wire.AgentEvent, state tracker.ScanState) (wire.AgentEvent, bool) {
 	if previous != nil && previous.Status == wire.StatusWaiting {
 		if !state.Prompt.Clears(previous.TS) {
@@ -103,6 +104,9 @@ func scanEventOver(previous *wire.AgentEvent, ev wire.AgentEvent, state tracker.
 			ev.ToolVerb = previous.ToolVerb
 		}
 		return ev, ev.Status != ""
+	}
+	if waiting, ok := state.WaitingOver(previous, ev); ok {
+		return waiting, true
 	}
 	ev.Status = scanStatus(state.Verdict)
 	return ev, ev.Status != ""
@@ -349,7 +353,7 @@ func (s *Server) paneScanLoop() {
 			for i, pa := range paneAgents {
 				var state tracker.ScanState
 				paneAgents[i], state = scanStateForPane(pa, stateSources...)
-				if state.Verdict == tracker.ProbeNoSignal && state.Prompt.Verdict == tracker.ProbeNoSignal {
+				if !state.HasSignal() {
 					continue
 				}
 				readings = append(readings, scanReading{

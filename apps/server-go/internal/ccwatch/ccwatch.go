@@ -209,18 +209,21 @@ func (a *Adapter) ResultForThread(threadID string) (ResultSnapshot, error) {
 
 // ScanStateForPid reports the session's ids, a working verdict while Claude
 // Code records status "shell" (turn ended, background Bash job still
-// running), and the prompt resolution that may clear a waiting row. Hooks
-// own every other transition, so every other status leaves the general
-// verdict at ProbeNoSignal.
+// running), the time a dialog opened while the file records "waiting", and
+// the prompt resolution that may clear a waiting row. The waiting time lets
+// the pane scan restore a waiting row whose hook never reached the server
+// (a server restart, or a dropped hook). Hooks own every other transition,
+// so every other status leaves the general verdict at ProbeNoSignal.
 func (a *Adapter) ScanStateForPid(pid int, _ string) tracker.ScanState {
 	l := a.readSessionFile(pid)
 	if l == nil {
 		return tracker.ScanState{}
 	}
 	state := tracker.ScanState{
-		ThreadID:   l.SessionID,
-		ThreadName: textutil.SanitizeSessionName(l.Name),
-		Prompt:     ClassifyPromptResolution(l, a.now()),
+		ThreadID:       l.SessionID,
+		ThreadName:     textutil.SanitizeSessionName(l.Name),
+		Prompt:         ClassifyPromptResolution(l, a.now()),
+		WaitingSinceMS: DialogOpenSince(l),
 	}
 	if l.Status == sessionStatusShell {
 		state.Verdict = tracker.ProbeWorking
@@ -228,12 +231,23 @@ func (a *Adapter) ScanStateForPid(pid int, _ string) tracker.ScanState {
 	return state
 }
 
+// DialogOpenSince returns when the session file recorded an open dialog
+// (status "waiting" at statusUpdatedAt), 0 when no dialog is open or the
+// time is missing. Pure — unit-testable off disk.
+func DialogOpenSince(file *registry.Live) int64 {
+	if file == nil || file.Status != sessionStatusWaiting {
+		return 0
+	}
+	return int64(file.StatusUpdatedAt)
+}
+
 // ClassifyPromptResolution reads a permission prompt's answer from the
 // session file. Claude Code records "waiting" while a permission dialog is
 // open and moves to "busy" the moment it is approved or "idle" the moment
 // it is declined. No hook marks either moment: PostToolUse waits for the
-// approved tool to finish, and a decline fires no hook at all. Pure —
-// unit-testable off disk.
+// approved tool to finish, and a decline fires no hook at all. "waiting"
+// itself is no resolution; DialogOpenSince reads it. Pure — unit-testable
+// off disk.
 //
 //   - busy, fresh updatedAt → ProbeWorking at statusUpdatedAt
 //   - busy, updatedAt older than busyHungMS → ProbeNoSignal (hung)
@@ -304,12 +318,15 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		a.resolveThreadNameAsync(threadID, state)
 	}
 
-	// Resolve the long-lived agent pid once per thread: the hook's reported
-	// pid ($PPID) is the `sh -c` wrapper; ancestry against the snapshot
-	// finds the actual claude process. Re-resolve on every hook until a pid
-	// lands (a hook without process_snapshot can arrive first). Must
-	// precede session resolution — pid is the authoritative routing channel.
-	if state.pid == 0 && payload.PID != 0 && payload.ProcessSnapshot != "" {
+	// Resolve the long-lived agent pid from every hook that carries a
+	// process snapshot: the hook's reported pid ($PPID) is the `sh -c`
+	// wrapper; ancestry against the snapshot finds the claude process that
+	// sent this hook. A resumed conversation (`claude -c` / `--resume`)
+	// keeps its session_id in a new process, so the pid can change within
+	// a thread's lifetime. A snapshot that yields no claude pid, or a hook
+	// without one, keeps the prior pid. Must precede session resolution —
+	// pid is the authoritative routing channel.
+	if payload.PID != 0 && payload.ProcessSnapshot != "" {
 		proc := procwalk.ParseProcessSnapshot(payload.ProcessSnapshot)
 		resolved := procwalk.ResolveAgentSessionPid(payload.PID, claudeCmdRE, proc)
 		if resolved != payload.PID {
@@ -377,17 +394,19 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	}
 
 	// A tool or notification event that would leave waiting is ignored
-	// while the session file still shows the dialog open. Concurrent work
-	// reports under the same session_id (a background subagent, or a
-	// sibling call of the same agent finishing) and must not clear a
-	// question the user has not answered. The file is the authority
-	// because a declined dialog fires no hook; when it is absent,
-	// mismatched, or no longer waiting, the event applies, and the pane
-	// scan moves the row once the file leaves waiting. Events that keep the
-	// row waiting still refresh its description, and lifecycle events
-	// always apply.
-	if state.status == wire.StatusWaiting && newStatus != wire.StatusWaiting &&
-		waitOwnedEvents[payload.Event] && a.dialogOpen(threadID, state.pid) {
+	// while the session file shows the dialog open, whatever this adapter
+	// last recorded for the thread: the pane scan can put the row into
+	// waiting from the same file without a hook. Concurrent work reports
+	// under the same session_id (a background subagent, or a sibling call
+	// of the same agent finishing) and must not clear a question the user
+	// has not answered. The file is the authority because a declined dialog
+	// fires no hook; when it is absent, mismatched, or no longer waiting,
+	// the event applies, and the pane scan moves the row once the file
+	// leaves waiting. The map checks run first so only wait-owned events
+	// that would leave waiting read the file. Events that keep the row
+	// waiting still refresh its description, and lifecycle events always
+	// apply.
+	if newStatus != wire.StatusWaiting && waitOwnedEvents[payload.Event] && a.dialogOpen(threadID, state.pid) {
 		return
 	}
 
@@ -412,9 +431,12 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		state.lastToolVerb = ""
 	}
 
-	// Dedup: skip when status is unchanged — except new threads and tool
-	// events (fresh tool description).
-	if state.status == newStatus && !isNewThread && !hasToolContext {
+	// Dedup: skip when status is unchanged — except new threads, tool
+	// events (fresh tool description), and UserPromptSubmit. The pane scan
+	// moves the row from the session file without this adapter (restoring
+	// and clearing waiting), so the cached status can match while the row
+	// does not; a turn start always reaches the row.
+	if state.status == newStatus && !isNewThread && !hasToolContext && payload.Event != "UserPromptSubmit" {
 		return
 	}
 
@@ -539,6 +561,19 @@ func (a *Adapter) dialogOpen(threadID string, pid int) bool {
 	return file != nil && file.SessionID == threadID && file.Status == sessionStatusWaiting
 }
 
+// dialogOpenSince returns when sessions/<pid>.json, identifying this
+// thread, recorded an open dialog; 0 when it does not.
+func (a *Adapter) dialogOpenSince(threadID string, pid int) int64 {
+	if pid == 0 {
+		return 0
+	}
+	file := a.readSessionFile(pid)
+	if file == nil || file.SessionID != threadID {
+		return 0
+	}
+	return DialogOpenSince(file)
+}
+
 // resolvePidFromSessions walks the sessions registry once and returns the
 // pid whose file matches threadID (0 = none).
 func (a *Adapter) resolvePidFromSessions(threadID string) int {
@@ -656,7 +691,11 @@ func (a *Adapter) refreshFromRegistry(threadID string, state *threadState) {
 
 // seedFromJSONL bootstraps thread state from transcripts touched within
 // staleMS: idle/terminal outcomes are skipped, active ones emit with the
-// file's mtime as ts. Seeded entries route by pid where sessions/*.json
+// file's mtime as ts. A thread whose session file records an open dialog
+// seeds as waiting at the dialog's statusUpdatedAt instead, whatever the
+// transcript reads: the transcript cannot show a dialog, and the dialog's
+// time lets a later busy/idle record clear the row through the pane scan's
+// prompt resolution. Seeded entries route by pid where sessions/*.json
 // resolves one — the same channel live hooks use — so the seed and the
 // first hook can't split one conversation into two rows.
 func (a *Adapter) seedFromJSONL() {
@@ -699,11 +738,14 @@ func (a *Adapter) seedFromJSONL() {
 			}
 
 			latestStatus, threadName := scanTranscript(filepath.Join(dirPath, name))
-			if latestStatus == wire.StatusIdle || wire.IsTerminalStatus(latestStatus) {
+			pid := a.resolvePidFromSessions(threadID)
+			ts := mtimeMS
+			if dialogAt := a.dialogOpenSince(threadID, pid); dialogAt != 0 {
+				latestStatus, ts = wire.StatusWaiting, dialogAt
+			} else if latestStatus == wire.StatusIdle || wire.IsTerminalStatus(latestStatus) {
 				continue
 			}
 
-			pid := a.resolvePidFromSessions(threadID)
 			session := ""
 			if pid != 0 {
 				session = a.ctx.ResolveSessionByPid(pid)
@@ -726,7 +768,7 @@ func (a *Adapter) seedFromJSONL() {
 				Agent:      "claude-code",
 				Session:    session,
 				Status:     latestStatus,
-				TS:         mtimeMS,
+				TS:         ts,
 				ThreadID:   threadID,
 				ThreadName: threadName,
 				PID:        pid,

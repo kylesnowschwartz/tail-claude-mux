@@ -339,3 +339,29 @@ func TestDeriveLogEntries(t *testing.T) {
 		}
 	})
 }
+
+func TestScanEventOverRestoresWaitingFromOpenDialog(t *testing.T) {
+	const dialogAt = int64(1_000_000)
+	scanned := wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", TS: dialogAt + 5000}
+	open := tracker.ScanState{ThreadID: "t", WaitingSinceMS: dialogAt}
+	done := &wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", Status: wire.StatusDone, TS: dialogAt - 500}
+
+	ev, ok := scanEventOver(done, scanned, open)
+	if !ok || ev.Status != wire.StatusWaiting || ev.TS != dialogAt {
+		t.Fatalf("scanEventOver = (%q at %d, %v), want waiting at %d", ev.Status, ev.TS, ok, dialogAt)
+	}
+
+	newerHook := &wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", Status: wire.StatusRunning, TS: dialogAt + 1}
+	if ev, ok := scanEventOver(newerHook, scanned, open); ok {
+		t.Fatalf("scanEventOver over a newer hook = (%q, true), want untouched", ev.Status)
+	}
+
+	restored := &ev
+	if again, ok := scanEventOver(restored, scanned, open); ok {
+		t.Fatalf("scanEventOver on the restored row = (%q, true), want waiting untouched", again.Status)
+	}
+	declined := tracker.ScanState{ThreadID: "t", Prompt: tracker.PromptResolution{Verdict: tracker.ProbeDone, AtMS: dialogAt + 2000}}
+	if cleared, ok := scanEventOver(restored, scanned, declined); !ok || cleared.Status != wire.StatusDone {
+		t.Fatalf("scanEventOver after decline = (%q, %v), want done", cleared.Status, ok)
+	}
+}

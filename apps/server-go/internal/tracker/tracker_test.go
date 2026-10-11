@@ -2122,3 +2122,108 @@ func TestWindowIndexPaneIndex(t *testing.T) {
 		}
 	})
 }
+
+func TestScanStateWaitingOver(t *testing.T) {
+	const dialogAt = baseTS + 1000
+	scanned := wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", PID: 42, TS: baseTS + 5000}
+	open := ScanState{ThreadID: "t", WaitingSinceMS: dialogAt}
+
+	// foldScan applies a reading the way the pane scan does for a row that
+	// is not yet waiting.
+	foldScan := func(tr *Tracker, state ScanState) bool {
+		ev, ok := state.WaitingOver(tr.GetEvent("work", "claude-code", "t", ""), scanned)
+		if ok {
+			tr.ApplyEvent(ev, false)
+		}
+		return ok
+	}
+
+	for _, status := range []string{wire.StatusDone, wire.StatusIdle} {
+		t.Run("open dialog turns an older "+status+" row waiting", func(t *testing.T) {
+			tr := New(fixedNow())
+			tr.ApplyEvent(wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", Status: status, TS: dialogAt - 500}, false)
+			if !foldScan(tr, open) {
+				t.Fatal("WaitingOver ok = false, want true")
+			}
+			got := tr.GetEvent("work", "claude-code", "t", "")
+			if got.Status != wire.StatusWaiting || got.TS != dialogAt || got.ToolDescription != "" {
+				t.Fatalf("row = status %q ts %d desc %q, want waiting at %d with no description", got.Status, got.TS, got.ToolDescription, dialogAt)
+			}
+		})
+	}
+
+	t.Run("open dialog creates a waiting row when none exists", func(t *testing.T) {
+		tr := New(fixedNow())
+		if !foldScan(tr, open) {
+			t.Fatal("WaitingOver ok = false, want true")
+		}
+		if got := tr.GetEvent("work", "claude-code", "t", ""); got == nil || got.Status != wire.StatusWaiting {
+			t.Fatalf("row = %#v, want waiting", got)
+		}
+	})
+
+	t.Run("a hook event at or after the dialog's time wins", func(t *testing.T) {
+		for _, ts := range []int64{dialogAt, dialogAt + 1} {
+			tr := New(fixedNow())
+			tr.ApplyEvent(wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", Status: wire.StatusRunning, TS: ts}, false)
+			if foldScan(tr, open) {
+				t.Fatalf("WaitingOver ok = true over a hook at %d, want the hook kept", ts)
+			}
+			if got := tr.GetEvent("work", "claude-code", "t", ""); got.Status != wire.StatusRunning {
+				t.Fatalf("row status = %q, want running", got.Status)
+			}
+		}
+	})
+
+	t.Run("the restored waiting row keeps the running call's description", func(t *testing.T) {
+		tr := New(fixedNow())
+		tr.ApplyEvent(wire.AgentEvent{
+			Agent: "claude-code", Session: "work", ThreadID: "t", Status: wire.StatusRunning, TS: dialogAt - 500,
+			ToolDescription: "Running rm -rf build", ToolVerb: "Running",
+		}, false)
+		if !foldScan(tr, open) {
+			t.Fatal("WaitingOver ok = false, want true")
+		}
+		got := tr.GetEvent("work", "claude-code", "t", "")
+		if got.Status != wire.StatusWaiting || got.ToolDescription != "Running rm -rf build" || got.ToolVerb != "Running" {
+			t.Fatalf("row = status %q desc %q verb %q, want waiting with the call's description", got.Status, got.ToolDescription, got.ToolVerb)
+		}
+	})
+
+	t.Run("a waiting row stays as it is", func(t *testing.T) {
+		previous := &wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", Status: wire.StatusWaiting, TS: dialogAt - 500, ToolDescription: "Running ls"}
+		if _, ok := open.WaitingOver(previous, scanned); ok {
+			t.Fatal("WaitingOver ok = true for a waiting row, want false")
+		}
+	})
+
+	t.Run("no open dialog leaves the row to the other verdicts", func(t *testing.T) {
+		if _, ok := (ScanState{ThreadID: "t", Verdict: ProbeWorking}).WaitingOver(nil, scanned); ok {
+			t.Fatal("WaitingOver ok = true without a dialog, want false")
+		}
+	})
+
+	t.Run("a resolution recorded after the dialog clears the restored row", func(t *testing.T) {
+		tr := New(fixedNow())
+		tr.ApplyEvent(wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", Status: wire.StatusDone, TS: dialogAt - 500}, false)
+		foldScan(tr, open)
+		row := tr.GetEvent("work", "claude-code", "t", "")
+		for _, verdict := range []ProbeVerdict{ProbeDone, ProbeWorking} {
+			if !(PromptResolution{Verdict: verdict, AtMS: dialogAt + 1}).Clears(row.TS) {
+				t.Errorf("verdict %d after the dialog does not clear the restored row", verdict)
+			}
+		}
+		if (PromptResolution{Verdict: ProbeDone, AtMS: dialogAt - 1}).Clears(row.TS) {
+			t.Error("a resolution recorded before the dialog clears the restored row")
+		}
+	})
+
+	t.Run("HasSignal counts an open dialog", func(t *testing.T) {
+		if (ScanState{ThreadID: "t"}).HasSignal() {
+			t.Error("HasSignal = true for an empty reading")
+		}
+		if !open.HasSignal() {
+			t.Error("HasSignal = false for an open dialog")
+		}
+	})
+}
