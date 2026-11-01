@@ -1046,32 +1046,6 @@ func ToolDescription(toolName string, toolInput map[string]json.RawMessage) stri
 	}
 }
 
-// ToolVerb maps a tool name to its shared.ts MetadataVerb, from the same
-// switch ToolDescription uses. The watcher knows the tool name; tagging here
-// spares renderers from regex-guessing the verb back out of the message
-// (the TUI's classify.ts remains the fallback for untagged producers).
-// Unknown/custom tools return "".
-func ToolVerb(toolName string) string {
-	switch toolName {
-	case "Read":
-		return "read"
-	case "Edit", "Write", "NotebookEdit":
-		return "edit"
-	case "Bash":
-		return "run"
-	case "Glob", "Grep":
-		return "search"
-	case "Agent", "Task":
-		return "task"
-	case "WebFetch", "WebSearch":
-		return "web"
-	case "Skill":
-		return "skill"
-	default:
-		return ""
-	}
-}
-
 // safeStr reads a string field from tool input, sanitized; "" if missing or
 // non-string.
 func safeStr(input map[string]json.RawMessage, key string) string {
