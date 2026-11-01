@@ -79,6 +79,8 @@ func main() {
 		os.Exit(runMessages(os.Args[2:], os.Stdout))
 	case "whoami":
 		os.Exit(runWhoami(os.Args[2:], os.Stdout))
+	case "waterfall":
+		os.Exit(runWaterfall(os.Args[2:]))
 	case "tidy":
 		os.Exit(runTidy(os.Args[2:], os.Stdout))
 	default:
@@ -88,7 +90,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s <command> [flags]\n\ncommands:\n  server     run the tcm backend server\n  delegate   spawn a codex delegate in a tmux window\n  result     fetch a delegate's result\n  wait       watch a delegate until it reaches an actionable outcome\n  followup   deliver a follow-up message to an idle delegate\n  tell       send a note from a delegate to its orchestrator\n  ask        ask the orchestrator and wait for an answer\n  answer     answer a delegate's pending ask\n  messages   list a delegation's message log\n  whoami     show the current delegation record\n  tidy       close finished delegate windows\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "usage: %s <command> [flags]\n\ncommands:\n  server     run the tcm backend server\n  delegate   spawn a codex delegate in a tmux window\n  result     fetch a delegate's result\n  wait       watch a delegate until it reaches an actionable outcome\n  followup   deliver a follow-up message to an idle delegate\n  tell       send a note from a delegate to its orchestrator\n  ask        ask the orchestrator and wait for an answer\n  answer     answer a delegate's pending ask\n  messages   list a delegation's message log\n  whoami     show the current delegation record\n  tidy       close finished delegate windows\n  waterfall  show a live verb waterfall of agent activity\n", filepath.Base(os.Args[0]))
 }
 
 // runServer is the tcm backend's entry point. args is the argv tail after
