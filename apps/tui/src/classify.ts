@@ -7,7 +7,7 @@
  * column rule (b) — but until the producer ships it, the renderer derives
  * the verb client-side via the regex classifier below).
  *
- * Ten verbs match the closed dictionary in vocab.ts:
+ * Eleven verbs match the closed dictionary in vocab.ts:
  *
  *   read     — "Reading file.ts", "Read package.json"
  *   list     — "Listing src", "Listing dir"
@@ -15,6 +15,7 @@
  *   edit     — "Editing file.ts", "Wrote ...", "Patched ..."
  *   run      — "ran bun test", "Running pytest", "Bash ..."
  *   web      — "WebFetch ...", "Fetching ...", "https://..."
+ *   tool     — "mcp__server__tool" (MCP tools, described by their name)
  *   task     — "Task ...", "Agent ...", "Delegating ..."
  *   skill    — "Skill ...", "Invoking skill ..."
  *   thinking — "Thinking ...", "Reasoning ..."
@@ -75,6 +76,8 @@ const RULES: Rule[] = [
   { re: /^fetching\b/i, verb: "web" },
   { re: /^https?:\/\//i, verb: "web" },
 
+  { re: /^mcp__/, verb: "tool" },
+
   { re: /^task\b/i, verb: "task" },
   { re: /^agent\b/i, verb: "task" },
   { re: /^delegat(ing|ed)\b/i, verb: "task" },
@@ -95,7 +98,7 @@ const RULES: Rule[] = [
 /**
  * Classify a log entry's message by its verb prefix.
  *
- * Returns one of the ten verbs in the closed dictionary, or undefined if
+ * Returns one of the eleven verbs in the closed dictionary, or undefined if
  * no rule matches (the icon row then falls back to the misc glyph).
  */
 export function classifyVerb(message: string): Verb | undefined {

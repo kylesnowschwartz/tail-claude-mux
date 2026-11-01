@@ -34,6 +34,8 @@ func ToolVerb(toolName string) string {
 		return "task"
 	case tools.CategoryWeb:
 		return "web"
+	case tools.CategoryTool:
+		return "tool" // MCP server tools
 	default:
 		return ""
 	}

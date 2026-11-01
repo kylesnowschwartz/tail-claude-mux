@@ -61,6 +61,7 @@ const GLYPH_SNAPSHOT: Record<string, string> = {
   "EE75":  "fa-pen_nib",
   "F0BE0": "md-wrench_outline",
   "F059F": "md-web",
+  "F1425": "md-power_plug_outline",
   "F167A": "md-robot_outline",
   "F0EB":  "fa-lightbulb_o",      // "fa-lightbulb" was renamed to "_o" in nerd-fonts 3.x
   "F00D":  "fa-xmark",            // "fa-cross" was renamed to "fa-xmark" in nerd-fonts 3.x

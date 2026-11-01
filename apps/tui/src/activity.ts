@@ -24,6 +24,7 @@ import {
   ACTIVITY_VERB_EDIT,
   ACTIVITY_VERB_RUN,
   ACTIVITY_VERB_WEB,
+  ACTIVITY_VERB_TOOL,
   ACTIVITY_VERB_TASK,
   ACTIVITY_VERB_SKILL,
   ACTIVITY_VERB_THINKING,
@@ -239,7 +240,7 @@ export function isSystemTag(source: string | undefined): source is string {
  *  that deserve distinct icons. */
 export const SYSTEM_TAG_GLYPH = SEV_WAITING;
 
-/** 10-entry verb glyph dictionary. See vocab.ts and classify.ts. */
+/** 11-entry verb glyph dictionary. See vocab.ts and classify.ts. */
 export const VERB_GLYPHS: Record<Verb, string> = {
   read:     ACTIVITY_VERB_READ,
   list:     ACTIVITY_VERB_LIST,
@@ -247,6 +248,7 @@ export const VERB_GLYPHS: Record<Verb, string> = {
   edit:     ACTIVITY_VERB_EDIT,
   run:      ACTIVITY_VERB_RUN,
   web:      ACTIVITY_VERB_WEB,
+  tool:     ACTIVITY_VERB_TOOL,
   task:     ACTIVITY_VERB_TASK,
   skill:    ACTIVITY_VERB_SKILL,
   thinking: ACTIVITY_VERB_THINKING,

@@ -121,8 +121,8 @@ type MetadataProgress struct {
 }
 
 // MetadataLogEntry is shared.ts MetadataLogEntry. Verb is the shared.ts
-// MetadataVerb union (read/list/search/edit/run/web/task/skill/thinking/
-// error) — producer-tagged so the TUI doesn't regex-guess the verb back
+// MetadataVerb union (read/list/search/edit/run/web/tool/task/skill/
+// thinking/error) — producer-tagged so the TUI doesn't regex-guess the verb back
 // out of Message; empty when the producer only has free text.
 type MetadataLogEntry struct {
 	Message string `json:"message"`

@@ -73,13 +73,14 @@ export const BRANCH_GLYPH = "\u{F062C}";     // nf-md-source-branch
 // ── Verb glyphs (col 1, the verb stripe) ──
 // Five core verbs are derived client-side by classify.ts. The remaining
 // glyphs are wired into VERB_GLYPHS for forward-compatibility with watchers
-// that emit web/task/skill/thinking events.
+// that emit web/tool/task/skill/thinking events.
 export const ACTIVITY_VERB_READ     = "\u{E28B}";  // nf-fae-book-open-o (was nf-md-eye; old E22B was palette_color)
 export const ACTIVITY_VERB_LIST     = "\u{F0279}"; // nf-md-format-list-bulleted (kept; hud has no list)
 export const ACTIVITY_VERB_SEARCH   = "\u{F0968}"; // nf-md-folder-search (was nf-md-magnify)
 export const ACTIVITY_VERB_EDIT     = "\u{EE75}";  // nf-fa-pen-nib (was nf-md-pencil)
 export const ACTIVITY_VERB_RUN      = "\u{F0BE0}"; // nf-md-wrench-outline (was nf-md-play)
 export const ACTIVITY_VERB_WEB      = "\u{F059F}"; // nf-md-web
+export const ACTIVITY_VERB_TOOL     = "\u{F1425}"; // nf-md-power-plug-outline (MCP server tool)
 export const ACTIVITY_VERB_TASK     = "\u{F167A}"; // nf-md-robot-outline (sub-agent / Task tool)
 export const ACTIVITY_VERB_SKILL    = "\u{F0BE0}"; // nf-md-wrench-outline (alias of RUN by design)
 export const ACTIVITY_VERB_THINKING = "\u{F0EB}";  // nf-fa-lightbulb_o (thinking-block content; renamed _o in nf 3.x)

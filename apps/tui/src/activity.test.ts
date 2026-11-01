@@ -159,6 +159,14 @@ describe("bucketIconLogs", () => {
     expect(misc).toEqual({ glyph: ACTIVITY_VERB_MISC, kind: "verb" });
   });
 
+  test("MCP tools render the tool glyph, tagged or by name", () => {
+    const [tagged] = bucketIconLogs([log({ ts: NOW, message: "mcp__plugin_figma_figma__whoami", verb: "tool" })], NOW, 1);
+    expect(tagged).toEqual({ glyph: VERB_GLYPHS.tool, kind: "verb" });
+
+    const [classified] = bucketIconLogs([log({ ts: NOW, message: "mcp__memory__create_entities" })], NOW, 1);
+    expect(classified).toEqual({ glyph: VERB_GLYPHS.tool, kind: "verb" });
+  });
+
   test("any error in the bucket wins over a newer success", () => {
     const icons = bucketIconLogs(
       [

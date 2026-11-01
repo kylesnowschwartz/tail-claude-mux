@@ -24,12 +24,15 @@ func TestToolVerb(t *testing.T) {
 		{"WebFetch", "web"},
 		{"WebSearch", "web"},
 		{"Skill", "skill"},
+		{"mcp__plugin_figma_figma__whoami", "tool"},
+		{"mcp__claude_ai_Slack__slack_read_thread", "tool"},
 		{"ToolSearch", ""}, // unknown tools stay untagged — TUI classifier decides
 		{"AskUserQuestion", ""},
 		{"", ""},
 
 		// Codex hook payload names
 		{"apply_patch", "edit"},
+		{"mcp__memory__create_entities", "tool"},
 		{"spawn_agent", "task"},
 		{"wait_agent", "task"},
 		{"multi_agent_v1send_input", "task"},
