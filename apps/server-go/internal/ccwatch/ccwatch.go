@@ -423,7 +423,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	}
 	if hasToolContext {
 		state.lastToolDescription = ToolDescription(payload.ToolName, payload.ToolInput)
-		state.lastToolVerb = ToolVerb(payload.ToolName)
+		state.lastToolVerb = ToolVerb(payload.ToolName, payload.ToolInput)
 	} else if !toolOutcomeEvents[payload.Event] {
 		// Clear on non-tool events; a tool outcome keeps the prior
 		// description (the call it describes just resolved).

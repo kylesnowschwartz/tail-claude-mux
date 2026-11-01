@@ -227,7 +227,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	}
 	if hasToolContext {
 		state.lastToolDescription = ccwatch.ToolDescription(payload.ToolName, payload.ToolInput)
-		state.lastToolVerb = ccwatch.ToolVerb(payload.ToolName)
+		state.lastToolVerb = ccwatch.ToolVerb(payload.ToolName, payload.ToolInput)
 	} else if payload.Event != "PostToolUse" {
 		state.lastToolDescription = ""
 		state.lastToolVerb = ""
