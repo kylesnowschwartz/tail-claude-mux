@@ -49,27 +49,31 @@ type column struct {
 	hue   string // palette key
 }
 
+// columns run left to right roughly in the order a turn unfolds: think, look
+// at the code, change it, run it, reach outside the repo, hand work to other
+// agents.
 var columns = [...]column{
-	{"edit", "peach"},
-	{"read", "blue"},
-	{"run", "green"},
-	{"web", "teal"},
-	{"task", "mauve"},
 	{"think", "lavender"},
+	{"read", "blue"},
+	{"edit", "peach"},
+	{"run", "green"},
+	{"ext", "teal"},
+	{"agents", "mauve"},
 }
 
 // verbColumn maps an activity verb to its index in columns. Verbs absent from
 // the table (error, misc, untagged) have no column.
 var verbColumn = map[string]int{
-	"edit":     0,
+	"thinking": 0,
 	"read":     1,
 	"list":     1,
 	"search":   1,
-	"run":      2,
-	"web":      3,
-	"task":     4,
-	"skill":    4,
-	"thinking": 5,
+	"edit":     2,
+	"run":      3,
+	"web":      4,
+	"tool":     4,
+	"task":     5,
+	"skill":    5,
 }
 
 // fallbackColors fill in palette keys a theme does not define.
@@ -191,8 +195,10 @@ func Render(logs []wire.MetadataLogEntry, now int64, width, height, waiting int,
 
 // layout picks how many columns to show, their widths, and whether the gutter
 // fits. The gutter shows only when every column keeps at least
-// minCellWidthWithGutter cells. Spare cells go one each to the rightmost
-// columns, up to maxCellWidth.
+// minCellWidthWithGutter cells. When every label fits, each column starts at
+// its label's width; otherwise all start at zero and labels are cut. Spare
+// cells then go one at a time to the narrowest column, the rightmost among
+// equals, up to maxCellWidth.
 func layout(width int) (nCols int, widths []int, gutter bool) {
 	n := len(columns)
 	avail := width
@@ -205,17 +211,29 @@ func layout(width int) (nCols int, widths []int, gutter bool) {
 	if n <= 0 {
 		return 0, nil, false
 	}
-	base := (avail - (n - 1)) / n
-	extra := (avail - (n - 1)) % n
-	if base >= maxCellWidth {
-		base, extra = maxCellWidth, 0
-	}
+	cells := avail - (n - 1)
 	widths = make([]int, n)
+	labels := 0
 	for i := range widths {
-		widths[i] = base
-		if i >= n-extra {
-			widths[i]++
+		labels += len(columns[i].label)
+	}
+	if labels <= cells {
+		for i := range widths {
+			widths[i] = len(columns[i].label)
 		}
+		cells -= labels
+	}
+	for ; cells > 0; cells-- {
+		narrowest := n - 1
+		for i := n - 2; i >= 0; i-- {
+			if widths[i] < widths[narrowest] {
+				narrowest = i
+			}
+		}
+		if widths[narrowest] >= maxCellWidth {
+			break
+		}
+		widths[narrowest]++
 	}
 	return n, widths, gutter
 }

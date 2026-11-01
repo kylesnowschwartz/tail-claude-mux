@@ -41,7 +41,7 @@ func TestEmptyState(t *testing.T) {
 	if len(got) != 10 {
 		t.Fatalf("lines = %d, want 10", len(got))
 	}
-	if !strings.Contains(got[0], "edit") || !strings.Contains(got[0], "think") {
+	if got[0] != "think read edit run   ext  agents" {
 		t.Errorf("header = %q", got[0])
 	}
 	for i, l := range got[1:] {
@@ -64,20 +64,22 @@ func TestEmptyState(t *testing.T) {
 
 func TestGolden37x10(t *testing.T) {
 	logs := append(repeat(log("run", now+10), 9), repeat(log("edit", now+20), 4)...)
-	logs = append(logs, log("read", now-1), log("grep", now-1), log("search", now-9_000), log("web", now-17_000))
-	logs = append(logs, errLog("edit", now-26_000), errLog("error", now-34_000))
+	logs = append(logs, repeat(log("thinking", now+5), 2)...)
+	logs = append(logs, log("read", now-1), log("grep", now-1), log("search", now-9_000), log("tool", now-9_000), log("web", now-17_000))
+	logs = append(logs, errLog("edit", now-26_000), errLog("error", now-34_000), log("task", now-42_000), log("skill", now-42_000))
+	logs = append(logs, log("thinking", now-50_000))
 	got := strings.Join(Render(logs, now, 37, 10, 1, nil), "\n")
 	want := strings.Join([]string{
-		"edit read  run   web  task  think",
-		"▓▓▓▓ ···· █████ ····· ····· ····· \U000F0D59",
-		"···· ░░░░ ····· ····· ····· ·····",
-		"···· ░░░░ ····· ····· ····· ·····",
-		"···· ···· ····· ░░░░░ ····· ·····",
-		"░░░░ ···· ····· ····· ····· ·····",
-		"···· ···· ····· ····· ····· ····· \uF00D",
-		"···· ···· ····· ····· ····· ·····",
-		"···· ···· ····· ····· ····· ·····",
-		"···· ···· ····· ····· ····· ····· -1m",
+		"think read edit run   ext  agents",
+		"▒▒▒▒▒ ···· ▓▓▓▓ ████ ····· ······ \U000F0D59",
+		"····· ░░░░ ···· ···· ····· ······",
+		"····· ░░░░ ···· ···· ░░░░░ ······",
+		"····· ···· ···· ···· ░░░░░ ······",
+		"····· ···· ░░░░ ···· ····· ······",
+		"····· ···· ···· ···· ····· ······ \uF00D",
+		"····· ···· ···· ···· ····· ▒▒▒▒▒▒",
+		"░░░░░ ···· ···· ···· ····· ······",
+		"····· ···· ···· ···· ····· ······ -1m",
 	}, "\n")
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
@@ -86,7 +88,7 @@ func TestGolden37x10(t *testing.T) {
 
 func TestBurstInRun(t *testing.T) {
 	got := Render(repeat(log("run", now+5), 8), now, 37, 4, 0, nil)
-	runCol := strings.Fields(got[1])[2]
+	runCol := strings.Fields(got[1])[3]
 	if !strings.HasPrefix(runCol, "█") {
 		t.Errorf("run cell = %q, want full block; row %q", runCol, got[1])
 	}
@@ -99,10 +101,10 @@ func TestHeatScaleStretchesOnBurst(t *testing.T) {
 	logs := append(repeat(log("run", now), 40), repeat(log("edit", now), 10)...)
 	got := Render(logs, now, 37, 2, 0, nil)
 	cells := strings.Fields(got[1])
-	if !strings.HasPrefix(cells[0], "▓") && !strings.HasPrefix(cells[0], "▒") {
+	if !strings.HasPrefix(cells[2], "▓") && !strings.HasPrefix(cells[2], "▒") {
 		t.Errorf("edit(10) against stretched cap 40 should be mid shade: %q", got[1])
 	}
-	if !strings.HasPrefix(cells[2], "█") {
+	if !strings.HasPrefix(cells[3], "█") {
 		t.Errorf("run(40) should be full: %q", got[1])
 	}
 }
@@ -145,7 +147,7 @@ func TestWaitingBellWinsOverNow(t *testing.T) {
 }
 
 func TestFutureTimestampClampsToTopRow(t *testing.T) {
-	got := Render([]wire.MetadataLogEntry{log("edit", now+3_600_000)}, now, 37, 4, 0, nil)
+	got := Render([]wire.MetadataLogEntry{log("thinking", now+3_600_000)}, now, 37, 4, 0, nil)
 	if !strings.HasPrefix(got[1], "░") {
 		t.Errorf("future log not in top row: %q", got[1])
 	}
@@ -214,7 +216,7 @@ func TestBucketsAlignToSliceBoundary(t *testing.T) {
 }
 
 func TestGeometry(t *testing.T) {
-	logs := append(repeat(log("run", now), 5), errLog("error", now-9_000), log("think", now))
+	logs := append(repeat(log("run", now), 5), errLog("error", now-9_000), log("thinking", now))
 	for _, w := range []int{37, 24, 12, 5, 3, 1} {
 		for _, h := range []int{10, 3, 1} {
 			for _, pal := range []Palette{nil, testPalette()} {
@@ -239,7 +241,7 @@ func TestDegradation(t *testing.T) {
 		gutter     bool
 		minCellWid int
 	}{
-		{37, 6, true, 4},
+		{37, 6, true, 5},
 		{27, 6, true, 3},
 		{26, 6, false, 3},
 		{24, 6, false, 3},
@@ -255,7 +257,7 @@ func TestDegradation(t *testing.T) {
 		}
 	}
 	lines := Render(nil, now, 5, 3, 0, nil)
-	if lines[0] != "e r r" || lines[1] != "· · ·" {
+	if lines[0] != "t r e" || lines[1] != "· · ·" {
 		t.Errorf("width 5: %q", lines)
 	}
 	lines = Render(nil, now, 12, 2, 0, nil)
@@ -263,8 +265,21 @@ func TestDegradation(t *testing.T) {
 		t.Errorf("width 12: %q", lines)
 	}
 	lines = Render(nil, now, 24, 2, 0, nil)
-	if lines[0] != "edit read run web task thi" && width(lines[0]) > 24 {
+	if lines[0] != "thi rea edi run ext agen" {
 		t.Errorf("width 24 header: %q", lines[0])
+	}
+}
+
+// At the default companion width every label is shown whole, with the gutter.
+func TestLabelsFitAt37(t *testing.T) {
+	n, widths, gutter := layout(37)
+	if n != len(columns) || !gutter {
+		t.Fatalf("layout(37) = %d columns, gutter %v", n, gutter)
+	}
+	for i, c := range columns {
+		if widths[i] < len(c.label) {
+			t.Errorf("column %q is %d cells, label needs %d", c.label, widths[i], len(c.label))
+		}
 	}
 }
 
@@ -300,7 +315,7 @@ func fieldWidths(s string) []int {
 
 func TestVerbMapping(t *testing.T) {
 	cases := map[string]int{
-		"edit": 0, "read": 1, "list": 1, "search": 1, "run": 2, "web": 3, "task": 4, "skill": 4, "thinking": 5,
+		"thinking": 0, "read": 1, "list": 1, "search": 1, "edit": 2, "run": 3, "web": 4, "tool": 4, "task": 5, "skill": 5,
 	}
 	for v, want := range cases {
 		if got, ok := verbColumn[v]; !ok || got != want {
