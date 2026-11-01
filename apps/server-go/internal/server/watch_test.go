@@ -316,6 +316,24 @@ func TestDeriveLogEntries(t *testing.T) {
 		}
 	})
 
+	t.Run("thinking blocks log one entry each, before the tool entry", func(t *testing.T) {
+		s := newServer()
+		ev := toolEv("Reading main.go", true)
+		ev.ThinkingBlocks = 2
+		entries := s.deriveLogEntriesLocked(ev)
+		if len(entries) != 3 {
+			t.Fatalf("got %d entries, want 3 (2 thinking + 1 tool)", len(entries))
+		}
+		for i, e := range entries[:2] {
+			if e.Verb != "thinking" || e.Message != "Thinking" || e.Source != "cc 1234" {
+				t.Errorf("entries[%d] = %+v, want a thinking entry", i, e)
+			}
+		}
+		if entries[2].Verb != "read" {
+			t.Errorf("entries[2].verb = %q, want read", entries[2].Verb)
+		}
+	})
+
 	t.Run("thread name and status transitions still log once per change", func(t *testing.T) {
 		s := newServer()
 		ev := toolEv("", false)

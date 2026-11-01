@@ -20,9 +20,11 @@ const (
 	// removes their entries. Tool entries are per-INVOCATION (identical
 	// repeated calls each count — watch.go's ToolInvoked keying), and one
 	// session can host several threads plus parallel subagents, so budget
-	// ~3 entries/s sustained: 800 covers the window with headroom; memory
-	// cost is trivial (≤ ~500 KB/session).
-	maxLogs          = 800
+	// ~3 tool entries/s sustained. Thinking entries (one per thinking block)
+	// run at about two for every three tool calls, adding ~2/s: 5 entries/s ×
+	// 232 s ≈ 1160, so 1200 covers the window; memory cost is trivial
+	// (≤ ~750 KB/session).
+	maxLogs          = 1200
 	maxMessageLength = 500
 	maxLabelLength   = 100
 	maxSourceLength  = 50

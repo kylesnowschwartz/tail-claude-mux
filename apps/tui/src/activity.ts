@@ -179,7 +179,8 @@ export function expandSparklineRows(rows: readonly string[], contentWidth: numbe
  *      Attention signals must never be swallowed by busier neighbours —
  *      this is the seismograph's descendant of the old spec's Rule 0.
  *   2. any error in the bucket     → error cross
- *   3. otherwise                   → newest log's verb glyph (misc fallback)
+ *   3. otherwise                   → newest log's verb glyph (misc fallback);
+ *      among logs with the same ts, the last appended is the newest
  * Empty buckets stay blank — the row reads as a timeline, not a list.
  */
 export type BucketIcon = { glyph: string; kind: "verb" | "error" | "system"; tone?: ActivityLog["tone"] };
@@ -193,7 +194,9 @@ export function bucketIconLogs(logs: readonly ActivityLog[], now: number, cells:
     if (idx < 0) continue;
     if (isSystemTag(log.source) && (!newestTag[idx] || log.ts > newestTag[idx]!.ts)) newestTag[idx] = log;
     if (log.tone === "error") hasError[idx] = true;
-    if (!newest[idx] || log.ts > newest[idx]!.ts) newest[idx] = log;
+    // Ties go to the later entry: logs arrive in append order, and one agent
+    // event can append several entries at the same ts (thinking, then tool).
+    if (!newest[idx] || log.ts >= newest[idx]!.ts) newest[idx] = log;
   }
   return newest.map((log, idx) => {
     if (!log) return null;

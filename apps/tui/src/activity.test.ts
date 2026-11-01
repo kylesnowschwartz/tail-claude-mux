@@ -159,6 +159,18 @@ describe("bucketIconLogs", () => {
     expect(misc).toEqual({ glyph: ACTIVITY_VERB_MISC, kind: "verb" });
   });
 
+  test("same-ts entries resolve to the last appended (tool after its thinking)", () => {
+    const [icon] = bucketIconLogs(
+      [
+        log({ ts: NOW, message: "Thinking", verb: "thinking" }),
+        log({ ts: NOW, message: "Running git status", verb: "run" }),
+      ],
+      NOW,
+      1,
+    );
+    expect(icon).toEqual({ glyph: VERB_GLYPHS.run, kind: "verb" });
+  });
+
   test("MCP tools render the tool glyph, tagged or by name", () => {
     const [tagged] = bucketIconLogs([log({ ts: NOW, message: "mcp__plugin_figma_figma__whoami", verb: "tool" })], NOW, 1);
     expect(tagged).toEqual({ glyph: VERB_GLYPHS.tool, kind: "verb" });

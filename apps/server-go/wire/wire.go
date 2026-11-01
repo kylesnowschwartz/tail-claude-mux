@@ -97,10 +97,15 @@ type AgentEvent struct {
 	// appends a tool entry only when it is set, so repeated identical calls
 	// each count while echoes of one call (PermissionRequest → approved
 	// PreToolUse, PostToolUse keeping the description) don't double-log.
-	ToolInvoked bool   `json:"toolInvoked,omitempty"`
-	PaneTitle   string `json:"paneTitle,omitempty"`
-	Subagent    string `json:"subagent,omitempty"`
-	Ended       bool   `json:"ended,omitempty"`
+	ToolInvoked bool `json:"toolInvoked,omitempty"`
+	// ThinkingBlocks is the number of thinking blocks the agent wrote since
+	// the thread's previous event. Edge semantics like ToolInvoked: the
+	// activity log appends one thinking entry per block, and the tracker
+	// never stores it.
+	ThinkingBlocks int    `json:"thinkingBlocks,omitempty"`
+	PaneTitle      string `json:"paneTitle,omitempty"`
+	Subagent       string `json:"subagent,omitempty"`
+	Ended          bool   `json:"ended,omitempty"`
 }
 
 // MetadataStatus is shared.ts MetadataStatus (programmatic API).

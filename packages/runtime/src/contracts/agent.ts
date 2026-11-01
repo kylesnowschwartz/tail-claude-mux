@@ -50,6 +50,10 @@ export interface AgentEvent {
    *  (permission request → approved PreToolUse, PostToolUse keeping the
    *  description) don't double-log. */
   toolInvoked?: boolean;
+  /** Number of thinking blocks the agent wrote since the thread's previous
+   *  event. Edge semantics like `toolInvoked`: the activity log appends one
+   *  thinking entry per block, and the tracker never stores it. */
+  thinkingBlocks?: number;
   /** tmux `pane_title` for this agent's pane, captured by the scanner. Claude
    *  Code encodes turn state in its OSC title (braille = working, ✳ = idle);
    *  the watcher's probe uses it to fill the gap when the session file yields

@@ -47,6 +47,9 @@ type HookPayload struct {
 	ShutdownReason   string                     `json:"shutdown_reason,omitempty"`
 	PID              int                        `json:"pid,omitempty"`
 	ProcessSnapshot  string                     `json:"process_snapshot,omitempty"`
+	// TranscriptPath is the session's transcript file, as the agent reports
+	// it.
+	TranscriptPath string `json:"transcript_path,omitempty"`
 }
 
 // ParseHookPayload validates one POST /hook body. It returns (payload,
@@ -101,6 +104,7 @@ func ParseHookPayload(body []byte) (HookPayload, bool) {
 		ShutdownReason:   optEnumString(raw["shutdown_reason"], validShutdownReasons),
 		PID:              optPositiveInt(raw["pid"]),
 		ProcessSnapshot:  optBoundedString(raw["process_snapshot"], maxProcessSnapshotLen),
+		TranscriptPath:   optBoundedString(raw["transcript_path"], maxStringLen),
 	}
 	return p, true
 }

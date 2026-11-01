@@ -119,6 +119,9 @@ type threadState struct {
 	// subagent from sessions/<pid>.json `agent`, "" when the parent thread
 	// is in control.
 	subagent string
+	// thinking counts the assistant thinking blocks the thread's transcript
+	// gains between emitted events.
+	thinking thinkingCursor
 	// nonTmuxLogged fires once per thread: after the first "dropped" hook
 	// from a classified non-tmux agent (registry Kind != "interactive", e.g.
 	// claude bg-spare), further drops for the same thread stay silent
@@ -317,6 +320,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		a.threads[threadID] = state
 		a.resolveThreadNameAsync(threadID, state)
 	}
+	state.thinking.trackTranscript(payload.TranscriptPath, threadID)
 
 	// Resolve the long-lived agent pid from every hook that carries a
 	// process snapshot: the hook's reported pid ($PPID) is the `sh -c`
@@ -498,6 +502,10 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, kind
 	if a.ctx == nil {
 		return
 	}
+	thinking := 0
+	if kind != emitEnded {
+		thinking = state.thinking.newThinkingBlocks()
+	}
 	a.ctx.Emit(wire.AgentEvent{
 		Agent:           "claude-code",
 		Session:         session,
@@ -508,6 +516,7 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, kind
 		ToolDescription: state.lastToolDescription,
 		ToolVerb:        state.lastToolVerb,
 		ToolInvoked:     kind == emitInvoked,
+		ThinkingBlocks:  thinking,
 		PID:             state.pid,
 		Subagent:        state.subagent,
 		Ended:           kind == emitEnded,

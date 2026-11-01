@@ -298,10 +298,12 @@ func (t *Tracker) ApplyEvent(event wire.AgentEvent, seed bool) {
 		event.FirstSeenTS = event.TS
 	}
 	stored := event
-	// ToolInvoked is edge semantics ("this event STARTS a tool call") and
-	// must not persist as level state in snapshots — like Ended (consumed
-	// above) and Unseen (side map), it never survives the store.
+	// ToolInvoked and ThinkingBlocks are edge semantics ("this event STARTS
+	// a tool call", "these blocks were just written") and must not persist as
+	// level state in snapshots — like Ended (consumed above) and Unseen (side
+	// map), they never survive the store.
 	stored.ToolInvoked = false
+	stored.ThinkingBlocks = 0
 	si[key] = &stored
 
 	// One live process hosts one thread row: an event with a known pid

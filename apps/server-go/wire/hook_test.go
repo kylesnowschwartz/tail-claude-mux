@@ -139,3 +139,15 @@ func TestParseHookPayload_PidEdgeCases(t *testing.T) {
 		}
 	}
 }
+
+func TestParseHookPayload_TranscriptPath(t *testing.T) {
+	body := `{"event":"Stop","session_id":"s1","cwd":"/proj","transcript_path":"/home/u/.claude/projects/-proj/s1.jsonl"}`
+	p, ok := ParseHookPayload([]byte(body))
+	if !ok || p.TranscriptPath != "/home/u/.claude/projects/-proj/s1.jsonl" {
+		t.Errorf("transcript_path: got %q ok=%v", p.TranscriptPath, ok)
+	}
+	p, ok = ParseHookPayload([]byte(`{"event":"Stop","session_id":"s1","cwd":"/proj","transcript_path":7}`))
+	if !ok || p.TranscriptPath != "" {
+		t.Errorf("non-string transcript_path: got %q ok=%v, want dropped", p.TranscriptPath, ok)
+	}
+}

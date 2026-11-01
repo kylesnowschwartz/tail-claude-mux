@@ -278,10 +278,11 @@ func shortThreadIDSuffix(id string) string {
 }
 
 // deriveLogEntriesLocked synthesizes human-readable ln-zone entries from
-// one agent event. Emit order: thread name (least recent) → tool (mid) →
-// status transition (most recent), so the freshest visible entry reflects
-// the latest signal. Running/idle/done are deliberately not surfaced:
-// running is implied by tool descriptions; idle/done are too noisy.
+// one agent event. Emit order: thread name (least recent) → thinking blocks
+// → tool → status transition (most recent), so the freshest visible entry
+// reflects the latest signal. Thinking entries carry no thought content.
+// Running/idle/done are deliberately not surfaced: running is implied by
+// tool descriptions; idle/done are too noisy.
 func (s *Server) deriveLogEntriesLocked(ev wire.AgentEvent) []wire.MetadataLogEntry {
 	if ev.ThreadID == "" {
 		return nil
@@ -292,6 +293,9 @@ func (s *Server) deriveLogEntriesLocked(ev wire.AgentEvent) []wire.MetadataLogEn
 
 	if ev.ThreadName != "" && ev.ThreadName != last.thread {
 		out = append(out, wire.MetadataLogEntry{Source: source, Message: ev.ThreadName, Tone: "neutral"})
+	}
+	for range ev.ThinkingBlocks {
+		out = append(out, wire.MetadataLogEntry{Source: source, Message: "Thinking", Tone: "info", Verb: "thinking"})
 	}
 	if ev.ToolInvoked && ev.ToolDescription != "" {
 		out = append(out, wire.MetadataLogEntry{Source: source, Message: ev.ToolDescription, Tone: "info", Verb: ev.ToolVerb})
