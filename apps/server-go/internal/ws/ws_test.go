@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // clientConn is a minimal RFC 6455 *client* used only by these tests:
@@ -245,5 +246,68 @@ func TestUpgradeRejectsPlainRequest(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+// A peer that never reads must not block the writer: the write returns an
+// error within writeTimeout, closes the connection, and later writes fail
+// at once.
+func TestWriteToStalledPeerTimesOut(t *testing.T) {
+	defer func(d time.Duration) { writeTimeout = d }(writeTimeout)
+	writeTimeout = 100 * time.Millisecond
+
+	pipe := func(*testing.T) (net.Conn, net.Conn) { return net.Pipe() }
+	loopback := func(t *testing.T) (net.Conn, net.Conn) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ln.Close()
+		accepted := make(chan net.Conn, 1)
+		go func() {
+			c, _ := ln.Accept()
+			accepted <- c
+		}()
+		peer, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		server := <-accepted
+		if server == nil {
+			t.Fatal("accept failed")
+		}
+		return server, peer
+	}
+
+	for name, dial := range map[string]func(*testing.T) (net.Conn, net.Conn){"pipe": pipe, "loopback": loopback} {
+		t.Run(name, func(t *testing.T) {
+			raw, peer := dial(t)
+			defer peer.Close()
+			c := &Conn{conn: raw, br: bufio.NewReader(raw)}
+			defer c.Close()
+
+			// Larger than any loopback socket buffer, so the write stalls.
+			payload := strings.Repeat("x", 64<<20)
+			start := time.Now()
+			err := c.WriteText(payload)
+			elapsed := time.Since(start)
+			if err == nil {
+				t.Fatal("WriteText to a stalled peer succeeded, want a timeout error")
+			}
+			if elapsed > writeTimeout+2*time.Second {
+				t.Fatalf("WriteText took %v, want about %v", elapsed, writeTimeout)
+			}
+
+			start = time.Now()
+			if err := c.WriteText("next"); !errors.Is(err, ErrClosed) {
+				t.Fatalf("write after timeout err = %v, want ErrClosed", err)
+			}
+			if _, err := c.ReadText(); !errors.Is(err, ErrClosed) {
+				t.Fatalf("ReadText after timeout err = %v, want ErrClosed", err)
+			}
+			if elapsed := time.Since(start); elapsed > time.Second {
+				t.Fatalf("writes after timeout took %v, want immediate", elapsed)
+			}
+		})
 	}
 }

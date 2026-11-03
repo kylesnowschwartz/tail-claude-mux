@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // magicGUID is the fixed RFC 6455 accept-key suffix.
@@ -31,6 +32,11 @@ const magicGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 // maxMessageSize bounds a reassembled client message. Client commands are
 // small JSON; 1 MiB is generous headroom.
 const maxMessageSize = 1 << 20
+
+// writeTimeout bounds one frame write. A peer that stops reading fills its
+// socket buffer; the deadline turns that stall into a write error instead
+// of blocking the writer (and any lock it holds) indefinitely.
+var writeTimeout = 2 * time.Second
 
 // Frame opcodes (RFC 6455 §5.2).
 const (
@@ -207,13 +213,29 @@ func (c *Conn) readFrame() (fin bool, opcode byte, payload []byte, err error) {
 	return fin, opcode, payload, nil
 }
 
-// writeFrame sends one complete (FIN) unmasked frame.
+// writeFrame sends one complete (FIN) unmasked frame within writeTimeout.
+// A failed write may leave a partial frame on the wire, so it closes the
+// connection: later writes return ErrClosed at once and the reader's
+// ReadText returns ErrClosed.
 func (c *Conn) writeFrame(opcode byte, payload []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	if c.closed.Load() {
 		return ErrClosed
 	}
+	if err := c.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		c.Close()
+		return err
+	}
+	defer func() { _ = c.conn.SetWriteDeadline(time.Time{}) }()
+	if err := c.writeFrameBytes(opcode, payload); err != nil {
+		c.Close()
+		return err
+	}
+	return nil
+}
+
+func (c *Conn) writeFrameBytes(opcode byte, payload []byte) error {
 	header := make([]byte, 0, 10)
 	header = append(header, 0x80|opcode)
 	switch n := len(payload); {
