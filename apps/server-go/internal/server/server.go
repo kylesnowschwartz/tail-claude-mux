@@ -15,6 +15,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
@@ -87,6 +89,10 @@ type Server struct {
 	answerWaiters  map[answerWaiterKey]int
 	clients        map[*client]bool
 	lastState      []byte // last broadcast ServerState, JSON-encoded
+	// snapshot is the most recent encodeState result; GET /state serves it
+	// while it is younger than stateMaxAge. Read without s.mu.
+	snapshot    atomic.Pointer[stateSnapshot]
+	stateMaxAge time.Duration // tests shorten; zero means defaultStateMaxAge.
 
 	// Watcher plumbing (see watch.go).
 	watchersSeeded    bool
@@ -234,10 +240,74 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleState(w http.ResponseWriter, _ *http.Request) {
+// defaultStateMaxAge bounds how stale a GET /state body may be. Pollers
+// inside the window share one build instead of each taking s.mu for a
+// full prepareStateLocked.
+const defaultStateMaxAge = 500 * time.Millisecond
+
+// stateSnapshot is one encodeState result: the ts-zeroed encoding plus the
+// time it was built. The ts-stamped body is computed once, on first serve.
+type stateSnapshot struct {
+	encoded []byte
+	builtAt time.Time
+
+	stampOnce sync.Once
+	body      []byte
+	bodyErr   error
+}
+
+func (snap *stateSnapshot) stamped() ([]byte, error) {
+	snap.stampOnce.Do(func() { snap.body, snap.bodyErr = stampTS(snap.encoded) })
+	return snap.body, snap.bodyErr
+}
+
+func (s *Server) stateMaxAgeOrDefault() time.Duration {
+	if s.stateMaxAge > 0 {
+		return s.stateMaxAge
+	}
+	return defaultStateMaxAge
+}
+
+// recentSnapshot returns the latest snapshot when it is within the
+// freshness window, else nil.
+func (s *Server) recentSnapshot() *stateSnapshot {
+	snap := s.snapshot.Load()
+	if snap == nil || time.Since(snap.builtAt) >= s.stateMaxAgeOrDefault() {
+		return nil
+	}
+	return snap
+}
+
+// freshSnapshot returns a snapshot at most stateMaxAge old. A stale one is
+// rebuilt under s.mu; requests queued behind that build reuse its result,
+// and a request whose caller has gone builds nothing.
+func (s *Server) freshSnapshot(ctx context.Context) (*stateSnapshot, error) {
+	if snap := s.recentSnapshot(); snap != nil {
+		return snap, nil
+	}
 	s.mu.Lock()
-	data, err := json.MarshalIndent(s.prepareStateLocked(), "", "  ")
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if snap := s.recentSnapshot(); snap != nil {
+		return snap, nil
+	}
+	if _, err := s.encodeState(); err != nil {
+		return nil, err
+	}
+	return s.snapshot.Load(), nil
+}
+
+func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
+	snap, err := s.freshSnapshot(r.Context())
+	if r.Context().Err() != nil {
+		return
+	}
+	var data []byte
+	if err == nil {
+		data, err = snap.stamped()
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -337,6 +407,10 @@ func (s *Server) handleFocus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.mu.Lock()
+		if r.Context().Err() != nil {
+			s.mu.Unlock()
+			return
+		}
 		s.Builder.SetFocused(session)
 		if s.Tracker != nil {
 			s.Tracker.HandleFocus(session)
@@ -358,6 +432,10 @@ func (s *Server) handlePaneFocus(w http.ResponseWriter, r *http.Request) {
 	if paneID != "" {
 		if data, err := json.Marshal(wire.PaneFocusUpdate{Type: wire.TypePaneFocus, PaneID: paneID}); err == nil {
 			s.mu.Lock()
+			if r.Context().Err() != nil {
+				s.mu.Unlock()
+				return
+			}
 			for c := range s.clients {
 				_ = c.conn.WriteText(string(data))
 			}
@@ -646,7 +724,8 @@ func (s *Server) prepareStateLocked() wire.ServerState {
 	}
 	s.Metadata.PruneSessions(valid)
 	// Header sync rides every state build (bun: broadcastStateImmediate).
-	// Internally diffed per window — no tmux execs when nothing changed.
+	// Each sync runs one `tmux list-panes -a` to map panes to windows, then
+	// writes only the per-window options that changed.
 	if s.Header != nil {
 		theme, _ := theming.ResolveActiveTheme(s.Builder.ConfigDir)
 		s.Header.Sync(st.Sessions, theme, s.HeaderEnabled)
@@ -658,11 +737,17 @@ func (s *Server) prepareStateLocked() wire.ServerState {
 // comparison: ts is excluded from the diff by zeroing it in the comparison
 // copy — simplest correct form is to compare the encoding without ts, but
 // re-encoding twice per tick for two small JSON docs is cheaper to just
-// accept; instead we zero ts pre-encode and stamp it on send.
+// accept; instead we zero ts pre-encode and stamp it on send. Every result
+// becomes the snapshot GET /state serves. Runs with s.mu held.
 func (s *Server) encodeState() ([]byte, error) {
 	st := s.prepareStateLocked()
 	st.TS = 0
-	return json.Marshal(st)
+	data, err := json.Marshal(st)
+	if err != nil {
+		return nil, err
+	}
+	s.snapshot.Store(&stateSnapshot{encoded: data, builtAt: time.Now()})
+	return data, nil
 }
 
 func (s *Server) sendAllLocked(data []byte) {

@@ -155,6 +155,10 @@ func (s *Server) handleEnsureSidebar(w http.ResponseWriter, r *http.Request) {
 	windowID := parseWindowContext(string(body))
 	s.setPendingEnforcement()
 	s.mu.Lock()
+	if r.Context().Err() != nil {
+		s.mu.Unlock()
+		return
+	}
 	if windowID != "" {
 		s.ensureSidebarWindowID = windowID
 	}
