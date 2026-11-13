@@ -106,3 +106,19 @@ func ResolveSessionByPid(targetPid int, panePidIndex map[int]string, snapshot ma
 	}
 	return ""
 }
+
+// ResolveAncestorPid returns the first matching process strictly above pid.
+// Missing processes and cycles terminate the search without a match.
+func ResolveAncestorPid(pid int, matches func(string) bool, snapshot map[int]ProcInfo) int {
+	seen := map[int]bool{pid: true}
+	info, ok := snapshot[pid]
+	for ok && info.PPID > 1 && !seen[info.PPID] {
+		pid = info.PPID
+		seen[pid] = true
+		info, ok = snapshot[pid]
+		if ok && matches(info.Command) {
+			return pid
+		}
+	}
+	return 0
+}

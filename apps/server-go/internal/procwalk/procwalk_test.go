@@ -282,3 +282,23 @@ func TestLiveBugScenarioReproduction(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveAncestorPid(t *testing.T) {
+	for _, tc := range []struct {
+		name, snapshot string
+		pid, want      int
+	}{
+		{"relay", "73477 1 claude --permission-mode auto\n95167 73477 node relay.mjs\n95181 95167 node codex-acp/dist/index.js\n95198 95181 /vendor/bin/codex app-server", 95198, 73477},
+		{"no ancestor", "200 1 zsh\n300 200 codex exec", 300, 0},
+		{"self only", "200 1 claude", 200, 0},
+		{"self and ancestor", "200 1 claude\n300 200 claude", 300, 200},
+		{"cycle", "200 300 claude\n300 200 node", 200, 0},
+		{"missing", "", 200, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ResolveAncestorPid(tc.pid, claudeRE.MatchString, ParseProcessSnapshot(tc.snapshot)); got != tc.want {
+				t.Fatalf("got %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

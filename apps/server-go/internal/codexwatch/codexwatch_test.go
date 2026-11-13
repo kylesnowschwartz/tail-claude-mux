@@ -769,3 +769,76 @@ func TestRolloutStatusMapping(t *testing.T) {
 		}
 	}
 }
+
+func TestClaudeWorkerHooks(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		parent, report bool
+	}{
+		{"worker", true, true}, {"callback absent", true, false}, {"standalone", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			path := writeRollout(t, h.adapter.SessionsDir, "12345678-1234-1234-1234-123456789abc", `"cli"`, "")
+			h.adapter.openFilesForPID = func(int) []string { return []string{path} }
+			var reports []WorkerReport
+			if tc.report {
+				h.adapter.ctx.ReportWorker = func(r WorkerReport) { reports = append(reports, r) }
+			}
+			snapshot := "100 1 claude --permission-mode auto\n150 100 node relay.mjs\n175 150 node codex-acp/dist/index.js\n200 175 /vendor/bin/codex app-server"
+			if !tc.parent {
+				snapshot = strings.Replace(snapshot, "claude --permission-mode auto", "zsh", 1)
+			}
+			if tc.parent && tc.report {
+				h.adapter.ctx.ResolveSessionByPid = func(int) string { return "" }
+			}
+			payload := wire.HookPayload{Agent: "codex", SessionID: "12345678-1234-1234-1234-123456789abc", PID: 200, ProcessSnapshot: snapshot, Cwd: "/project"}
+			for _, event := range []string{"SessionStart", "UserPromptSubmit", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "Stop"} {
+				payload.Event = event
+				if event == "PreToolUse" || event == "PermissionRequest" {
+					payload.ToolName = "Bash"
+					payload.ToolInput = map[string]json.RawMessage{"command": json.RawMessage(`"go test ./..."`)}
+				} else {
+					payload.ToolName = ""
+					payload.ToolInput = nil
+				}
+				h.adapter.HandleHook(payload)
+			}
+			waitForNameLookup(t, h, "12345678-1234-1234-1234-123456789abc")
+			statuses := []string{wire.StatusIdle, wire.StatusRunning, wire.StatusRunning, wire.StatusWaiting, wire.StatusIdle}
+			if tc.parent && tc.report {
+				if got := h.snapshot(); len(got) != 0 {
+					t.Fatalf("worker emitted rows: %#v", got)
+				}
+				if len(reports) != len(statuses) {
+					t.Fatalf("reports = %#v", reports)
+				}
+				for i, r := range reports {
+					if r.ParentPID != 100 || r.WorkerPID != 200 || r.WorkerID != "12345678-1234-1234-1234-123456789abc" || r.Status != statuses[i] || r.ToolInvoked != (i == 2) {
+						t.Fatalf("report %d = %#v", i, r)
+					}
+					if i == 2 || i == 3 {
+						if r.ToolVerb != "run" || r.ToolDescription != "Running go test ./..." {
+							t.Fatalf("missing tool context: %#v", r)
+						}
+					} else if r.ToolVerb != "" || r.ToolDescription != "" {
+						t.Fatalf("unexpected tool context: %#v", r)
+					}
+				}
+			} else {
+				if len(reports) != 0 {
+					t.Fatalf("unexpected reports: %#v", reports)
+				}
+				events := h.snapshot()
+				if len(events) != len(statuses) {
+					t.Fatalf("events = %#v", events)
+				}
+				for i, ev := range events {
+					if ev.Status != statuses[i] || ev.ToolInvoked != (i == 2) {
+						t.Fatalf("event %d = %#v", i, ev)
+					}
+				}
+			}
+		})
+	}
+}

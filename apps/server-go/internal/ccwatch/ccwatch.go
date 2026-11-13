@@ -44,6 +44,11 @@ import (
 // equivalent for a boolean match.)
 var claudeCmdRE = regexp.MustCompile(`(?i)(?:^|/)claude(?:-code)?($|[\s/])`)
 
+// IsClaudeCommand reports whether command identifies a Claude Code process.
+func IsClaudeCommand(command string) bool {
+	return claudeCmdRE.MatchString(command)
+}
+
 // staleMS bounds the cold-start seed to recently-touched transcripts.
 const staleMS = 5 * 60 * 1000
 
