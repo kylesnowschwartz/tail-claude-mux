@@ -32,7 +32,6 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/config"
-	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/explain"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/metadata"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
@@ -54,7 +53,6 @@ type Server struct {
 	CodexWatcher *codexwatch.Adapter
 	Scanner      *panescan.Scanner
 	Metadata     *metadata.Store
-	Delegations  *delegation.Store
 	BuildInfo    string
 	Port         int
 
@@ -82,13 +80,9 @@ type Server struct {
 	Header        *theming.HeaderSync
 	HeaderEnabled bool
 
-	mu             sync.Mutex
-	followupMu     sync.Mutex
-	messageMu      sync.Mutex
-	answerWaiterMu sync.Mutex
-	answerWaiters  map[answerWaiterKey]int
-	clients        map[*client]bool
-	lastState      []byte // last broadcast ServerState, JSON-encoded
+	mu        sync.Mutex
+	clients   map[*client]bool
+	lastState []byte // last broadcast ServerState, JSON-encoded
 	// snapshot is the most recent encodeState result; GET /state serves it
 	// while it is younger than stateMaxAge. Read without s.mu.
 	snapshot    atomic.Pointer[stateSnapshot]
@@ -103,8 +97,6 @@ type Server struct {
 	dirSessionCacheAt time.Time
 	panesCache        []tmux.Pane
 	panesCacheAt      time.Time
-	waitPollInterval  time.Duration // tests shorten the in-memory /wait poll.
-	delegationBindLog sync.Map      // delegation ID -> struct{}, suppresses repeated bind errors
 
 	// Sidebar lifecycle + width enforcement state (see sidebar.go).
 	// Zero sweepDebounce/sweepConfirmDelay make the orphan sweep
@@ -151,17 +143,9 @@ func New(b *state.Builder, tr *tracker.Tracker, w *ccwatch.Adapter, codex *codex
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /state", s.handleState)
-	mux.HandleFunc("GET /wait", s.handleWait)
-	mux.HandleFunc("GET /result", s.handleResult)
-	mux.HandleFunc("GET /delegation-messages", s.handleDelegationMessages)
-	mux.HandleFunc("GET /delegation-answer", s.handleDelegationAnswer)
-	mux.HandleFunc("GET /delegation", s.handleDelegation)
 	mux.HandleFunc("GET /explain", s.handleExplain)
 	mux.HandleFunc("POST /hook", s.handleHook)
 	mux.HandleFunc("POST /focus", s.handleFocus)
-	mux.HandleFunc("POST /spawn-agent", s.handleSpawnAgent)
-	mux.HandleFunc("POST /followup", s.handleFollowup)
-	mux.HandleFunc("POST /delegation-message", s.handleDelegationMessage)
 	mux.HandleFunc("POST /set-status", s.handleSetStatus)
 	mux.HandleFunc("POST /set-progress", s.handleSetProgress)
 	mux.HandleFunc("POST /log", s.handleLog)
@@ -369,13 +353,6 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 	// 1 MiB bound matches the bun server's tolerance for big ps snapshots.
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if p, ok := wire.ParseHookPayload(body); ok {
-		if p.DelegationID != "" && p.SessionID != "" {
-			agent := p.Agent
-			if agent == "" {
-				agent = "claude-code"
-			}
-			s.bindDelegation(p.DelegationID, agent, p.SessionID)
-		}
 		s.mu.Lock()
 		if s.Watcher != nil {
 			s.Watcher.HandleHook(p)

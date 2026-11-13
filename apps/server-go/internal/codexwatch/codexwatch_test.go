@@ -534,7 +534,7 @@ func TestSessionInfoForPidResolvesPrimaryRollout(t *testing.T) {
 
 // New must resolve a symlinked SessionsDir (e.g. ~/.codex -> ~/Code/dotfiles/codex)
 // so isRolloutPath matches the resolved real paths lsof reports. Without this,
-// filepath.Rel rejects every rollout, ownership never resolves, and delegate
+// filepath.Rel rejects every rollout, ownership never resolves, and agent
 // status is stuck at idle.
 func TestNewResolvesSymlinkedSessionsDir(t *testing.T) {
 	// EvalSymlinks the temp root so the canonical rollout path is unaffected by

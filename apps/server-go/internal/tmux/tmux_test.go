@@ -30,8 +30,7 @@ func TestListSessions_ParsesAndFiltersStashAndIgnored(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)
 	}
-	// The private listing keeps ignored rows: spawn-agent name dedupe must
-	// still collide with them.
+	// The private listing keeps ignored rows.
 	all, err := tm.listSessions()
 	if err != nil {
 		t.Fatal(err)

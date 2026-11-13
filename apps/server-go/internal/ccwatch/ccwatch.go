@@ -140,15 +140,6 @@ type Adapter struct {
 	now     func() int64 // epoch ms, injectable for tests
 }
 
-// ResultSnapshot is the durable result state available from one Claude
-// transcript.
-type ResultSnapshot struct {
-	TranscriptPath string
-	Status         string
-	HasFinal       bool
-	FinalMessage   string
-}
-
 // New returns an Adapter reading the given Claude dirs.
 func New(projectsDir, sessionsDir string) *Adapter {
 	return &Adapter{
@@ -161,54 +152,6 @@ func New(projectsDir, sessionsDir string) *Adapter {
 
 // Name is the watcher/agent discriminator.
 func (a *Adapter) Name() string { return "claude-code" }
-
-// ResultForThread finds a transcript by its session ID and extracts the
-// completed final turn when one is present.
-func (a *Adapter) ResultForThread(threadID string) (ResultSnapshot, error) {
-	if threadID == "" || filepath.Base(threadID) != threadID {
-		return ResultSnapshot{}, nil
-	}
-	dirs, err := os.ReadDir(a.ProjectsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return ResultSnapshot{}, nil
-		}
-		return ResultSnapshot{}, err
-	}
-	for _, dir := range dirs {
-		if !dir.IsDir() {
-			continue
-		}
-		path := filepath.Join(a.ProjectsDir, dir.Name(), threadID+".jsonl")
-		if _, err := os.Stat(path); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return ResultSnapshot{}, err
-		}
-		status, _, err := readTranscriptState(path)
-		if err != nil {
-			return ResultSnapshot{}, err
-		}
-		snapshot := ResultSnapshot{TranscriptPath: path, Status: status}
-		if status != wire.StatusDone {
-			return snapshot, nil
-		}
-		chunks, err := transcript.ReadSession(path)
-		if err != nil {
-			return ResultSnapshot{}, err
-		}
-		for i := len(chunks) - 1; i >= 0; i-- {
-			if chunks[i].Type == transcript.AIChunk && chunks[i].Text != "" {
-				snapshot.HasFinal = true
-				snapshot.FinalMessage = chunks[i].Text
-				break
-			}
-		}
-		return snapshot, nil
-	}
-	return ResultSnapshot{}, nil
-}
 
 // ScanStateForPid reports the session's ids, a working verdict while Claude
 // Code records status "shell" (turn ended, background Bash job still

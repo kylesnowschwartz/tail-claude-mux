@@ -102,8 +102,7 @@ func (t *Tmux) ListSessions() []Session {
 
 // listSessions is the error-reporting form used by operations that cannot
 // safely treat an unreachable tmux server as an empty listing. Unlike the
-// public ListSessions it keeps @tcm-ignore'd rows — spawn-agent name
-// dedupe must still see them.
+// public ListSessions it keeps @tcm-ignore'd rows.
 func (t *Tmux) listSessions() ([]Session, error) {
 	// The ignore flag is the LAST field and must never render empty: a
 	// bare #{@tcm-ignore} (empty when unset) would leave the final row

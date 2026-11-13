@@ -71,7 +71,7 @@ func New(sessionsDir, sessionIndexPath string) *Adapter {
 	// ~/.codex is a dotfiles symlink to ~/Code/dotfiles/codex). SessionsDir
 	// arrives as the pre-resolution path, so isRolloutPath's filepath.Rel
 	// against it rejects every lsof rollout path — ownership never resolves,
-	// the terminal Stop hook is dropped, and delegate status is stuck at idle.
+	// the terminal Stop hook is dropped, and agent status is stuck at idle.
 	// Resolve once here so the comparison base matches lsof's output.
 	if resolved, err := filepath.EvalSymlinks(sessionsDir); err == nil {
 		sessionsDir = resolved
@@ -86,51 +86,6 @@ func New(sessionsDir, sessionIndexPath string) *Adapter {
 }
 
 func (a *Adapter) Name() string { return "codex" }
-
-// RolloutForFollowup resolves a tracked thread directly. Older tracker entries
-// without a thread ID fall back to the newest rollout for cwd.
-func (a *Adapter) RolloutForFollowup(cwd, trackedThreadID string) (path, threadID string, err error) {
-	rollouts, err := discover.DiscoverRollouts(a.SessionsDir)
-	if err != nil {
-		return "", "", err
-	}
-	for _, candidate := range rollouts {
-		if trackedThreadID != "" {
-			if candidate.SessionID == trackedThreadID {
-				return candidate.Path, candidate.SessionID, nil
-			}
-			continue
-		}
-		rolloutDir, err := followupRolloutCwd(candidate.Path)
-		if err != nil {
-			return "", "", err
-		}
-		if rolloutDir == cwd {
-			return candidate.Path, candidate.SessionID, nil
-		}
-	}
-	return "", "", nil
-}
-
-// RolloutForThread resolves the rollout pinned to a tracked Codex thread.
-// It never falls back to cwd matching.
-func (a *Adapter) RolloutForThread(threadID string) (string, error) {
-	path, _, err := a.RolloutForFollowup("", threadID)
-	return path, err
-}
-
-func followupRolloutCwd(path string) (string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	meta, ok, err := rollout.SessionMeta(file)
-	if err != nil || !ok {
-		return "", err
-	}
-	return meta.Payload.Cwd, nil
-}
 
 func (a *Adapter) Start(ctx *Context) {
 	a.ctx = ctx
