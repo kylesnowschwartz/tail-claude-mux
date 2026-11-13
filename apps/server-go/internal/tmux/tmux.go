@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // sep is the field delimiter in tmux -F format strings (tab, universally
@@ -76,8 +75,7 @@ func trimOutput(out string) string {
 
 // Tmux queries one tmux server through its Runner.
 type Tmux struct {
-	Run     Runner
-	spawnMu sync.Mutex
+	Run Runner
 }
 
 // New returns a Tmux backed by the real binary.
@@ -100,9 +98,9 @@ func (t *Tmux) ListSessions() []Session {
 	return out
 }
 
-// listSessions is the error-reporting form used by operations that cannot
-// safely treat an unreachable tmux server as an empty listing. Unlike the
-// public ListSessions it keeps @tcm-ignore'd rows.
+// listSessions returns every session except the sidebar stash, including
+// @tcm-ignore'd rows, and reports a tmux failure as an error. ListSessions
+// filters its result; SessionIgnored reads the ignore flag from it.
 func (t *Tmux) listSessions() ([]Session, error) {
 	// The ignore flag is the LAST field and must never render empty: a
 	// bare #{@tcm-ignore} (empty when unset) would leave the final row

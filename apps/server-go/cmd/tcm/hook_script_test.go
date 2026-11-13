@@ -57,7 +57,6 @@ exit 1
 	if _, ok := withoutAgent["agent"]; ok {
 		t.Fatalf("single-argument invocation added agent: %s", mustJSON(t, withoutAgent))
 	}
-
 }
 
 func TestHookEventsRegisterToolOutcomes(t *testing.T) {
