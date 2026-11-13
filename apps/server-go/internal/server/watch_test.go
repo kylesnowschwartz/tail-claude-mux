@@ -1,8 +1,17 @@
 package server
 
 import (
+	"encoding/json"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
+
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
@@ -352,5 +361,69 @@ func TestScanEventOverRestoresWaitingFromOpenDialog(t *testing.T) {
 	declined := tracker.ScanState{ThreadID: "t", Prompt: tracker.PromptResolution{Verdict: tracker.ProbeDone, AtMS: dialogAt + 2000}}
 	if cleared, ok := scanEventOver(restored, scanned, declined); !ok || cleared.Status != wire.StatusDone {
 		t.Fatalf("scanEventOver after decline = (%q, %v), want done", cleared.Status, ok)
+	}
+}
+
+func TestCodexWorkerHookReachesClaudeParent(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadID := "12345678-1234-1234-1234-123456789abc"
+	rolloutPath := filepath.Join(dir, "rollout-2026-11-13T00-00-00-"+threadID+".jsonl")
+	if err := os.WriteFile(rolloutPath, []byte(`{"type":"session_meta","payload":{"id":"`+threadID+`","source":"cli"}}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "lsof"), []byte("#!/bin/sh\nprintf 'n%s\n' \"$TCM_TEST_ROLLOUT\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TCM_TEST_ROLLOUT", rolloutPath)
+	var events []wire.AgentEvent
+	s := &Server{Watcher: ccwatch.New(t.TempDir(), t.TempDir()), CodexWatcher: codexwatch.New(dir, filepath.Join(dir, "index.jsonl"))}
+	locked := func(fn func()) { s.mu.Lock(); defer s.mu.Unlock(); fn() }
+	resolve := func(pid int) string {
+		if pid == 100 {
+			return "work"
+		}
+		return ""
+	}
+	s.Watcher.Start(&ccwatch.Context{ResolveSession: func(string) string { return "work" }, ResolveSessionByPid: resolve, Emit: func(ev wire.AgentEvent) { events = append(events, ev) }, Locked: locked})
+	ctx := s.codexContext(locked)
+	if ctx.ReportWorker == nil {
+		t.Fatal("worker routing absent")
+	}
+	ctx.ResolveSessionByPid = resolve
+	var lookups sync.WaitGroup
+	ctx.Locked = func(fn func()) { locked(fn); lookups.Done() }
+	s.CodexWatcher.Start(ctx)
+	post := func(payload wire.HookPayload) {
+		t.Helper()
+		body, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		recorder := httptest.NewRecorder()
+		s.handleHook(recorder, httptest.NewRequest("POST", "/hook", strings.NewReader(string(body))))
+		if recorder.Code != 200 {
+			t.Fatalf("hook status = %d", recorder.Code)
+		}
+	}
+	post(wire.HookPayload{Event: "Stop", SessionID: "parent", Cwd: "/project", PID: 100, ProcessSnapshot: "100 1 claude"})
+	lookups.Add(1)
+	post(wire.HookPayload{Agent: "codex", Event: "PreToolUse", SessionID: threadID, Cwd: "/project", PID: 200, ProcessSnapshot: "100 1 claude\n200 100 codex app-server", ToolName: "Bash", ToolInput: map[string]json.RawMessage{"command": json.RawMessage(`"go test ./..."`)}})
+	lookups.Wait()
+	locked(func() {
+		if len(events) != 2 {
+			t.Fatalf("events = %+v", events)
+		}
+		ev := events[1]
+		if ev.Agent != "claude-code" || ev.ThreadID != "parent" || ev.PID != 100 || ev.Session != "work" || ev.Status != wire.StatusRunning || ev.ToolVerb != "run" || !ev.ToolInvoked {
+			t.Fatalf("worker event = %+v", ev)
+		}
+	})
+	if (&Server{}).codexContext(locked).ReportWorker != nil {
+		t.Fatal("worker callback without Claude watcher")
 	}
 }

@@ -13,7 +13,7 @@
 // status heuristics over that data are tcm policy and stay here.
 //
 // Concurrency contract: the Adapter is NOT safe for concurrent use — the
-// server serializes HandleHook / ProbeLiveStatus / Seed under its state
+// server serializes hooks, worker reports, probes, and seeding under its state
 // lock, the same way the bun server's single JS thread does. The one async
 // path, thread-name resolution, does its file IO lockless in a goroutine
 // and re-enters through Context.Locked.
@@ -27,6 +27,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/kylesnowschwartz/agent-ouija/claude/registry"
@@ -107,6 +108,8 @@ type Context struct {
 
 // threadState mirrors ThreadState in the TS adapter.
 type threadState struct {
+	workers map[string]int // active worker thread ids and process ids
+
 	status       string
 	threadName   string
 	projectDir   string
@@ -140,9 +143,10 @@ type Adapter struct {
 	ProjectsDir string
 	SessionsDir string
 
-	ctx     *Context
-	threads map[string]*threadState
-	now     func() int64 // epoch ms, injectable for tests
+	ctx           *Context
+	threads       map[string]*threadState
+	now           func() int64 // epoch ms, injectable for tests
+	processExists func(int) bool
 }
 
 // New returns an Adapter reading the given Claude dirs.
@@ -152,6 +156,9 @@ func New(projectsDir, sessionsDir string) *Adapter {
 		SessionsDir: sessionsDir,
 		threads:     map[string]*threadState{},
 		now:         func() int64 { return time.Now().UnixMilli() },
+		processExists: func(pid int) bool {
+			return pid > 1 && syscall.Kill(pid, 0) != syscall.ESRCH
+		},
 	}
 }
 
@@ -447,6 +454,10 @@ const (
 )
 
 func (a *Adapter) emit(threadID string, state *threadState, session string, kind emitKind) {
+	a.emitWithWorker(threadID, state, session, kind, nil)
+}
+
+func (a *Adapter) emitWithWorker(threadID string, state *threadState, session string, kind emitKind, worker *WorkerReport) {
 	if a.ctx == nil {
 		return
 	}
@@ -454,10 +465,10 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, kind
 	if kind != emitEnded {
 		thinking = state.thinking.newThinkingBlocks()
 	}
-	a.ctx.Emit(wire.AgentEvent{
+	event := wire.AgentEvent{
 		Agent:           "claude-code",
 		Session:         session,
-		Status:          state.status,
+		Status:          a.workerStatus(threadID, state),
 		TS:              a.now(),
 		ThreadID:        threadID,
 		ThreadName:      state.threadName,
@@ -468,7 +479,12 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, kind
 		PID:             state.pid,
 		Subagent:        state.subagent,
 		Ended:           kind == emitEnded,
-	})
+	}
+	if worker != nil && (worker.ToolDescription != "" || worker.ToolVerb != "" || worker.ToolInvoked) {
+		event.ToolDescription = worker.ToolDescription
+		event.ToolVerb = worker.ToolVerb
+	}
+	a.ctx.Emit(event)
 }
 
 // --- sessions/<pid>.json (agent-ouija registry format) ---
@@ -599,6 +615,24 @@ func ClassifyTitleStatus(title string) tracker.ProbeVerdict {
 // re-emit cleanly instead of staying pinned to "running". Call with the
 // server lock held.
 func (a *Adapter) ProbeLiveStatus(pid int, threadID, paneTitle string) tracker.ProbeVerdict {
+	if state := a.threads[threadID]; state != nil && state.pid == pid && len(state.workers) > 0 {
+		before := a.workerStatus(threadID, state)
+		for id, workerPID := range state.workers {
+			if !a.processExists(workerPID) {
+				delete(state.workers, id)
+			}
+		}
+		after := a.workerStatus(threadID, state)
+		if before != after && a.ctx != nil {
+			if session := a.ctx.ResolveSessionByPid(pid); session != "" {
+				a.emit(threadID, state, session, emitUpdate)
+			}
+		}
+		if after == wire.StatusRunning {
+			return tracker.ProbeWorking
+		}
+		return tracker.ProbeNoSignal
+	}
 	verdict := ClassifySessionStatus(a.readSessionFile(pid), threadID, a.now())
 	if verdict == tracker.ProbeNoSignal && paneTitle != "" {
 		verdict = ClassifyTitleStatus(paneTitle)

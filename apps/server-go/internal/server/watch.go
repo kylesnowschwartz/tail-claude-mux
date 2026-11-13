@@ -156,12 +156,7 @@ func (s *Server) StartWatchers() {
 		log.Printf("agent watcher started: %s", s.Watcher.Name())
 	}
 	if s.CodexWatcher != nil {
-		s.CodexWatcher.Start(&codexwatch.Context{
-			ResolveSession:      s.resolveSessionLocked,
-			ResolveSessionByPid: s.resolveSessionByPidLocked,
-			Emit:                s.emitLocked,
-			Locked:              locked,
-		})
+		s.CodexWatcher.Start(s.codexContext(locked))
 		log.Printf("agent watcher started: %s", s.CodexWatcher.Name())
 	}
 	s.mu.Unlock()
@@ -181,6 +176,22 @@ func (s *Server) StartWatchers() {
 
 	go s.paneScanLoop()
 	go s.livenessLoop()
+}
+
+// codexContext routes worker reports under the caller's held state lock.
+func (s *Server) codexContext(locked func(func())) *codexwatch.Context {
+	ctx := &codexwatch.Context{
+		ResolveSession:      s.resolveSessionLocked,
+		ResolveSessionByPid: s.resolveSessionByPidLocked,
+		Emit:                s.emitLocked,
+		Locked:              locked,
+	}
+	if s.Watcher != nil {
+		ctx.ReportWorker = func(report codexwatch.WorkerReport) {
+			s.Watcher.ReportWorker(ccwatch.WorkerReport(report))
+		}
+	}
+	return ctx
 }
 
 // emitLocked is the watcher context's Emit: derive activity-log entries,
@@ -331,6 +342,9 @@ func (s *Server) paneScanLoop() {
 		}
 
 		s.mu.Lock()
+		if s.Watcher != nil {
+			s.Watcher.RecheckWorkers()
+		}
 		changed := false
 		for _, reading := range readings {
 			previous := s.Tracker.GetEvent(reading.ev.Session, reading.ev.Agent, reading.ev.ThreadID, "")
