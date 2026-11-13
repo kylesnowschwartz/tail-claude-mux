@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -30,6 +31,13 @@ exit 1
 		t.Fatal(err)
 	}
 
+	fakePS := "#!/usr/bin/env bash\n" +
+		"for ((i=0; i<45; i++)); do printf '%s\\n' '" + strings.Repeat("x", 5000) + "'; done\n" +
+		"printf '%s\\n' '4242 1 claude --permission-mode auto'\n"
+	if err := os.WriteFile(filepath.Join(bin, "ps"), []byte(fakePS), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
 	run := func(args ...string) map[string]json.RawMessage {
 		t.Helper()
 		cmd := exec.Command(script, args...)
@@ -50,6 +58,18 @@ exit 1
 	}
 
 	withAgent := run("Stop", "codex")
+	var snapshot string
+	if err := json.Unmarshal(withAgent["process_snapshot"], &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(snapshot, "4242 1 claude --permission-mode auto") {
+		t.Fatal("final process row missing")
+	}
+	for _, line := range strings.Split(snapshot, "\n") {
+		if len(line) > 256 {
+			t.Fatalf("process row has %d bytes", len(line))
+		}
+	}
 	if string(withAgent["event"]) != `"Stop"` || string(withAgent["agent"]) != `"codex"` {
 		t.Fatalf("agent invocation body = %s", mustJSON(t, withAgent))
 	}

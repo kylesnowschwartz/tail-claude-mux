@@ -15,9 +15,9 @@ HOOK_PID="$PPID"
 
 # Snapshot the local process table so the server can resolve the long-lived
 # agent pid without an extra round-trip / racing the wrapper-shell exit.
-# `-axww` = all users, wide output, all args. Trim to ~250KB worst case.
-PS_SNAPSHOT=$(ps -axww -o pid=,ppid=,command= 2>/dev/null | head -c 200000)
-PS_SNAPSHOT_JSON=$(printf '%s' "$PS_SNAPSHOT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null)
+# `-axww` includes all users and full arguments. Limit rows to 256 bytes and the snapshot to 1,000,000 bytes.
+PS_SNAPSHOT=$(ps -axww -o pid=,ppid=,command= 2>/dev/null | cut -b 1-256 | head -c 1000000)
+PS_SNAPSHOT_JSON=$(printf '%s' "$PS_SNAPSHOT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.buffer.read().decode("utf-8", errors="replace")))' 2>/dev/null)
 if [[ -z "$PS_SNAPSHOT_JSON" ]]; then
   # python3 unavailable — drop the snapshot rather than ship unescaped data.
   PS_SNAPSHOT_JSON='""'
