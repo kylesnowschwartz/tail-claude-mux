@@ -45,7 +45,7 @@ func (a *Adapter) ReportWorker(report WorkerReport) {
 }
 
 func (a *Adapter) workerStatus(threadID string, state *threadState) string {
-	if len(state.workers) == 0 || state.status == wire.StatusError || state.status == wire.StatusWaiting {
+	if (len(state.workers) == 0 && len(state.fileWorkers) == 0) || state.status == wire.StatusError || state.status == wire.StatusWaiting {
 		return state.status
 	}
 	if a.dialogOpen(threadID, state.pid) {
@@ -57,26 +57,42 @@ func (a *Adapter) workerStatus(threadID string, state *threadState) string {
 	return state.status
 }
 
-// RecheckWorkers removes exited workers and emits any effective status change.
+// RecheckWorkers refreshes worker activity and emits any effective status change.
 // Call with the server lock held during the periodic pane scan.
 func (a *Adapter) RecheckWorkers() {
 	for threadID, state := range a.threads {
-		if len(state.workers) > 0 {
-			a.removeExitedWorkers(threadID, state)
+		before := a.workerStatus(threadID, state)
+		steps := a.scanWorkerFiles(threadID, state)
+		a.pruneExitedWorkers(state)
+		changed := before != a.workerStatus(threadID, state)
+		if a.ctx == nil || (!changed && len(steps) == 0) {
+			continue
 		}
+		session := a.ctx.ResolveSessionByPid(state.pid)
+		if session == "" {
+			continue
+		}
+		if changed {
+			a.emit(threadID, state, session, emitUpdate)
+		}
+		a.emitWorkerSteps(threadID, state, session, steps)
 	}
 }
 
 func (a *Adapter) removeExitedWorkers(threadID string, state *threadState) {
 	before := a.workerStatus(threadID, state)
-	for id, pid := range state.workers {
-		if !a.processExists(pid) {
-			delete(state.workers, id)
-		}
-	}
+	a.pruneExitedWorkers(state)
 	if before != a.workerStatus(threadID, state) && a.ctx != nil {
 		if session := a.ctx.ResolveSessionByPid(state.pid); session != "" {
 			a.emit(threadID, state, session, emitUpdate)
+		}
+	}
+}
+
+func (a *Adapter) pruneExitedWorkers(state *threadState) {
+	for id, pid := range state.workers {
+		if !a.processExists(pid) {
+			delete(state.workers, id)
 		}
 	}
 }

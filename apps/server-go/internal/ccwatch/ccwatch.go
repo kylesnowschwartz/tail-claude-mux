@@ -4,8 +4,8 @@
 // Lifecycle events (SessionStart, UserPromptSubmit, PreToolUse,
 // PermissionRequest, PostToolUse, PostToolUseFailure, PermissionDenied, Stop,
 // StopFailure, Notification, SessionEnd) arrive via POST /hook. JSONL reading
-// is kept for two bounded purposes: a cold-start seed of recent files, and a
-// one-time thread-name read when a new session_id appears.
+// supplies a cold-start seed, thread names, thinking counts, and worker
+// activity from subagent files.
 //
 // Claude's on-disk formats decode through agent-ouija: registry.Live for
 // ~/.claude/sessions/<pid>.json (the authoritative liveness map, incl. the
@@ -109,6 +109,10 @@ type Context struct {
 // threadState mirrors ThreadState in the TS adapter.
 type threadState struct {
 	workers map[string]int // active worker thread ids and process ids
+
+	fileWorkers    map[string]int64 // active file workers and their step byte offsets
+	workersScanned bool
+	firstSeenMS    int64
 
 	status       string
 	threadName   string
@@ -271,7 +275,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	state := a.threads[threadID]
 	isNewThread := state == nil
 	if isNewThread {
-		state = &threadState{status: wire.StatusIdle, projectDir: payload.Cwd}
+		state = &threadState{status: wire.StatusIdle, projectDir: payload.Cwd, firstSeenMS: a.now()}
 		a.threads[threadID] = state
 		a.resolveThreadNameAsync(threadID, state)
 	}
@@ -626,7 +630,7 @@ func (a *Adapter) ProbeLiveStatus(pid int, threadID, paneTitle string) tracker.P
 	if verdict == tracker.ProbeEnded {
 		delete(a.threads, threadID)
 	}
-	if state != nil && state.pid == pid && len(state.workers) > 0 &&
+	if state != nil && state.pid == pid && (len(state.workers) > 0 || len(state.fileWorkers) > 0) &&
 		(verdict == tracker.ProbeNoSignal || verdict == tracker.ProbeDone) {
 		return tracker.ProbeWorking
 	}
@@ -739,6 +743,7 @@ func (a *Adapter) seedFromJSONL() {
 			}
 
 			a.threads[threadID] = &threadState{
+				firstSeenMS:  a.now(),
 				status:       latestStatus,
 				threadName:   threadName,
 				projectDir:   projectDir,
