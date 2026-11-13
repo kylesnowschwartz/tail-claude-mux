@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/kylesnowschwartz/agent-ouija/claude/claudedir"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/agentmatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
-	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
@@ -315,6 +315,9 @@ func (s *Server) paneScanLoop() {
 		// from birth instead of waiting for a hook to graduate them. File IO,
 		// so outside the lock.
 		stateSources := s.agentStateSources()
+		if s.PiWatcher != nil {
+			s.PiWatcher.SetLive(livePiPids(next))
+		}
 		var readings []scanReading
 		// Pi sends no hooks: its status changes and tool calls come from the
 		// session file read at this scan, emitted after the scan verdicts.
@@ -326,7 +329,7 @@ func (s *Server) paneScanLoop() {
 				if !state.HasSignal() {
 					continue
 				}
-				if pa.Agent == piwatch.AgentName && s.PiWatcher != nil {
+				if pa.Agent == agentmatch.AgentPi && s.PiWatcher != nil {
 					piActivity = append(piActivity, s.PiWatcher.Activity(pa.PID, session)...)
 				}
 				readings = append(readings, scanReading{
@@ -341,10 +344,6 @@ func (s *Server) paneScanLoop() {
 					state: state,
 				})
 			}
-		}
-
-		if s.PiWatcher != nil {
-			s.PiWatcher.Forget(livePiPids(next))
 		}
 
 		s.mu.Lock()
@@ -393,7 +392,7 @@ func livePiPids(next map[string][]tracker.PanePresence) map[int]bool {
 	live := map[int]bool{}
 	for _, paneAgents := range next {
 		for _, pa := range paneAgents {
-			if pa.Agent == piwatch.AgentName && pa.PID != 0 {
+			if pa.Agent == agentmatch.AgentPi && pa.PID != 0 {
 				live[pa.PID] = true
 			}
 		}

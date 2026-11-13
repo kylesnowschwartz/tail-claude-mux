@@ -10,7 +10,9 @@
 package piwatch
 
 import (
+	"bytes"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -20,13 +22,12 @@ import (
 
 	"github.com/kylesnowschwartz/agent-ouija/pi/discover"
 	"github.com/kylesnowschwartz/agent-ouija/pi/session"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/agentmatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/textutil"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
-
-// AgentName is the agent key Pi rows carry.
-const AgentName = "pi"
 
 // startMatchWindow is how far a session header's start time may sit from
 // the process start time and still name that process's first session.
@@ -50,8 +51,11 @@ type Adapter struct {
 	files map[string]*fileState
 }
 
-// pidRecord is the latest scan reading for one Pi process.
+// pidRecord is one live Pi process: its cwd and start time, read once, and
+// the session file and verdict of its latest scan.
 type pidRecord struct {
+	cwd     string
+	started time.Time
 	path    string
 	verdict tracker.ProbeVerdict
 }
@@ -62,7 +66,6 @@ type fileState struct {
 	summaryOffset int64
 	summary       session.Summary
 	status        string
-	statusSent    bool
 }
 
 // New returns an Adapter reading sessionsDir, or overrideDir when it is
@@ -80,21 +83,25 @@ func New(sessionsDir, overrideDir string) *Adapter {
 }
 
 // Name is the agent key this adapter serves.
-func (a *Adapter) Name() string { return AgentName }
+func (a *Adapter) Name() string { return agentmatch.AgentPi }
 
 // ScanStateForPid resolves the pid's current session file and reads its
 // identity and trailing status. The pid is re-resolved on every call, so a
 // /new, /resume or /fork in the same process is followed.
 func (a *Adapter) ScanStateForPid(pid int, _ string) tracker.ScanState {
 	path := a.sessionPathForPID(pid)
+	verdict := tracker.ProbeNoSignal
+	if path != "" {
+		verdict = verdictForPath(path)
+	}
+	a.mu.Lock()
+	rec := a.byPID[pid]
+	rec.path, rec.verdict = path, verdict
+	a.byPID[pid] = rec
+	a.mu.Unlock()
 	if path == "" {
-		a.forget(pid)
 		return tracker.ScanState{}
 	}
-	verdict := verdictForPath(path)
-	a.mu.Lock()
-	a.byPID[pid] = pidRecord{path: path, verdict: verdict}
-	a.mu.Unlock()
 	return tracker.ScanState{
 		ThreadID:   discover.SessionIDFromPath(path),
 		ThreadName: a.threadName(path),
@@ -108,44 +115,35 @@ func (a *Adapter) ProbeLiveStatus(pid int, threadID, _ string) tracker.ProbeVerd
 	a.mu.Lock()
 	rec, ok := a.byPID[pid]
 	a.mu.Unlock()
-	if !ok || threadID != "" && discover.SessionIDFromPath(rec.path) != threadID {
+	if !ok || rec.path == "" || threadID != "" && discover.SessionIDFromPath(rec.path) != threadID {
 		return tracker.ProbeNoSignal
 	}
 	return verdictForPath(rec.path)
 }
 
 // Activity returns the events the pid's session file produced since the
-// previous call: one when the status differs from the last one reported,
-// and one per tool call written since. At first sight of a file the tool
-// offset starts at the file's end, so earlier calls are not replayed. Call
-// it after ScanStateForPid for the same pid, on the same goroutine.
+// previous call: one per tool call written since, then, last, one carrying
+// the trailing status when it differs from the last status sent for that
+// file. At first sight of a file the tool offset starts at the end of its
+// last complete line, so earlier calls are not replayed. Call it after
+// ScanStateForPid for the same pid, on the same goroutine.
 func (a *Adapter) Activity(pid int, tmuxSession string) []wire.AgentEvent {
 	a.mu.Lock()
 	rec, ok := a.byPID[pid]
 	a.mu.Unlock()
-	if !ok || tmuxSession == "" {
+	if !ok || rec.path == "" || tmuxSession == "" {
 		return nil
 	}
-	threadID := discover.SessionIDFromPath(rec.path)
-	name := a.threadName(rec.path)
 	fs := a.fileState(rec.path)
-
 	base := wire.AgentEvent{
-		Agent:      AgentName,
+		Agent:      agentmatch.AgentPi,
 		Session:    tmuxSession,
-		ThreadID:   threadID,
-		ThreadName: name,
+		ThreadID:   discover.SessionIDFromPath(rec.path),
+		ThreadName: a.threadName(rec.path),
 		PID:        pid,
 		TS:         a.now(),
 	}
 	var out []wire.AgentEvent
-
-	if status := wireStatus(rec.verdict); status != "" && (!fs.statusSent || status != fs.status) {
-		fs.status, fs.statusSent = status, true
-		ev := base
-		ev.Status = status
-		out = append(out, ev)
-	}
 
 	calls, next, err := session.ReadToolCalls(rec.path, fs.toolOffset)
 	if err == nil {
@@ -154,28 +152,42 @@ func (a *Adapter) Activity(pid int, tmuxSession string) []wire.AgentEvent {
 			ev := base
 			ev.Status = wire.StatusRunning
 			ev.ToolInvoked = true
-			toolName, input := ccToolName(call.Name), toolInput(call.Arguments)
-			ev.ToolDescription = ccwatch.ToolDescription(toolName, input)
-			ev.ToolVerb = ccwatch.ToolVerb(toolName, input)
+			ev.ToolDescription, ev.ToolVerb = describeTool(call)
 			out = append(out, ev)
 		}
-		if len(calls) > 0 && fs.status != wire.StatusRunning {
-			// The trailing status is what the row shows once the calls land.
-			last := out[len(out)-1]
-			last.ToolInvoked = false
-			last.ToolDescription, last.ToolVerb = "", ""
-			last.Status = fs.status
-			out = append(out, last)
-		}
+	}
+	if status := wireStatus(rec.verdict); status != "" && status != fs.status {
+		fs.status = status
+		ev := base
+		ev.Status = status
+		out = append(out, ev)
 	}
 	return out
 }
 
-// Forget drops what the adapter holds for pids absent from live; files no
-// live pid reads are dropped too.
-func (a *Adapter) Forget(live map[int]bool) {
+// SetLive makes live the set of Pi pids the adapter knows: it records the
+// cwd and start time of each new pid, and drops dead pids and the files no
+// live pid reads. Call it with every pid of a scan before that scan's
+// ScanStateForPid calls, so each pid's resolution sees the others.
+func (a *Adapter) SetLive(live map[int]bool) {
+	var fresh []int
+	a.mu.Lock()
+	for pid := range live {
+		if _, ok := a.byPID[pid]; !ok {
+			fresh = append(fresh, pid)
+		}
+	}
+	a.mu.Unlock()
+	added := map[int]pidRecord{}
+	for _, pid := range fresh {
+		added[pid] = pidRecord{cwd: a.cwdForPID(pid), started: a.startTimeForPID(pid)}
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	for pid, rec := range added {
+		a.byPID[pid] = rec
+	}
 	used := map[string]bool{}
 	for pid, rec := range a.byPID {
 		if !live[pid] {
@@ -191,22 +203,13 @@ func (a *Adapter) Forget(live map[int]bool) {
 	}
 }
 
-func (a *Adapter) forget(pid int) {
-	a.mu.Lock()
-	delete(a.byPID, pid)
-	a.mu.Unlock()
-}
-
 // fileState returns the read position for path, starting the tool offset at
 // the file's current end on first sight.
 func (a *Adapter) fileState(path string) *fileState {
 	if fs := a.files[path]; fs != nil {
 		return fs
 	}
-	fs := &fileState{}
-	if _, end, err := session.ReadToolCalls(path, 0); err == nil {
-		fs.toolOffset = end
-	}
+	fs := &fileState{toolOffset: completeLinesEnd(path)}
 	a.files[path] = fs
 	return fs
 }
@@ -225,41 +228,84 @@ func (a *Adapter) threadName(path string) string {
 	return fs.summary.FirstPrompt
 }
 
-// sessionPathForPID picks the session file a Pi process writes: among the
-// files whose header cwd equals the process cwd, the one started within
-// startMatchWindow of the process start; else the newest modified at or
-// after the process start; else none.
+// sessionPathForPID picks the session file a Pi process writes. Candidates
+// are the files whose header cwd equals the process cwd and that were
+// modified at or after the process start (less startMatchWindow). A file
+// another live Pi pid owns is dropped: one whose header start is within
+// startMatchWindow of that pid's start, or the file that pid resolved to at
+// its last scan. The newest remaining file by ModTime wins, so a /new,
+// /resume or /fork is followed; none left means no file.
 func (a *Adapter) sessionPathForPID(pid int) string {
-	if pid <= 1 || a.cwdForPID == nil || a.startTimeForPID == nil {
-		return ""
+	a.mu.Lock()
+	self, ok := a.byPID[pid]
+	var others []pidRecord
+	for other, rec := range a.byPID {
+		if other != pid {
+			others = append(others, rec)
+		}
 	}
-	cwd := a.cwdForPID(pid)
-	started := a.startTimeForPID(pid)
-	if cwd == "" || started.IsZero() {
+	a.mu.Unlock()
+	if !ok || self.cwd == "" || self.started.IsZero() {
 		return ""
 	}
 	dir := a.OverrideDir
 	if dir == "" {
-		dir = discover.SessionDirForCwd(a.SessionsDir, cwd)
+		dir = discover.SessionDirForCwd(a.SessionsDir, self.cwd)
 	}
 	sessions, err := discover.DiscoverSessions(dir)
 	if err != nil {
 		return ""
 	}
-	newest := ""
+	since := self.started.Add(-startMatchWindow)
+	// Sessions arrive newest ModTime first.
 	for _, s := range sessions {
-		if s.Cwd != cwd {
+		if s.Cwd != self.cwd || s.ModTime.Before(since) || ownedByOther(s, others) {
 			continue
 		}
-		if !s.Started.IsZero() && absDuration(s.Started.Sub(started)) <= startMatchWindow {
-			return s.Path
+		return s.Path
+	}
+	return ""
+}
+
+func ownedByOther(s discover.Session, others []pidRecord) bool {
+	for _, other := range others {
+		if other.path == s.Path {
+			return true
 		}
-		// Sessions arrive newest ModTime first.
-		if newest == "" && !s.ModTime.Before(started) {
-			newest = s.Path
+		if !s.Started.IsZero() && !other.started.IsZero() && absDuration(s.Started.Sub(other.started)) <= startMatchWindow {
+			return true
 		}
 	}
-	return newest
+	return false
+}
+
+// completeLinesEnd is the offset just past the last newline in path: the
+// file size when the last line is complete, else the start of the
+// half-written last line, so ReadToolCalls reads that line once it lands.
+func completeLinesEnd(path string) int64 {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return 0
+	}
+	const chunk = 64 * 1024
+	buf := make([]byte, chunk)
+	for end := info.Size(); end > 0; {
+		start := max(end-chunk, 0)
+		n, err := f.ReadAt(buf[:end-start], start)
+		if err != nil && n != int(end-start) {
+			return 0
+		}
+		if i := bytes.LastIndexByte(buf[:n], '\n'); i >= 0 {
+			return start + int64(i) + 1
+		}
+		end = start
+	}
+	return 0
 }
 
 func absDuration(d time.Duration) time.Duration {
@@ -315,11 +361,22 @@ var piToClaudeTools = map[string]string{
 	"ls":    "Glob",
 }
 
-func ccToolName(name string) string {
+// describeTool returns the waterfall description and verb for one Pi tool
+// call. ls carries only a path, so it is described as a listing of it.
+func describeTool(call session.ToolCall) (description, verb string) {
+	name, input := call.Name, toolInput(call.Arguments)
 	if mapped, ok := piToClaudeTools[name]; ok {
-		return mapped
+		name = mapped
 	}
-	return name
+	description, verb = ccwatch.ToolDescription(name, input), ccwatch.ToolVerb(name, input)
+	if call.Name == "ls" {
+		description = "Listing"
+		var path string
+		if json.Unmarshal(input["path"], &path) == nil && path != "" {
+			description = "Listing " + textutil.TruncateToWidth(path, 30)
+		}
+	}
+	return description, verb
 }
 
 // toolInput decodes a tool call's arguments object; Pi's "path" argument is

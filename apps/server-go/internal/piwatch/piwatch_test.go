@@ -30,7 +30,12 @@ func newTestAdapter(t *testing.T, override bool) (*Adapter, string) {
 		t.Fatal(err)
 	}
 	a.cwdForPID = func(int) string { return testCwd }
-	a.startTimeForPID = func(int) time.Time { return procStart }
+	a.startTimeForPID = func(pid int) time.Time {
+		if pid == 43 {
+			return procStart.Add(time.Minute)
+		}
+		return procStart
+	}
 	a.now = func() int64 { return 1_000 }
 	return a, dir
 }
@@ -85,21 +90,54 @@ func appendLines(t *testing.T, path string, lines ...string) {
 
 func TestScanPicksSessionByProcessStart(t *testing.T) {
 	a, dir := newTestAdapter(t, false)
-	writeSession(t, dir, "other", procStart.Add(-time.Hour), procStart.Add(time.Hour), userLine("old"))
+	writeSession(t, dir, "other", procStart.Add(-time.Hour), procStart.Add(-time.Minute), userLine("old"))
 	writeSession(t, dir, "mine", procStart.Add(time.Second), procStart.Add(time.Minute), userLine("fix the bug"))
-	st := a.ScanStateForPid(42, "")
+	st := scanPid(a, 42)
 	if st.ThreadID != "mine" || st.ThreadName != "fix the bug" || st.Verdict != tracker.ProbeWorking {
 		t.Fatalf("got %#v", st)
 	}
 }
 
-func TestScanTwoSessionsOneCwdTakesOwnStart(t *testing.T) {
+func TestScanFollowsNewSessionFromSameProcess(t *testing.T) {
 	a, dir := newTestAdapter(t, false)
-	writeSession(t, dir, "mine", procStart, procStart.Add(time.Minute), userLine("a"), assistantLine("stop"))
-	writeSession(t, dir, "neighbour", procStart.Add(30*time.Second), procStart.Add(2*time.Minute), userLine("b"))
-	st := a.ScanStateForPid(42, "")
-	if st.ThreadID != "mine" || st.Verdict != tracker.ProbeDone {
+	writeSession(t, dir, "first", procStart, procStart.Add(time.Minute), userLine("a"), assistantLine("stop"))
+	writeSession(t, dir, "second", procStart.Add(2*time.Minute), procStart.Add(3*time.Minute), userLine("b"))
+	if st := scanPid(a, 42); st.ThreadID != "second" {
 		t.Fatalf("got %#v", st)
+	}
+}
+
+func TestScanTwoPidsKeepOwnFiles(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	writeSession(t, dir, "mine", procStart, procStart.Add(5*time.Minute), userLine("a"))
+	writeSession(t, dir, "neighbour", procStart.Add(time.Minute), procStart.Add(2*time.Minute), userLine("b"))
+	if x, y := scanBoth(a); x != "mine" || y != "neighbour" {
+		t.Fatalf("42=%q 43=%q", x, y)
+	}
+	// Ownership by last resolution holds even once mtimes swap.
+	writeSession(t, dir, "neighbour", procStart.Add(time.Minute), procStart.Add(9*time.Minute), userLine("b"))
+	if x, y := scanBoth(a); x != "mine" || y != "neighbour" {
+		t.Fatalf("after swap 42=%q 43=%q", x, y)
+	}
+}
+
+func TestScanTwoPidsOneDidNew(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	writeSession(t, dir, "mine", procStart, procStart.Add(2*time.Minute), userLine("a"))
+	writeSession(t, dir, "neighbour", procStart.Add(time.Minute), procStart.Add(3*time.Minute), userLine("b"))
+	scanBoth(a)
+	writeSession(t, dir, "fresh", procStart.Add(4*time.Minute), procStart.Add(5*time.Minute), userLine("c"))
+	if x, y := scanBoth(a); x != "fresh" || y != "neighbour" {
+		t.Fatalf("42=%q 43=%q", x, y)
+	}
+}
+
+func TestScanTwoPidsNeverShareAFile(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	writeSession(t, dir, "orphan", procStart.Add(-time.Hour), procStart.Add(5*time.Minute), userLine("a"))
+	x, y := scanBoth(a)
+	if x == y || (x != "orphan" && y != "orphan") || (x != "" && y != "") {
+		t.Fatalf("42=%q 43=%q", x, y)
 	}
 }
 
@@ -107,7 +145,7 @@ func TestScanFollowsResumedSession(t *testing.T) {
 	a, dir := newTestAdapter(t, false)
 	writeSession(t, dir, "older", procStart.Add(-24*time.Hour), procStart.Add(time.Minute), userLine("resumed"))
 	writeSession(t, dir, "stale", procStart.Add(-48*time.Hour), procStart.Add(-time.Hour), userLine("x"))
-	if st := a.ScanStateForPid(42, ""); st.ThreadID != "older" {
+	if st := scanPid(a, 42); st.ThreadID != "older" {
 		t.Fatalf("got %#v", st)
 	}
 }
@@ -115,7 +153,7 @@ func TestScanFollowsResumedSession(t *testing.T) {
 func TestScanNoSessionYet(t *testing.T) {
 	a, dir := newTestAdapter(t, false)
 	writeSession(t, dir, "stale", procStart.Add(-48*time.Hour), procStart.Add(-time.Hour), userLine("x"))
-	if st := a.ScanStateForPid(42, ""); st.HasSignal() || st.ThreadID != "" {
+	if st := scanPid(a, 42); st.HasSignal() || st.ThreadID != "" {
 		t.Fatalf("got %#v", st)
 	}
 	if v := a.ProbeLiveStatus(42, "", ""); v != tracker.ProbeNoSignal {
@@ -133,7 +171,7 @@ func TestScanFlatOverrideDir(t *testing.T) {
 	if err := os.WriteFile(other, []byte(header("elsewhere", procStart, "/other")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if st := a.ScanStateForPid(42, ""); st.ThreadID != "mine" {
+	if st := scanPid(a, 42); st.ThreadID != "mine" {
 		t.Fatalf("got %#v (want %s)", st, path)
 	}
 }
@@ -148,7 +186,7 @@ func TestStatusMapping(t *testing.T) {
 	for stop, want := range cases {
 		a, dir := newTestAdapter(t, false)
 		writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"), assistantLine(stop))
-		if st := a.ScanStateForPid(42, ""); st.Verdict != want {
+		if st := scanPid(a, 42); st.Verdict != want {
 			t.Errorf("%s: verdict %v, want %v", stop, st.Verdict, want)
 		}
 		if v := a.ProbeLiveStatus(42, "s", ""); v != want {
@@ -157,13 +195,25 @@ func TestStatusMapping(t *testing.T) {
 	}
 	a, dir := newTestAdapter(t, false)
 	writeSession(t, dir, "s", procStart, procStart.Add(time.Minute))
-	if st := a.ScanStateForPid(42, ""); st.Verdict != tracker.ProbeNoSignal || st.ThreadID != "s" {
+	if st := scanPid(a, 42); st.Verdict != tracker.ProbeNoSignal || st.ThreadID != "s" {
 		t.Errorf("header only: %#v", st)
 	}
 }
 
+// scanPid runs one scan of pid 42 alone.
+func scanPid(a *Adapter, pid int) tracker.ScanState {
+	a.SetLive(map[int]bool{pid: true})
+	return a.ScanStateForPid(pid, "")
+}
+
+// scanBoth runs one scan of pids 42 and 43 and returns their thread ids.
+func scanBoth(a *Adapter) (string, string) {
+	a.SetLive(map[int]bool{42: true, 43: true})
+	return a.ScanStateForPid(42, "").ThreadID, a.ScanStateForPid(43, "").ThreadID
+}
+
 func scanActivity(a *Adapter) []wire.AgentEvent {
-	a.ScanStateForPid(42, "")
+	scanPid(a, 42)
 	return a.Activity(42, "work")
 }
 
@@ -219,11 +269,48 @@ func TestToolCallsEmitOnceWithoutReplay(t *testing.T) {
 	}
 }
 
-func TestForgetDropsDeadPids(t *testing.T) {
+func TestErrorTurnEmitsToolsThenOneError(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"), assistantLine("stop"))
+	scanActivity(a)
+	appendLines(t, path, userLine("b"),
+		assistantLine("toolUse", `ls {"path":"scripts/shelf"}`, `find {"pattern":"**/*.go","path":"."}`),
+		`{"type":"message","id":"r","parentId":"a","timestamp":"2026-11-13T10:03:10Z","message":{"role":"toolResult","toolCallId":"call-toolUse-0","toolName":"ls","content":"x"}}`,
+		assistantLine("error"))
+	evs := scanActivity(a)
+	if len(evs) != 3 || !evs[0].ToolInvoked || !evs[1].ToolInvoked || evs[2].ToolInvoked || evs[2].Status != wire.StatusError {
+		t.Fatalf("events: %#v", evs)
+	}
+	if evs[0].ToolDescription != "Listing scripts/shelf" || evs[1].ToolDescription != "Searching **/*.go" || evs[0].ToolVerb != "search" {
+		t.Errorf("descriptions %q %q verb %q", evs[0].ToolDescription, evs[1].ToolDescription, evs[0].ToolVerb)
+	}
+}
+
+func TestFirstSightSkipsCompleteLinesOnly(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
+	partial := assistantLine("toolUse", `bash {"command":"make"}`)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString(partial[:20])
+	f.Close()
+	scanActivity(a)
+	f, _ = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString(partial[20:] + "\n")
+	f.Close()
+	evs := scanActivity(a)
+	if len(evs) != 1 || evs[0].ToolDescription != "Running make" {
+		t.Fatalf("events: %#v", evs)
+	}
+}
+
+func TestSetLiveDropsDeadPids(t *testing.T) {
 	a, dir := newTestAdapter(t, false)
 	writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
 	scanActivity(a)
-	a.Forget(map[int]bool{})
+	a.SetLive(map[int]bool{})
 	if len(a.byPID) != 0 || len(a.files) != 0 {
 		t.Fatalf("left %d pids, %d files", len(a.byPID), len(a.files))
 	}
