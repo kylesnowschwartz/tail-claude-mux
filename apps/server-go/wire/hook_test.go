@@ -117,3 +117,16 @@ func TestParseHookPayload_TranscriptPath(t *testing.T) {
 		t.Errorf("non-string transcript_path: got %q ok=%v, want dropped", p.TranscriptPath, ok)
 	}
 }
+
+func TestParseHookPayloadPiFields(t *testing.T) {
+	body := `{"agent":"pi","event":"agent_settled","session_id":"s1","cwd":"/w","pid":4242,"transcript_path":"/f.jsonl","aborted":true,"prompt_kind":"confirm","prompt_title":"Delete?","start_reason":"resume","shutdown_reason":"quit","tmux_pane":"%3"}`
+	p, ok := ParseHookPayload([]byte(body))
+	if !ok || p.Agent != "pi" || p.PID != 4242 || p.TranscriptPath != "/f.jsonl" || p.Aborted == nil || !*p.Aborted ||
+		p.PromptKind != "confirm" || p.PromptTitle != "Delete?" || p.StartReason != "resume" || p.ShutdownReason != "quit" || p.TmuxPane != "%3" {
+		t.Fatalf("got %#v ok=%v", p, ok)
+	}
+	p, ok = ParseHookPayload([]byte(`{"agent":"pi","event":"ui_prompt_start","session_id":"s1","cwd":"/w","prompt_kind":"bogus","start_reason":"x"}`))
+	if !ok || p.PromptKind != "" || p.StartReason != "" || p.Aborted != nil {
+		t.Fatalf("malformed optionals kept: %#v", p)
+	}
+}
