@@ -59,6 +59,7 @@ fi
 pane=$(tmux new-session -d -P -F '#{pane_id}' -s "$session" -n "$window" -x 200 -y 50 -c "$repo")
 tmux send-keys -t "$pane" "claude --permission-mode $permission_mode" Enter >&2
 elapsed=0 stable=0 previous=
+name_wait_polls=5
 while (( elapsed < ready_timeout )); do
     pane_text=$(tmux capture-pane -p -t "$pane")
     if printf '%s' "$pane_text" | python3 -c '
@@ -88,6 +89,29 @@ except (ValueError, TypeError, AttributeError):
 sys.exit(1)
 ' "$pane"); then
             ready=idle
+            for ((name_poll=0; name_poll<name_wait_polls && elapsed+1<ready_timeout; name_poll++)); do
+                [[ -z "$peer_name" ]] || break
+                sleep 1
+                elapsed=$((elapsed + 1))
+                if ! state=$(curl --fail --silent --show-error --max-time 1 "http://127.0.0.1:$port/state" 2>/dev/null); then
+                    break
+                fi
+                name_state=$(printf '%s' "$state" | python3 -c '
+import json, sys
+try:
+    for session in json.load(sys.stdin).get("sessions", []):
+        for agent in session.get("agents", []):
+            if agent.get("agent") == "claude-code" and agent.get("paneId") == sys.argv[1]:
+                print(agent.get("status") or "")
+                print(agent.get("threadName") or "")
+                sys.exit(0)
+except (ValueError, TypeError, AttributeError):
+    pass
+' "$pane")
+                peer_name=${name_state#*$'\n'}
+                [[ "$name_state" == *$'\n'* ]] || peer_name=
+                [[ "${name_state%%$'\n'*}" == idle ]] || break
+            done
             break
         fi
     else

@@ -5,7 +5,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir "$tmp/bin"
 export CALL_LOG="$tmp/calls" FAKE_STATE="$tmp/state" FAKE_PANE="$tmp/pane"
-export EXISTING=0 SERVER_DOWN=0
+export EXISTING=0 SERVER_DOWN=0 FAKE_COUNT="$tmp/count"
 cat > "$tmp/bin/tmux" <<'FAKE'
 #!/usr/bin/env bash
 set -eu
@@ -24,7 +24,11 @@ cat > "$tmp/bin/curl" <<'FAKE'
 set -eu
 printf 'curl\n' >> "$CALL_LOG.extra"
 [[ "$SERVER_DOWN" == 0 ]] || exit 7
-cat "$FAKE_STATE"
+printf 'curl\n' >> "$CALL_LOG"
+count=$(cat "$FAKE_COUNT")
+count=$((count + 1))
+printf '%s' "$count" > "$FAKE_COUNT"
+if [[ -f "$FAKE_STATE.$count" ]]; then cat "$FAKE_STATE.$count"; else cat "$FAKE_STATE"; fi
 FAKE
 cat > "$tmp/bin/sleep" <<'FAKE'
 #!/usr/bin/env bash
@@ -36,6 +40,7 @@ printf 'Task line one\nTask line two\n' > "$tmp/prompt"
 run() {
     : > "$CALL_LOG"
     : > "$CALL_LOG.extra"
+    printf 0 > "$FAKE_COUNT"
     code=0
     bash "$root/scripts/start-peer-session.sh" --repo "$tmp" --session peer --prompt-file "$1" --ready-timeout 7 > "$tmp/out" || code=$?
 }
@@ -49,7 +54,8 @@ def require(ok, message):
 lines = (p / "out").read_text().splitlines()
 require(len(lines) == 1, "stdout must contain one line")
 v = json.loads(lines[0])
-calls = [json.loads(s) for s in (p / "calls").read_text().splitlines()]
+events = (p / "calls").read_text().splitlines()
+calls = [json.loads(s) for s in events if s != "curl"]
 names = [c[0] for c in calls]
 if case in ("existing", "missing", "empty"):
     require(code != 0 and v["ok"] is False, "validation must fail")
@@ -63,11 +69,16 @@ else:
     for c in calls[2:]:
         if c[0] != "load-buffer":
             require("-t" in c and c[c.index("-t")+1] == "%128", "pane target: " + str(c))
-    if case in ("idle", "fallback"):
+    if case in ("idle", "fallback", "delayed", "unnamed"):
         require(code == 0 and v["ok"] and v["prompt_sent"], "success")
-        require(v["ready"] == ("idle" if case == "idle" else "pane-stable"), "ready")
-        require(v["peer_name"] == ("other-project" if case == "idle" else ""), "peer")
+        require(v["ready"] == ("pane-stable" if case == "fallback" else "idle"), "ready")
+        require(v["peer_name"] == ("other-project" if case in ("idle", "delayed") else ""), "peer")
         require(names[-3:] == ["load-buffer", "paste-buffer", "send-keys"], "prompt order")
+        if case == "delayed":
+            require(events.count("curl") == 3, "name poll count")
+            require(events.index("curl", events.index("curl", events.index("curl") + 1) + 1) < next(i for i, e in enumerate(events) if e.startswith('["paste-buffer"')), "paste follows name")
+        if case == "unnamed":
+            require(events.count("curl") <= 6, "bounded name wait")
         load, paste = calls[-3:-1]
         require("-p" in paste and "-d" in paste, "paste flags")
         require(load[load.index("-b")+1] == paste[paste.index("-b")+1], "named buffer")
@@ -85,6 +96,11 @@ PY
 printf 'Claude input\n' > "$FAKE_PANE"
 printf '%s\n' '{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","status":"idle","threadName":"other-project"}]}]}' > "$FAKE_STATE"
 run "$tmp/prompt"; check idle
+cp "$FAKE_STATE" "$FAKE_STATE.3"
+printf '%s\n' '{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","status":"idle","threadName":""}]}]}' > "$FAKE_STATE"
+run "$tmp/prompt"; check delayed
+rm "$FAKE_STATE.3"
+run "$tmp/prompt"; check unnamed
 EXISTING=1
 run "$tmp/prompt"; check existing
 EXISTING=0
