@@ -295,3 +295,22 @@ func TestScanPiUnderClaudeYieldsClaudeOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestScanPiMatchesOnlyExactExecutableName(t *testing.T) {
+	cases := map[string]bool{
+		"/x/pi-agent/bin/tcm": false,
+		"/x/pi/bin/tool":      false,
+		"pi-rpc":              false,
+		"/usr/local/bin/pi":   true,
+		"pi":                  true,
+	}
+	for comm, want := range cases {
+		psComm := strings.Join([]string{commLine(100, 1, "-zsh"), commLine(200, 100, comm)}, "\n")
+		psFull := strings.Join([]string{fullLine(100, 1, "-zsh"), fullLine(200, 100, comm)}, "\n")
+		s := &Scanner{Run: fakeExec(t, psComm, psFull)}
+		got := s.Scan(workPane())
+		if matched := len(got["work"]) == 1 && got["work"][0].Agent == "pi"; matched != want {
+			t.Errorf("%s: matched=%v, want %v (%#v)", comm, matched, want, got)
+		}
+	}
+}

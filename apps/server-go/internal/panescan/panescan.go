@@ -11,6 +11,7 @@ package panescan
 
 import (
 	"os/exec"
+	"path"
 	"strconv"
 	"strings"
 
@@ -100,15 +101,19 @@ func (s *Scanner) buildProcessTree() processTree {
 // pidMatchesAgent reports whether one pid's process matches the agent —
 // comm patterns first, then the AgentFromCommand wrapper fallback (which
 // only knows claude-code, preserving comm-only behavior for
-// amp/codex/opencode/pi). A pi process with a Claude Code ancestor is a
-// worker Claude started, not a session of its own, and never matches.
+// amp/codex/opencode). Pi matches on the exact executable name, and a pi
+// process with a Claude Code ancestor is a worker Claude started, not a
+// session of its own, and never matches.
 func pidMatchesAgent(pid int, patterns []string, agentName string, tree processTree) bool {
 	comm := tree.commOf[pid]
+	if agentName == agentmatch.AgentPi {
+		// "pi" is too short for segment matching: a folder named pi or
+		// pi-* would match, and pi-rpc is Pi's RPC entry point, not an
+		// interactive session. Only an executable named exactly pi counts.
+		return path.Base(comm) == "pi" && !hasClaudeAncestor(pid, tree)
+	}
 	for _, pat := range patterns {
 		if comm != "" && agentmatch.CommMatches(comm, pat) {
-			if agentName == agentmatch.AgentPi && hasClaudeAncestor(pid, tree) {
-				return false
-			}
 			return true
 		}
 	}
