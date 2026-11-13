@@ -33,7 +33,6 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexhooks"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
-	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/delegation"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/gitinfo"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/server"
@@ -50,9 +49,7 @@ var (
 	commit  = "unknown"
 )
 
-// main dispatches to the `tcm <subcommand>` argv shape. `server` runs the
-// backend; the other subcommands talk to a running server (and, for tidy,
-// tmux directly) over HTTP.
+// main dispatches server and waterfall subcommands.
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -61,28 +58,8 @@ func main() {
 	switch os.Args[1] {
 	case "server":
 		runServer(os.Args[2:])
-	case "delegate":
-		os.Exit(runDelegate(os.Args[2:], os.Stdout))
-	case "result":
-		os.Exit(runResult(os.Args[2:], os.Stdout))
-	case "wait":
-		os.Exit(runWait(os.Args[2:], os.Stdout))
-	case "followup":
-		os.Exit(runFollowup(os.Args[2:], os.Stdout))
-	case "tell":
-		os.Exit(runTell(os.Args[2:], os.Stdout))
-	case "ask":
-		os.Exit(runAsk(os.Args[2:], os.Stdout))
-	case "answer":
-		os.Exit(runAnswer(os.Args[2:], os.Stdout))
-	case "messages":
-		os.Exit(runMessages(os.Args[2:], os.Stdout))
-	case "whoami":
-		os.Exit(runWhoami(os.Args[2:], os.Stdout))
 	case "waterfall":
 		os.Exit(runWaterfall(os.Args[2:]))
-	case "tidy":
-		os.Exit(runTidy(os.Args[2:], os.Stdout))
 	default:
 		usage()
 		os.Exit(2)
@@ -90,7 +67,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s <command> [flags]\n\ncommands:\n  server     run the tcm backend server\n  delegate   spawn a codex delegate in a tmux window\n  result     fetch a delegate's result\n  wait       watch a delegate until it reaches an actionable outcome\n  followup   deliver a follow-up message to an idle delegate\n  tell       send a note from a delegate to its orchestrator\n  ask        ask the orchestrator and wait for an answer\n  answer     answer a delegate's pending ask\n  messages   list a delegation's message log\n  whoami     show the current delegation record\n  tidy       close finished delegate windows\n  waterfall  show a live verb waterfall of agent activity\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "usage: %s <command> [flags]\n\ncommands:\n  server     run the tcm backend server\n  waterfall  show a live verb waterfall of agent activity\n", filepath.Base(os.Args[0]))
 }
 
 // runServer is the tcm backend's entry point. args is the argv tail after
@@ -121,16 +98,6 @@ func runServer(args []string) {
 		log.Fatalf("home dir: %v", err)
 	}
 	configDir := filepath.Join(home, ".config", "tcm")
-	delegationStore, err := delegation.New(filepath.Join(configDir, "delegations"))
-	if err != nil {
-		log.Fatalf("delegation store: %v", err)
-	}
-	removedDelegations, err := delegationStore.Sweep(7 * 24 * time.Hour)
-	if err != nil {
-		log.Printf("sweep delegation store: %v", err)
-	} else if removedDelegations != 0 {
-		log.Printf("delegation store: removed %d expired records", removedDelegations)
-	}
 
 	builder := &state.Builder{
 		Tmux:         tmux.New(),
@@ -154,7 +121,6 @@ func runServer(args []string) {
 	}
 
 	srv := server.New(builder, tracker.New(), watcher, codexWatcher, panescan.New())
-	srv.Delegations = delegationStore
 	srv.BuildInfo = buildInfo()
 	srv.Port = *port
 	srv.Restart = restartInPlace
