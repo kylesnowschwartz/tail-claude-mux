@@ -35,6 +35,7 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/explain"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/metadata"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/theming"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
@@ -51,6 +52,7 @@ type Server struct {
 	Tracker      *tracker.Tracker
 	Watcher      *ccwatch.Adapter
 	CodexWatcher *codexwatch.Adapter
+	PiWatcher    *piwatch.Adapter
 	Scanner      *panescan.Scanner
 	Metadata     *metadata.Store
 	BuildInfo    string

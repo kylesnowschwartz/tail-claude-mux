@@ -17,6 +17,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/kylesnowschwartz/agent-ouija/pi/pidir"
 	"log"
 	"net"
 	"net/http"
@@ -35,6 +36,7 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/gitinfo"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/server"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/sessionorder"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
@@ -121,6 +123,15 @@ func runServer(args []string) {
 	}
 
 	srv := server.New(builder, tracker.New(), watcher, codexWatcher, panescan.New())
+	if root, err := pidir.DefaultRoot(); err == nil {
+		override, err := pidir.SessionDirOverride()
+		if err != nil {
+			log.Printf("pi session dir override unreadable: %v", err)
+		}
+		srv.PiWatcher = piwatch.New(root.SessionsDir(), override)
+	} else {
+		log.Printf("pi root unavailable, pi watcher disabled: %v", err)
+	}
 	srv.BuildInfo = buildInfo()
 	srv.Restart = restartInPlace
 	srv.Quit = func() {

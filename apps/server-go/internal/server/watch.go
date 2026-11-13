@@ -12,6 +12,7 @@ import (
 	"github.com/kylesnowschwartz/agent-ouija/claude/claudedir"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
@@ -60,12 +61,15 @@ func stateSourceForAgent(agent string, sources ...agentStateSource) agentStateSo
 }
 
 func (s *Server) agentStateSources() []agentStateSource {
-	sources := make([]agentStateSource, 0, 2)
+	sources := make([]agentStateSource, 0, 3)
 	if s.Watcher != nil {
 		sources = append(sources, s.Watcher)
 	}
 	if s.CodexWatcher != nil {
 		sources = append(sources, s.CodexWatcher)
+	}
+	if s.PiWatcher != nil {
+		sources = append(sources, s.PiWatcher)
 	}
 	return sources
 }
@@ -163,6 +167,9 @@ func (s *Server) StartWatchers() {
 			Locked:              locked,
 		})
 		log.Printf("agent watcher started: %s", s.CodexWatcher.Name())
+	}
+	if s.PiWatcher != nil {
+		log.Printf("agent watcher started: %s", s.PiWatcher.Name())
 	}
 	s.mu.Unlock()
 
@@ -309,12 +316,18 @@ func (s *Server) paneScanLoop() {
 		// so outside the lock.
 		stateSources := s.agentStateSources()
 		var readings []scanReading
+		// Pi sends no hooks: its status changes and tool calls come from the
+		// session file read at this scan, emitted after the scan verdicts.
+		var piActivity []wire.AgentEvent
 		for session, paneAgents := range next {
 			for i, pa := range paneAgents {
 				var state tracker.ScanState
 				paneAgents[i], state = scanStateForPane(pa, stateSources...)
 				if !state.HasSignal() {
 					continue
+				}
+				if pa.Agent == piwatch.AgentName && s.PiWatcher != nil {
+					piActivity = append(piActivity, s.PiWatcher.Activity(pa.PID, session)...)
 				}
 				readings = append(readings, scanReading{
 					ev: wire.AgentEvent{
@@ -328,6 +341,10 @@ func (s *Server) paneScanLoop() {
 					state: state,
 				})
 			}
+		}
+
+		if s.PiWatcher != nil {
+			s.PiWatcher.Forget(livePiPids(next))
 		}
 
 		s.mu.Lock()
@@ -345,6 +362,10 @@ func (s *Server) paneScanLoop() {
 				changed = true
 			}
 			s.Tracker.ApplyEvent(ev, false)
+		}
+		for _, ev := range piActivity {
+			s.emitLocked(ev)
+			changed = true
 		}
 		for session, paneAgents := range next {
 			if s.Tracker.ApplyPanePresence(session, paneAgents) {
@@ -365,6 +386,19 @@ func (s *Server) paneScanLoop() {
 		}
 		s.mu.Unlock()
 	}
+}
+
+// livePiPids is the set of Pi process ids one pane scan found.
+func livePiPids(next map[string][]tracker.PanePresence) map[int]bool {
+	live := map[int]bool{}
+	for _, paneAgents := range next {
+		for _, pa := range paneAgents {
+			if pa.Agent == piwatch.AgentName && pa.PID != 0 {
+				live[pa.PID] = true
+			}
+		}
+	}
+	return live
 }
 
 func scanStatus(verdict tracker.ProbeVerdict) string {

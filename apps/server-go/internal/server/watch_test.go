@@ -12,6 +12,7 @@ import (
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
@@ -416,4 +417,17 @@ func TestCodexWorkerHookEmitsNothing(t *testing.T) {
 			t.Fatalf("events = %+v", events)
 		}
 	})
+}
+
+func TestAgentStateSourcesIncludePi(t *testing.T) {
+	s := &Server{PiWatcher: piwatch.New(t.TempDir(), "")}
+	if got := stateSourceForAgent("pi", s.agentStateSources()...); got == nil {
+		t.Fatal("no state source for pi")
+	}
+	live := livePiPids(map[string][]tracker.PanePresence{
+		"work": {{Agent: "pi", PID: 7}, {Agent: "codex", PID: 8}, {Agent: "pi"}},
+	})
+	if len(live) != 1 || !live[7] {
+		t.Fatalf("live pi pids = %v, want {7}", live)
+	}
 }
