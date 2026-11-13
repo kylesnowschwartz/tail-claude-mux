@@ -27,24 +27,6 @@ endpoint. Adapters claim payloads by the optional `agent` discriminator:
 Every hook POST is fire-and-forget: a failure must never block the
 agent that fired it.
 
-## Orchestrator Endpoints
-
-- `GET /wait?session=<name>` waits until the tracked session is terminal,
-  waiting, gone, or the timeout expires.
-- `GET /result` accepts one agent address: `delegation=<uuid>`,
-  `thread=<thread-id>`, or `session=<name>` with an optional `pane=<pane-id>`
-  to disambiguate the session. A thread query may include `session` to resolve
-  live state. The endpoint returns the pinned rollout path and final assistant
-  message immediately. Live tracker
-  state is authoritative; a bound delegation, or a thread query with a
-  session, reads the tracker first and falls back to the disk snapshot only
-  when the tracker misses. `hasFinal` is false while the rollout or final
-  message is unavailable. Unknown agents return a JSON 404 error. The response
-  includes `session`, effective `status`, `hasFinal`, `finalMessage`,
-  `rolloutPath`, `threadId`, rollout `cwd`, and the final message
-  `identification`.
-- `POST /followup` resumes an idle tracked Codex session with a new message.
-
 ## Built-In Watchers
 
 ### Claude Code (Hook-Based)
