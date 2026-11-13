@@ -36,6 +36,7 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/gitinfo"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/panescan"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/pihooks"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/server"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/sessionorder"
@@ -81,7 +82,7 @@ func runServer(args []string) {
 
 	port := flag.Int("port", wire.ServerPort, "listen port (use a non-default port to A/B against a live instance)")
 	refresh := flag.Duration("refresh", 2*time.Second, "state refresh interval")
-	doRegisterHooks := flag.Bool("register-hooks", false, "register tcm's Claude Code and Codex lifecycle hooks and exit")
+	doRegisterHooks := flag.Bool("register-hooks", false, "register tcm's Claude Code and Codex lifecycle hooks and its Pi extension, and exit")
 	showVersion := flag.Bool("version", false, "print version and build commit and exit")
 	flag.Parse()
 
@@ -286,6 +287,32 @@ func registerHooks() {
 	}
 	registerClaudeHooks()
 	registerCodexHooks(hookScript)
+	registerPiExtension()
+}
+
+// registerPiExtension links tcm's Pi extension into the Pi agent
+// directory's extensions folder; it skips when Pi is not installed.
+func registerPiExtension() {
+	source := resolveRepoFile("integrations", "pi-extension", pihooks.FileName)
+	if source == "" {
+		log.Fatalf("register-hooks: integrations/pi-extension/%s not found (set TCM_DIR or run from a tcm checkout)", pihooks.FileName)
+	}
+	root, err := pidir.DefaultRoot()
+	if err != nil {
+		log.Fatalf("register-hooks: pi root: %v", err)
+	}
+	res, err := pihooks.Install(root.String(), source)
+	if err != nil {
+		log.Fatalf("register-hooks: pi: %v", err)
+	}
+	switch res {
+	case pihooks.NoAgentDir:
+		log.Printf("register-hooks: pi agent dir %s not found, pi extension skipped", root)
+	case pihooks.AlreadyInstalled:
+		fmt.Println("Pi extension already installed.")
+	default:
+		fmt.Printf("Installed Pi extension: %s\n", source)
+	}
 }
 
 func registerCodexHooks(hookScript string) {
@@ -312,6 +339,12 @@ func registerCodexHooks(hookScript string) {
 // registering the symlink path alongside an existing real-path entry would
 // duplicate every hook.
 func resolveHookScript() string {
+	return resolveRepoFile("scripts", "hook.sh")
+}
+
+// resolveRepoFile locates a file by its path from the repo root, trying
+// TCM_DIR, then the root relative to this binary.
+func resolveRepoFile(elem ...string) string {
 	var roots []string
 	if env := os.Getenv("TCM_DIR"); env != "" {
 		roots = append(roots, env)
@@ -320,8 +353,8 @@ func resolveHookScript() string {
 		roots = append(roots, filepath.Join(filepath.Dir(exe), "..", "..", ".."))
 	}
 	for _, root := range roots {
-		script := filepath.Join(root, "scripts", "hook.sh")
-		if resolved, err := filepath.EvalSymlinks(script); err == nil {
+		file := filepath.Join(append([]string{root}, elem...)...)
+		if resolved, err := filepath.EvalSymlinks(file); err == nil {
 			return resolved
 		}
 	}
