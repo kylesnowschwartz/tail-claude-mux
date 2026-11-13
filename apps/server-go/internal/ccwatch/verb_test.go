@@ -141,3 +141,17 @@ func TestShellVerb(t *testing.T) {
 		}
 	}
 }
+
+func TestFleetStepVerb(t *testing.T) {
+	for _, tc := range []struct{ kind, want string }{
+		{"read", "read"}, {"edit", "edit"}, {"delete", "edit"}, {"move", "edit"},
+		{"search", "search"}, {"execute", "run"}, {"think", "thinking"},
+		{"fetch", "web"}, {"other", "tool"}, {"unknown", "tool"}, {"", "tool"},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			if got := FleetStepVerb(tc.kind); got != tc.want {
+				t.Fatalf("FleetStepVerb(%q) = %q, want %q", tc.kind, got, tc.want)
+			}
+		})
+	}
+}

@@ -222,3 +222,21 @@ func rawStr(input map[string]json.RawMessage, key string) string {
 	}
 	return s
 }
+
+// FleetStepVerb maps a worker step kind to an activity verb.
+func FleetStepVerb(kind string) string {
+	switch kind {
+	case "read", "search":
+		return kind
+	case "edit", "delete", "move":
+		return "edit"
+	case "execute":
+		return "run"
+	case "think":
+		return "thinking"
+	case "fetch":
+		return "web"
+	default:
+		return "tool"
+	}
+}
