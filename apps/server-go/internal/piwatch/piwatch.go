@@ -7,7 +7,7 @@
 // comes only from hooks.
 //
 // ScanStateForPid and Activity run on the pane-scan goroutine outside the
-// server lock; ProbeLiveStatus and HandleHook run under it. The per-pid
+// server lock; Resolve, ProbeLiveStatus and HandleHook run under it. The per-pid
 // records they share are guarded by the Adapter's mutex; the per-file read
 // offsets belong to the scan goroutine alone.
 package piwatch
@@ -69,15 +69,23 @@ type pidRecord struct {
 	path    string
 	verdict tracker.ProbeVerdict
 
-	// hooked is set by the pid's first accepted hook. hookFile is the
-	// session file its latest hook named, hookStatus the status its hooks
-	// set, sentStatus the last status emitted for it, and ended marks a
-	// quit.
-	hooked     bool
-	hookFile   string
-	hookStatus string
-	sentStatus string
-	ended      bool
+	// hooked is set by the pid's first accepted hook; hookFile is the
+	// session file its latest hook named and lastHookAt when that hook
+	// arrived. hookStatus is the status its hooks set, beforePrompt the
+	// status a dialog interrupted, and sentStatus the last status emitted.
+	// checkSettleError asks the next scan whether a settled turn ended in
+	// an error; terminalScans counts scans in a row whose file shows a
+	// finished turn newer than lastHookAt while hookStatus is running.
+	// ended marks a quit.
+	hooked           bool
+	hookFile         string
+	lastHookAt       time.Time
+	hookStatus       string
+	beforePrompt     string
+	sentStatus       string
+	checkSettleError bool
+	terminalScans    int
+	ended            bool
 }
 
 // pendingHook is the latest hook from a pid the scan has not found yet.
@@ -130,7 +138,7 @@ func (a *Adapter) ScanStateForPid(pid int, _ string) tracker.ScanState {
 		verdict = verdictForPath(path)
 	}
 	a.mu.Lock()
-	if cur, ok := a.byPID[pid]; ok {
+	if cur, ok := a.byPID[pid]; ok && cur.hookFile == rec.hookFile && cur.hooked == rec.hooked {
 		cur.path, cur.verdict = path, verdict
 		a.byPID[pid] = cur
 	}
@@ -145,8 +153,9 @@ func (a *Adapter) ScanStateForPid(pid int, _ string) tracker.ScanState {
 	}
 }
 
-// ProbeLiveStatus reads the trailing status of the file the last scan
-// resolved for pid. It starts no process.
+// ProbeLiveStatus answers for the file the last scan resolved for pid. A
+// hooked pid is working while its hook status is running; any other pid
+// reads the file's trailing status. It starts no process.
 func (a *Adapter) ProbeLiveStatus(pid int, threadID, _ string) tracker.ProbeVerdict {
 	a.mu.Lock()
 	rec, ok := a.byPID[pid]
@@ -163,14 +172,29 @@ func (a *Adapter) ProbeLiveStatus(pid int, threadID, _ string) tracker.ProbeVerd
 	return verdictForPath(rec.path)
 }
 
-// Activity returns the events the pid's session file produced since the
-// previous call: one per tool call written since, then, last, one carrying
-// the status when it differs from the last status sent. A hooked pid's
-// status is its hook status, which its tool-call events carry too; any
-// other pid's is the file's trailing status, compared per file. At first sight of a file the tool offset starts at the end of its
-// last complete line, so earlier calls are not replayed. Call it after
-// ScanStateForPid for the same pid, on the same goroutine.
-func (a *Adapter) Activity(pid int, tmuxSession string) []wire.AgentEvent {
+// Reading is one scan's look at a pid's session file, read outside the
+// server lock. Resolve turns it into events under the lock.
+type Reading struct {
+	pid  int
+	path string
+	base wire.AgentEvent
+	// tools are the tool calls written since the previous scan, as events
+	// without a status.
+	tools []wire.AgentEvent
+	// fileStatus is the file's trailing status for a file-only pid when it
+	// changed since the previous scan; for a hooked pid it is the trailing
+	// status every scan, with fileLast the time of the file's last message.
+	fileStatus string
+	fileLast   time.Time
+}
+
+// Activity reads the pid's session file outside the server lock: the tool
+// calls written since the previous call and the file's trailing status. At
+// first sight of a file the tool offset starts at the end of its last
+// complete line, so earlier calls are not replayed. Call it after
+// ScanStateForPid for the same pid, on the same goroutine, and pass the
+// result to Resolve under the server lock.
+func (a *Adapter) Activity(pid int, tmuxSession string) *Reading {
 	a.mu.Lock()
 	rec, ok := a.byPID[pid]
 	a.mu.Unlock()
@@ -178,48 +202,94 @@ func (a *Adapter) Activity(pid int, tmuxSession string) []wire.AgentEvent {
 		return nil
 	}
 	fs := a.fileState(rec.path)
-	toolStatus := wire.StatusRunning
-	if rec.hooked && rec.hookStatus != "" {
-		toolStatus = rec.hookStatus
+	r := &Reading{
+		pid:  pid,
+		path: rec.path,
+		base: wire.AgentEvent{
+			Agent:      agentmatch.AgentPi,
+			Session:    tmuxSession,
+			ThreadID:   discover.SessionIDFromPath(rec.path),
+			ThreadName: a.threadName(rec.path),
+			PID:        pid,
+			TS:         a.now(),
+		},
 	}
-	base := wire.AgentEvent{
-		Agent:      agentmatch.AgentPi,
-		Session:    tmuxSession,
-		ThreadID:   discover.SessionIDFromPath(rec.path),
-		ThreadName: a.threadName(rec.path),
-		PID:        pid,
-		TS:         a.now(),
-	}
-	var out []wire.AgentEvent
-
 	calls, next, err := session.ReadToolCalls(rec.path, fs.toolOffset)
 	if err == nil {
 		fs.toolOffset = next
 		for _, call := range calls {
-			ev := base
-			ev.Status = toolStatus
+			ev := r.base
 			ev.ToolInvoked = true
 			ev.ToolDescription, ev.ToolVerb = describeTool(call)
-			out = append(out, ev)
+			r.tools = append(r.tools, ev)
 		}
 	}
 	if rec.hooked {
-		if rec.hookStatus != "" && rec.hookStatus != rec.sentStatus {
-			a.mu.Lock()
-			if cur, ok := a.byPID[pid]; ok {
-				cur.sentStatus = rec.hookStatus
-				a.byPID[pid] = cur
-			}
-			a.mu.Unlock()
-			ev := base
-			ev.Status = rec.hookStatus
-			out = append(out, ev)
+		if state, err := session.TrailingState(rec.path); err == nil {
+			r.fileStatus, r.fileLast = sessionStatus(state.Status), state.LastMessageAt
 		}
-		return out
+		return r
 	}
 	if status := wireStatus(rec.verdict); status != "" && status != fs.status {
 		fs.status = status
-		ev := base
+		r.fileStatus = status
+	}
+	return r
+}
+
+// Resolve turns a Reading into the events to emit, deciding status with the
+// pid's record as it stands now: the tool-call events, then, last, one
+// status event when the status differs from the last one sent. A hooked
+// pid's events carry its current hook status. Two file checks can change
+// that status: after a settled turn, an error at the end of the file makes
+// it error; and while it is running, a finished turn in the file newer than
+// the pid's last hook, seen on two scans in a row, replaces it. A reading
+// of a file the pid no longer reads yields nothing. Call it under the
+// server lock.
+func (a *Adapter) Resolve(r *Reading) []wire.AgentEvent {
+	if r == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	rec, ok := a.byPID[r.pid]
+	if !ok || rec.ended || rec.path != r.path {
+		return nil
+	}
+	status := r.fileStatus
+	if rec.hooked {
+		if rec.checkSettleError {
+			rec.checkSettleError = false
+			if rec.hookStatus == wire.StatusDone && r.fileStatus == wire.StatusError {
+				rec.hookStatus = wire.StatusError
+			}
+		}
+		if rec.hookStatus == wire.StatusRunning && wire.IsTerminalStatus(r.fileStatus) && r.fileLast.After(rec.lastHookAt) {
+			rec.terminalScans++
+		} else {
+			rec.terminalScans = 0
+		}
+		if rec.terminalScans >= 2 {
+			rec.hookStatus, rec.terminalScans = r.fileStatus, 0
+		}
+		status = ""
+		if rec.hookStatus != rec.sentStatus {
+			status = rec.hookStatus
+			rec.sentStatus = status
+		}
+	}
+	toolStatus := wire.StatusRunning
+	if rec.hooked {
+		toolStatus = rec.hookStatus
+	}
+	a.byPID[r.pid] = rec
+	out := make([]wire.AgentEvent, 0, len(r.tools)+1)
+	for _, ev := range r.tools {
+		ev.Status = toolStatus
+		out = append(out, ev)
+	}
+	if status != "" {
+		ev := r.base
 		ev.Status = status
 		out = append(out, ev)
 	}
@@ -227,24 +297,24 @@ func (a *Adapter) Activity(pid int, tmuxSession string) []wire.AgentEvent {
 }
 
 // HandleHook applies one hook from tcm's Pi extension and returns the event
-// to emit now, if any. A hook from a pid the scan has not found as a live Pi
-// is kept for pendingHookTTL and applied when the scan finds it; a newer
-// hook from the same pid replaces it. Status: agent_start and ui_prompt_end
-// → running, ui_prompt_start → waiting, agent_settled → interrupted when
-// aborted, else error when the file ends in an error, else done;
-// session_shutdown with reason quit ends the row.
+// to emit now, if any. It reads no file. A hook from a pid the scan has not
+// found as a live Pi is kept for pendingHookTTL and applied when the scan
+// finds it; a newer hook from the same pid replaces it. See applyHook for
+// the status each hook sets; session_shutdown with reason quit ends the
+// row.
 func (a *Adapter) HandleHook(p wire.HookPayload) []wire.AgentEvent {
 	if p.Agent != agentmatch.AgentPi || p.PID == 0 {
 		return nil
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	now := time.UnixMilli(a.now())
 	rec, ok := a.byPID[p.PID]
 	if !ok {
-		a.pending[p.PID] = pendingHook{payload: p, at: time.UnixMilli(a.now())}
+		a.pending[p.PID] = pendingHook{payload: p, at: now}
 		return nil
 	}
-	applyHook(&rec, p)
+	applyHook(&rec, p, now)
 	a.byPID[p.PID] = rec
 	if rec.session == "" {
 		return nil
@@ -254,7 +324,7 @@ func (a *Adapter) HandleHook(p wire.HookPayload) []wire.AgentEvent {
 		Session:  rec.session,
 		ThreadID: discover.SessionIDFromPath(rec.hookFile),
 		PID:      p.PID,
-		TS:       a.now(),
+		TS:       now.UnixMilli(),
 	}
 	if ev.ThreadID == "" {
 		ev.ThreadID = p.SessionID
@@ -263,7 +333,7 @@ func (a *Adapter) HandleHook(p wire.HookPayload) []wire.AgentEvent {
 		ev.Ended = true
 		return []wire.AgentEvent{ev}
 	}
-	if rec.hookStatus == "" || rec.hookStatus == rec.sentStatus {
+	if rec.hookStatus == rec.sentStatus {
 		return nil
 	}
 	rec.sentStatus = rec.hookStatus
@@ -272,50 +342,74 @@ func (a *Adapter) HandleHook(p wire.HookPayload) []wire.AgentEvent {
 	return []wire.AgentEvent{ev}
 }
 
-// applyHook folds one hook into a pid's record.
-func applyHook(rec *pidRecord, p wire.HookPayload) {
+// applyHook folds one hook, received at, into a pid's record. A hook naming
+// a different session file starts the new thread from no status. Status:
+// agent_start → running; ui_prompt_start → waiting, remembering the status
+// it interrupts; ui_prompt_end → that remembered status; agent_settled →
+// interrupted when aborted, else done, with the next scan checking the file
+// for an error; session_shutdown with reason quit → ended. A pid whose
+// hooks have set no status yet is idle.
+func applyHook(rec *pidRecord, p wire.HookPayload, at time.Time) {
 	rec.hooked = true
-	if p.TranscriptPath != "" {
+	rec.lastHookAt = at
+	if p.TranscriptPath != "" && p.TranscriptPath != rec.hookFile {
+		if rec.hookFile != "" {
+			rec.hookStatus, rec.beforePrompt, rec.sentStatus = "", "", ""
+			rec.checkSettleError, rec.terminalScans = false, 0
+		}
 		rec.hookFile = p.TranscriptPath
 		rec.path = p.TranscriptPath
 	}
 	switch p.Event {
-	case "agent_start", "ui_prompt_end":
+	case "agent_start":
 		rec.hookStatus = wire.StatusRunning
 	case "ui_prompt_start":
+		if rec.hookStatus != wire.StatusWaiting {
+			rec.beforePrompt = rec.hookStatus
+		}
 		rec.hookStatus = wire.StatusWaiting
+	case "ui_prompt_end":
+		if rec.hookStatus == wire.StatusWaiting {
+			rec.hookStatus = rec.beforePrompt
+		}
 	case "agent_settled":
-		switch {
-		case p.Aborted != nil && *p.Aborted:
+		if p.Aborted != nil && *p.Aborted {
 			rec.hookStatus = wire.StatusInterrupted
-		case settledWithError(rec.hookFile):
-			rec.hookStatus = wire.StatusError
-		default:
+		} else {
 			rec.hookStatus = wire.StatusDone
+			rec.checkSettleError = true
 		}
 	case "session_shutdown":
 		if p.ShutdownReason == "quit" {
 			rec.ended = true
 		}
 	}
+	if rec.hookStatus == "" {
+		rec.hookStatus = wire.StatusIdle
+	}
 }
 
-// settledWithError reports whether the session file's last turn ended in an
-// error.
-func settledWithError(path string) bool {
-	if path == "" {
-		return false
+func sessionStatus(status session.Status) string {
+	switch status {
+	case session.Working:
+		return wire.StatusRunning
+	case session.Done:
+		return wire.StatusDone
+	case session.Interrupted:
+		return wire.StatusInterrupted
+	case session.Error:
+		return wire.StatusError
+	default:
+		return ""
 	}
-	state, err := session.TrailingState(path)
-	return err == nil && state.Status == session.Error
 }
 
 // SetLive makes live the set of Pi pids the adapter knows: it records the
 // cwd and start time of each new pid, and drops dead pids and the files no
 // live pid reads. Call it with every pid of a scan before that scan's
-// ScanStateForPid calls, so each pid's resolution sees the others.
-// Each pid maps to the tmux session it was found in. A pending hook for a
-// new pid is applied to its record; Activity emits the status it set.
+// ScanStateForPid calls, so each pid's resolution sees the others. Each pid
+// maps to the tmux session it was found in. A pending hook for a new pid is
+// applied to its record, and the scan's Resolve emits the status it set.
 func (a *Adapter) SetLive(live map[int]string) {
 	var fresh []int
 	a.mu.Lock()
@@ -335,7 +429,7 @@ func (a *Adapter) SetLive(live map[int]string) {
 	now := time.UnixMilli(a.now())
 	for pid, rec := range added {
 		if hook, ok := a.pending[pid]; ok && now.Sub(hook.at) <= pendingHookTTL {
-			applyHook(&rec, hook.payload)
+			applyHook(&rec, hook.payload, hook.at)
 		}
 		a.byPID[pid] = rec
 	}

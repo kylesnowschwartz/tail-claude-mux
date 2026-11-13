@@ -159,7 +159,7 @@ func TestScanNoSessionYet(t *testing.T) {
 	if v := a.ProbeLiveStatus(42, "", ""); v != tracker.ProbeNoSignal {
 		t.Fatalf("probe %v", v)
 	}
-	if evs := a.Activity(42, "work"); evs != nil {
+	if evs := a.Resolve(a.Activity(42, "work")); evs != nil {
 		t.Fatalf("activity %#v", evs)
 	}
 }
@@ -214,7 +214,7 @@ func scanBoth(a *Adapter) (string, string) {
 
 func scanActivity(a *Adapter) []wire.AgentEvent {
 	scanPid(a, 42)
-	return a.Activity(42, "work")
+	return a.Resolve(a.Activity(42, "work"))
 }
 
 func TestStatusChangeEmitsOnce(t *testing.T) {

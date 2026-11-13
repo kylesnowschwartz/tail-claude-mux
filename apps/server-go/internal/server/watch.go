@@ -13,6 +13,7 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/agentmatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
@@ -319,15 +320,18 @@ func (s *Server) paneScanLoop() {
 			s.PiWatcher.SetLive(livePiPids(next))
 		}
 		var readings []scanReading
-		// Pi sends no hooks: its status changes and tool calls come from the
-		// session file read at this scan, emitted after the scan verdicts.
-		var piActivity []wire.AgentEvent
+		// Pi session-file readings: tool calls, and the status of a Pi that
+		// sends no hooks. Resolve decides their status under the lock, after
+		// the scan verdicts, against the hook state current at emit time.
+		var piActivity []*piwatch.Reading
 		for session, paneAgents := range next {
 			for i, pa := range paneAgents {
 				var state tracker.ScanState
 				paneAgents[i], state = scanStateForPane(pa, stateSources...)
 				if pa.Agent == agentmatch.AgentPi && s.PiWatcher != nil {
-					piActivity = append(piActivity, s.PiWatcher.Activity(pa.PID, session)...)
+					if r := s.PiWatcher.Activity(pa.PID, session); r != nil {
+						piActivity = append(piActivity, r)
+					}
 				}
 				if !state.HasSignal() {
 					continue
@@ -362,9 +366,11 @@ func (s *Server) paneScanLoop() {
 			}
 			s.Tracker.ApplyEvent(ev, false)
 		}
-		for _, ev := range piActivity {
-			s.emitLocked(ev)
-			changed = true
+		for _, r := range piActivity {
+			for _, ev := range s.PiWatcher.Resolve(r) {
+				s.emitLocked(ev)
+				changed = true
+			}
 		}
 		for session, paneAgents := range next {
 			if s.Tracker.ApplyPanePresence(session, paneAgents) {

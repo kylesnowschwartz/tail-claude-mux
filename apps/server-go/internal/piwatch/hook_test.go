@@ -41,7 +41,108 @@ func TestHookStatusMapping(t *testing.T) {
 	onlyStatus(t, a.HandleHook(hook("agent_settled", path)), wire.StatusDone)
 	onlyStatus(t, a.HandleHook(hook("agent_start", path)), wire.StatusRunning)
 	appendLines(t, path, assistantLine("error"))
-	onlyStatus(t, a.HandleHook(hook("agent_settled", path)), wire.StatusError)
+	onlyStatus(t, a.HandleHook(hook("agent_settled", path)), wire.StatusDone)
+	onlyStatus(t, scanActivity(a), wire.StatusError)
+	if evs := scanActivity(a); len(evs) != 0 {
+		t.Fatalf("error repeated: %#v", evs)
+	}
+}
+
+func TestPromptEndRestoresPriorStatus(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
+	a.SetLive(map[int]string{42: "work"})
+	onlyStatus(t, a.HandleHook(hook("ui_prompt_start", path)), wire.StatusWaiting)
+	onlyStatus(t, a.HandleHook(hook("ui_prompt_end", path)), wire.StatusIdle)
+	a.HandleHook(hook("agent_start", path))
+	a.HandleHook(hook("agent_settled", path))
+	onlyStatus(t, a.HandleHook(hook("ui_prompt_start", path)), wire.StatusWaiting)
+	onlyStatus(t, a.HandleHook(hook("ui_prompt_end", path)), wire.StatusDone)
+	a.HandleHook(hook("agent_start", path))
+	onlyStatus(t, a.HandleHook(hook("ui_prompt_start", path)), wire.StatusWaiting)
+	onlyStatus(t, a.HandleHook(hook("ui_prompt_end", path)), wire.StatusRunning)
+}
+
+func TestHookBetweenActivityAndResolveWins(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
+	a.SetLive(map[int]string{42: "work"})
+	a.HandleHook(hook("agent_start", path))
+	scanActivity(a)
+	appendLines(t, path, assistantLine("toolUse", `bash {"command":"make"}`))
+	a.ScanStateForPid(42, "")
+	reading := a.Activity(42, "work")
+	onlyStatus(t, a.HandleHook(hook("agent_settled", path)), wire.StatusDone)
+	evs := a.Resolve(reading)
+	if len(evs) != 1 || !evs[0].ToolInvoked || evs[0].Status != wire.StatusDone {
+		t.Fatalf("stale reading: %#v", evs)
+	}
+	if evs := scanActivity(a); len(evs) != 0 {
+		t.Fatalf("later scan: %#v", evs)
+	}
+}
+
+func TestReadingOfOldFileDropped(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	pathA := writeSession(t, dir, "a", procStart, procStart.Add(time.Minute), userLine("a"))
+	pathB := writeSession(t, dir, "b", procStart.Add(time.Minute), procStart.Add(2*time.Minute), userLine("b"))
+	a.SetLive(map[int]string{42: "work"})
+	a.HandleHook(hook("agent_start", pathA))
+	a.ScanStateForPid(42, "")
+	reading := a.Activity(42, "work")
+	a.HandleHook(hook("session_start", pathB))
+	if evs := a.Resolve(reading); len(evs) != 0 {
+		t.Fatalf("old file events: %#v", evs)
+	}
+	if st := a.ScanStateForPid(42, ""); st.ThreadID != "b" {
+		t.Fatalf("scan thread %q", st.ThreadID)
+	}
+}
+
+func TestLostSettleRecoveredAfterTwoScans(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
+	a.SetLive(map[int]string{42: "work"})
+	a.HandleHook(hook("agent_start", path))
+	appendLines(t, path, assistantLine("stop"))
+	if evs := scanActivity(a); len(evs) != 0 {
+		t.Fatalf("first scan: %#v", evs)
+	}
+	onlyStatus(t, scanActivity(a), wire.StatusDone)
+}
+
+func TestSafetyNetSkipsWaitingAndNeverRuns(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"), assistantLine("stop"))
+	a.SetLive(map[int]string{42: "work"})
+	a.HandleHook(hook("agent_start", path))
+	a.HandleHook(hook("ui_prompt_start", path))
+	for i := 0; i < 3; i++ {
+		if evs := scanActivity(a); len(evs) != 0 {
+			t.Fatalf("waiting changed: %#v", evs)
+		}
+	}
+	a.HandleHook(hook("ui_prompt_end", path))
+	a.HandleHook(hook("agent_settled", path))
+	appendLines(t, path, userLine("custom message reads as working"))
+	for i := 0; i < 3; i++ {
+		if evs := scanActivity(a); len(evs) != 0 {
+			t.Fatalf("settled changed: %#v", evs)
+		}
+	}
+}
+
+func TestSessionSwitchStartsNewThreadFresh(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	pathA := writeSession(t, dir, "a", procStart, procStart.Add(time.Minute), userLine("a"))
+	pathB := writeSession(t, dir, "b", procStart.Add(time.Minute), procStart.Add(2*time.Minute))
+	a.SetLive(map[int]string{42: "work"})
+	a.HandleHook(hook("agent_start", pathA))
+	a.HandleHook(hook("agent_settled", pathA))
+	ev := onlyStatus(t, a.HandleHook(hook("session_start", pathB)), wire.StatusIdle)
+	if ev.ThreadID != "b" {
+		t.Fatalf("thread %q", ev.ThreadID)
+	}
 }
 
 func TestHookFromUnknownPidWaitsForScan(t *testing.T) {
@@ -107,7 +208,7 @@ func TestFileOnlyPidUnchanged(t *testing.T) {
 	other := hook("agent_settled", "")
 	other.PID = 99
 	a.HandleHook(other)
-	if evs := a.Activity(42, "work"); len(evs) != 1 || evs[0].Status != wire.StatusRunning {
+	if evs := a.Resolve(a.Activity(42, "work")); len(evs) != 1 || evs[0].Status != wire.StatusRunning {
 		t.Fatalf("events %#v", evs)
 	}
 }
@@ -130,8 +231,8 @@ func TestShutdownQuitEndsRow(t *testing.T) {
 	newSession.ShutdownReason = "new"
 	a2, _ := newTestAdapter(t, false)
 	a2.SetLive(map[int]string{42: "work"})
-	if evs := a2.HandleHook(newSession); len(evs) != 0 {
-		t.Fatalf("shutdown for /new emitted %#v", evs)
+	if evs := a2.HandleHook(newSession); len(evs) != 1 || evs[0].Ended || evs[0].Status != wire.StatusIdle {
+		t.Fatalf("shutdown for /new: %#v", evs)
 	}
 }
 

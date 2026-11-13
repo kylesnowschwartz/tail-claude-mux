@@ -7,12 +7,16 @@ import (
 	"strings"
 	"testing"
 
+	"fmt"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/gitinfo"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/piwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/sessionorder"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
+	"os"
+	"path/filepath"
 )
 
 func TestRootIncludesBuildInfo(t *testing.T) {
@@ -86,5 +90,27 @@ func TestPaneFocusRouteExists(t *testing.T) {
 		if strings.Contains(response.Body.String(), "tcm server") {
 			t.Fatalf("POST /pane-focus body=%q fell through to handleRoot", body)
 		}
+	}
+}
+
+func TestHookForPiReachesPiWatcher(t *testing.T) {
+	tr := tracker.New()
+	tm := &tmux.Tmux{Run: func(args ...string) (string, error) { return "", nil }}
+	s := New(&state.Builder{Tmux: tm, Order: sessionorder.Load("")}, tr, nil, nil, nil)
+	s.PiWatcher = piwatch.New(t.TempDir(), "")
+	pid := os.Getpid()
+	s.PiWatcher.SetLive(map[int]string{pid: "work"})
+	file := filepath.Join(t.TempDir(), "2026-11-13T10-02-46-000Z_thread-1.jsonl")
+	body := fmt.Sprintf(`{"agent":"pi","event":"agent_start","session_id":"thread-1","cwd":"/w","pid":%d,"transcript_path":%q}`, pid, file)
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/hook", bytes.NewBufferString(body)))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d", response.Code)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ev := tr.GetEvent("work", "pi", "thread-1", "")
+	if ev == nil || ev.Status != wire.StatusRunning || ev.PID != pid {
+		t.Fatalf("event = %#v", ev)
 	}
 }
