@@ -37,7 +37,11 @@ description: Start Claude Code in a new tmux session in another repository, hand
    `tmux capture-pane -p -t <pane>`, tell the person what it asks, and let
    them answer it. A folder-trust question is the person's decision.
    For `timeout`, inspect once with the same command and report what you see.
-   Failures leave the session running; do not submit the brief yourself.
+   Failures leave the session running. Once the person has answered any
+   dialog and Claude Code is at its prompt, find the peer with `ListAgents`
+   (step 4) and send the full text of the brief with `SendMessage`.
+   Do not run the launcher again for the same session name or paste into
+   the pane.
 
 4. Call `ListAgents` and match the row whose tmux target ends with the pane
    id. Use that row's name as the message address. Treat `peer_name` from
@@ -66,8 +70,16 @@ by pane id:
 
 ```bash
 tmux send-keys -t <pane> '/exit' Enter
-# After Claude has exited:
+tmux display-message -p -t <pane> '#{pane_current_command}'
+```
+
+Wait until the command prints the shell name, for example `zsh`, which means
+Claude Code has exited. Only then close the shell:
+
+```bash
 tmux send-keys -t <pane> 'exit' Enter
 ```
+
+When the shell was the only pane, the tmux session ends by itself.
 
 Never use `kill-session`, `kill-pane`, or kill a process.

@@ -41,8 +41,11 @@ a readiness timeout returns `ready:"timeout"`. Both include `pane`,
 `session`, and `prompt_sent:false` and leave the session running for inspection.
 The launcher never kills a session, pane, or process.
 
-Only the initial brief uses a tmux buffer. Reports and further messages use
-Claude Code's `SendMessage` tool.
+The launcher submits the initial brief through a tmux buffer. After a dialog
+or timeout, let the person answer any dialog and wait until Claude Code is at
+its prompt. Find the peer with `ListAgents` and send the full brief with
+`SendMessage`; do not rerun the launcher for that session name or paste into
+the pane. Reports and further messages use `SendMessage`.
 
 ## Test
 
