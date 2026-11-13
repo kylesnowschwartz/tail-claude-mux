@@ -356,3 +356,33 @@ func TestFleetStepOffsetsAcrossRuns(t *testing.T) {
 		})
 	}
 }
+
+func TestFileWorkerQuietLimit(t *testing.T) {
+	for _, age := range []time.Duration{31 * time.Minute, 29 * time.Minute, 30 * time.Minute} {
+		t.Run(age.String(), func(t *testing.T) {
+			a, tc, dir := fileWorkerParent(t, "Stop")
+			now := time.Now().Truncate(time.Millisecond)
+			a.now = func() int64 { return now.UnixMilli() }
+			a.threads["parent"].firstSeenMS = now.Add(-time.Hour).UnixMilli()
+			path := addFileWorker(t, dir, "a1", "Explore", "", false)
+			mtime := now.Add(-age)
+			if err := os.Chtimes(path, mtime, mtime); err != nil {
+				t.Fatal(err)
+			}
+			before := len(tc.events)
+			a.RecheckWorkers()
+			wantActive := age <= workerQuietLimit
+			if got := a.threads["parent"].fileWorkers["a1"]; got != wantActive {
+				t.Fatalf("active = %v", got)
+			}
+			if wantActive {
+				lastWorkerEvent(t, tc, wire.StatusRunning)
+				a.now = func() int64 { return now.Add(2 * time.Minute).UnixMilli() }
+				a.RecheckWorkers()
+				lastWorkerEvent(t, tc, wire.StatusDone)
+			} else if len(tc.events) != before {
+				t.Fatal("quiet worker emitted")
+			}
+		})
+	}
+}

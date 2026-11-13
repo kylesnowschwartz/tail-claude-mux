@@ -9,6 +9,8 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/textutil"
 )
 
+const workerQuietLimit = 30 * time.Minute
+
 // scanWorkerFiles tracks active subagents and consumes fleet steps once per poll.
 func (a *Adapter) scanWorkerFiles(threadID string, state *threadState) []agents.FleetStep {
 	sessionPath := state.thinking.path
@@ -33,7 +35,8 @@ func (a *Adapter) scanWorkerFiles(threadID string, state *threadState) []agents.
 	for _, meta := range metas {
 		wasActive := state.fileWorkers[meta.ID]
 		offset := state.fleetStepOffsets[meta.ID]
-		isActive := !meta.Finished && !meta.Interrupted && !meta.ModTime.Before(time.UnixMilli(startMS))
+		isActive := !meta.Finished && !meta.Interrupted && !meta.ModTime.Before(time.UnixMilli(startMS)) &&
+			!meta.ModTime.Before(time.UnixMilli(a.now()).Add(-workerQuietLimit))
 		if strings.HasPrefix(meta.AgentType, "fleet:") {
 			if !state.workersScanned {
 				state.fleetStepOffsets[meta.ID] = meta.Size
