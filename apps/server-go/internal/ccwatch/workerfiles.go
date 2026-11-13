@@ -7,6 +7,7 @@ import (
 
 	"github.com/kylesnowschwartz/agent-ouija/claude/agents"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/textutil"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
 const workerQuietLimit = 30 * time.Minute
@@ -58,10 +59,45 @@ func (a *Adapter) scanWorkerFiles(threadID string, state *threadState) []agents.
 
 func (a *Adapter) emitWorkerSteps(threadID string, state *threadState, session string, steps []agents.FleetStep) {
 	for _, step := range steps {
-		a.emitWithWorker(threadID, state, session, emitInvoked, &WorkerReport{
-			ToolInvoked:     true,
-			ToolVerb:        FleetStepVerb(step.Kind),
-			ToolDescription: textutil.TruncateToWidth(textutil.SanitizeForDisplay(step.Title), 40),
+		a.emitWithStep(threadID, state, session, emitInvoked, &stepActivity{
+			verb:        FleetStepVerb(step.Kind),
+			description: textutil.TruncateToWidth(textutil.SanitizeForDisplay(step.Title), 40),
 		})
 	}
 }
+
+func (a *Adapter) workerStatus(threadID string, state *threadState) string {
+	if len(state.fileWorkers) == 0 || state.status == wire.StatusError || state.status == wire.StatusWaiting {
+		return state.status
+	}
+	if a.dialogOpen(threadID, state.pid) {
+		return wire.StatusWaiting
+	}
+	if state.status == wire.StatusIdle || state.status == wire.StatusDone {
+		return wire.StatusRunning
+	}
+	return state.status
+}
+
+// RecheckWorkers refreshes worker activity and emits any effective status change.
+// Call with the server lock held during the periodic pane scan.
+func (a *Adapter) RecheckWorkers() {
+	for threadID, state := range a.threads {
+		before := a.workerStatus(threadID, state)
+		steps := a.scanWorkerFiles(threadID, state)
+		changed := before != a.workerStatus(threadID, state)
+		if a.ctx == nil || (!changed && len(steps) == 0) {
+			continue
+		}
+		session := a.ctx.ResolveSessionByPid(state.pid)
+		if session == "" {
+			continue
+		}
+		if changed {
+			a.emit(threadID, state, session, emitUpdate)
+		}
+		a.emitWorkerSteps(threadID, state, session, steps)
+	}
+}
+
+type stepActivity struct{ verb, description string }

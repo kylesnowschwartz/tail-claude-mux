@@ -364,7 +364,7 @@ func TestScanEventOverRestoresWaitingFromOpenDialog(t *testing.T) {
 	}
 }
 
-func TestCodexWorkerHookReachesClaudeParent(t *testing.T) {
+func TestCodexWorkerHookEmitsNothing(t *testing.T) {
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -390,10 +390,7 @@ func TestCodexWorkerHookReachesClaudeParent(t *testing.T) {
 		return ""
 	}
 	s.Watcher.Start(&ccwatch.Context{ResolveSession: func(string) string { return "work" }, ResolveSessionByPid: resolve, Emit: func(ev wire.AgentEvent) { events = append(events, ev) }, Locked: locked})
-	ctx := s.codexContext(locked)
-	if ctx.ReportWorker == nil {
-		t.Fatal("worker routing absent")
-	}
+	ctx := &codexwatch.Context{ResolveSession: func(string) string { return "work" }, Emit: func(ev wire.AgentEvent) { events = append(events, ev) }}
 	ctx.ResolveSessionByPid = resolve
 	var lookups sync.WaitGroup
 	ctx.Locked = func(fn func()) { locked(fn); lookups.Done() }
@@ -415,15 +412,8 @@ func TestCodexWorkerHookReachesClaudeParent(t *testing.T) {
 	post(wire.HookPayload{Agent: "codex", Event: "PreToolUse", SessionID: threadID, Cwd: "/project", PID: 200, ProcessSnapshot: "100 1 claude\n200 100 codex app-server", ToolName: "Bash", ToolInput: map[string]json.RawMessage{"command": json.RawMessage(`"go test ./..."`)}})
 	lookups.Wait()
 	locked(func() {
-		if len(events) != 2 {
+		if len(events) != 1 {
 			t.Fatalf("events = %+v", events)
 		}
-		ev := events[1]
-		if ev.Agent != "claude-code" || ev.ThreadID != "parent" || ev.PID != 100 || ev.Session != "work" || ev.Status != wire.StatusRunning || ev.ToolVerb != "run" || !ev.ToolInvoked {
-			t.Fatalf("worker event = %+v", ev)
-		}
 	})
-	if (&Server{}).codexContext(locked).ReportWorker != nil {
-		t.Fatal("worker callback without Claude watcher")
-	}
 }

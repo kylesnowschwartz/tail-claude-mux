@@ -13,7 +13,7 @@
 // status heuristics over that data are tcm policy and stay here.
 //
 // Concurrency contract: the Adapter is NOT safe for concurrent use — the
-// server serializes hooks, worker reports, probes, and seeding under its state
+// server serializes hooks, worker scans, probes, and seeding under its state
 // lock, the same way the bun server's single JS thread does. The one async
 // path, thread-name resolution, does its file IO lockless in a goroutine
 // and re-enters through Context.Locked.
@@ -27,7 +27,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/kylesnowschwartz/agent-ouija/claude/registry"
@@ -108,8 +107,6 @@ type Context struct {
 
 // threadState mirrors ThreadState in the TS adapter.
 type threadState struct {
-	workers map[string]int // active worker thread ids and process ids
-
 	fileWorkers      map[string]bool  // active file workers
 	fleetStepOffsets map[string]int64 // byte offsets retained for the lifetime of the thread
 	workersScanned   bool
@@ -148,10 +145,9 @@ type Adapter struct {
 	ProjectsDir string
 	SessionsDir string
 
-	ctx           *Context
-	threads       map[string]*threadState
-	now           func() int64 // epoch ms, injectable for tests
-	processExists func(int) bool
+	ctx     *Context
+	threads map[string]*threadState
+	now     func() int64 // epoch ms, injectable for tests
 }
 
 // New returns an Adapter reading the given Claude dirs.
@@ -161,9 +157,6 @@ func New(projectsDir, sessionsDir string) *Adapter {
 		SessionsDir: sessionsDir,
 		threads:     map[string]*threadState{},
 		now:         func() int64 { return time.Now().UnixMilli() },
-		processExists: func(pid int) bool {
-			return pid > 1 && syscall.Kill(pid, 0) != syscall.ESRCH
-		},
 	}
 }
 
@@ -459,10 +452,10 @@ const (
 )
 
 func (a *Adapter) emit(threadID string, state *threadState, session string, kind emitKind) {
-	a.emitWithWorker(threadID, state, session, kind, nil)
+	a.emitWithStep(threadID, state, session, kind, nil)
 }
 
-func (a *Adapter) emitWithWorker(threadID string, state *threadState, session string, kind emitKind, worker *WorkerReport) {
+func (a *Adapter) emitWithStep(threadID string, state *threadState, session string, kind emitKind, step *stepActivity) {
 	if a.ctx == nil {
 		return
 	}
@@ -485,9 +478,9 @@ func (a *Adapter) emitWithWorker(threadID string, state *threadState, session st
 		Subagent:        state.subagent,
 		Ended:           kind == emitEnded,
 	}
-	if worker != nil && (worker.ToolDescription != "" || worker.ToolVerb != "" || worker.ToolInvoked) {
-		event.ToolDescription = worker.ToolDescription
-		event.ToolVerb = worker.ToolVerb
+	if step != nil {
+		event.ToolDescription = step.description
+		event.ToolVerb = step.verb
 	}
 	a.ctx.Emit(event)
 }
@@ -621,9 +614,6 @@ func ClassifyTitleStatus(title string) tracker.ProbeVerdict {
 // server lock held.
 func (a *Adapter) ProbeLiveStatus(pid int, threadID, paneTitle string) tracker.ProbeVerdict {
 	state := a.threads[threadID]
-	if state != nil && state.pid == pid {
-		a.removeExitedWorkers(threadID, state)
-	}
 	verdict := ClassifySessionStatus(a.readSessionFile(pid), threadID, a.now())
 	if verdict == tracker.ProbeNoSignal && paneTitle != "" {
 		verdict = ClassifyTitleStatus(paneTitle)
@@ -631,7 +621,7 @@ func (a *Adapter) ProbeLiveStatus(pid int, threadID, paneTitle string) tracker.P
 	if verdict == tracker.ProbeEnded {
 		delete(a.threads, threadID)
 	}
-	if state != nil && state.pid == pid && (len(state.workers) > 0 || len(state.fileWorkers) > 0) &&
+	if state != nil && state.pid == pid && len(state.fileWorkers) > 0 &&
 		(verdict == tracker.ProbeNoSignal || verdict == tracker.ProbeDone) {
 		return tracker.ProbeWorking
 	}

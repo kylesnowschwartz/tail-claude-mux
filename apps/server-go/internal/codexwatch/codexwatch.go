@@ -34,21 +34,7 @@ const staleMS = 5 * 60 * 1000
 
 var codexCmdRE = regexp.MustCompile(`(?i)(?:^|/)codex($|[\s/])`)
 
-// WorkerReport describes the activity of a Codex thread started by Claude Code.
-type WorkerReport struct {
-	ParentPID       int    // the Claude Code process that started the worker
-	WorkerID        string // the Codex thread id
-	WorkerPID       int    // the Codex process
-	Status          string // wire status of the worker
-	ToolDescription string
-	ToolVerb        string
-	ToolInvoked     bool // true once per tool call, as in wire.AgentEvent
-}
-
 type Context struct {
-	// ReportWorker receives the activity of a Codex thread whose process
-	// was started by a Claude Code process.
-	ReportWorker        func(WorkerReport)
 	ResolveSession      func(projectDir string) string
 	ResolveSessionByPid func(pid int) string
 	Emit                func(ev wire.AgentEvent)
@@ -194,7 +180,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	newStatus := verdictWire(rollout.Reconcile(claim, evidence))
 
 	session := a.resolveStateSession(state, payload.Cwd)
-	if session == "" && !(state.parentPID != 0 && a.ctx.ReportWorker != nil) {
+	if session == "" {
 		if !state.dropLogged {
 			if state.pid != 0 {
 				log.Printf("codex-hook %s: dropped, pid %d resolved but no pane owns it", shortThread(threadID), state.pid)
@@ -260,14 +246,10 @@ const (
 )
 
 func (a *Adapter) emit(threadID string, state *threadState, session string, kind emitKind) {
-	if state.parentPID != 0 && a.ctx.ReportWorker != nil {
-		a.ctx.ReportWorker(WorkerReport{
-			ParentPID: state.parentPID, WorkerID: threadID, WorkerPID: state.routingPID,
-			Status: state.status, ToolDescription: state.lastToolDescription,
-			ToolVerb: state.lastToolVerb, ToolInvoked: kind == emitInvoked,
-		})
+	if state.parentPID != 0 {
 		return
 	}
+
 	a.ctx.Emit(wire.AgentEvent{
 		Agent:           "codex",
 		Session:         session,

@@ -281,27 +281,6 @@ func TestFileWorkerInterruptedFinalSteps(t *testing.T) {
 	}
 }
 
-func TestFileAndHookWorkersShareStatus(t *testing.T) {
-	a, tc, dir := fileWorkerParent(t, "Stop")
-	a.ReportWorker(WorkerReport{ParentPID: 100, WorkerID: "hook", WorkerPID: 200, Status: wire.StatusRunning})
-	addFileWorker(t, dir, "a1", "Explore", "", false)
-	a.processExists = func(int) bool { return false }
-	before := len(tc.events)
-	a.RecheckWorkers()
-	if len(tc.events) != before {
-		t.Fatal("worker source change emitted a status change")
-	}
-	if a.workerStatus("parent", a.threads["parent"]) != wire.StatusRunning {
-		t.Fatal("file worker did not maintain running")
-	}
-	setWorkerMeta(t, dir, "a1", "Explore", true)
-	a.RecheckWorkers()
-	if len(tc.events) != before+1 {
-		t.Fatal("last worker end did not emit once")
-	}
-	lastWorkerEvent(t, tc, wire.StatusDone)
-}
-
 func TestFileWorkerTitleWidth(t *testing.T) {
 	a, tc, dir := fileWorkerParent(t, "Stop")
 	a.RecheckWorkers()
@@ -385,4 +364,24 @@ func TestFileWorkerQuietLimit(t *testing.T) {
 			}
 		})
 	}
+}
+
+func workerParent(t *testing.T, event string) (*Adapter, *testCtx) {
+	t.Helper()
+	tc := makeCtx(nil, map[int]string{100: "work"})
+	a := newStartedAdapter(t, tc)
+	p := hook(event, "parent", "/project")
+	p.PID, p.ProcessSnapshot = 100, "100 1 claude"
+	a.HandleHook(p)
+	a.threads["parent"].threadName = "Parent thread"
+	return a, tc
+}
+
+func lastWorkerEvent(t *testing.T, tc *testCtx, status string) wire.AgentEvent {
+	t.Helper()
+	ev := tc.events[len(tc.events)-1]
+	if ev.Agent != "claude-code" || ev.Session != "work" || ev.ThreadID != "parent" || ev.PID != 100 || ev.Status != status {
+		t.Fatalf("parent event = %+v, want status %s", ev, status)
+	}
+	return ev
 }
