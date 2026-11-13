@@ -98,11 +98,6 @@ func TestDeadWorkersPeriodicProbe(t *testing.T) {
 			a, tc := workerParent(t, own.event)
 			a.ReportWorker(WorkerReport{ParentPID: 100, WorkerID: "worker", WorkerPID: 200, Status: wire.StatusRunning})
 			writeSessionFile(t, a.SessionsDir, 100, map[string]any{"sessionId": "parent", "status": "idle"})
-			if own.status == wire.StatusDone || own.status == wire.StatusIdle {
-				if got := a.ProbeLiveStatus(100, "parent", "✳ idle"); got != tracker.ProbeWorking {
-					t.Fatalf("live probe = %v", got)
-				}
-			}
 			a.processExists = func(pid int) bool {
 				if pid != 200 {
 					t.Fatalf("probe pid = %d", pid)
@@ -124,5 +119,103 @@ func TestUnknownWorkerParentIsDropped(t *testing.T) {
 	a.ReportWorker(WorkerReport{ParentPID: 999, WorkerID: "worker", WorkerPID: 200, Status: wire.StatusRunning})
 	if len(tc.events) != before || len(a.threads["parent"].workers) != 0 {
 		t.Fatal("unknown parent affected known thread")
+	}
+}
+
+func TestRecheckWorkersOnlyCleansWorkers(t *testing.T) {
+	for _, alive := range []bool{true, false} {
+		name := "exited"
+		if alive {
+			name = "live"
+		}
+		t.Run(name, func(t *testing.T) {
+			a, tc := workerParent(t, "Stop")
+			a.ReportWorker(WorkerReport{ParentPID: 100, WorkerID: "worker", WorkerPID: 200, Status: wire.StatusRunning})
+			writeSessionFile(t, a.SessionsDir, 100, map[string]any{"sessionId": "different-thread", "status": "idle"})
+			a.processExists = func(int) bool { return alive }
+			before := len(tc.events)
+			a.RecheckWorkers()
+			state := a.threads["parent"]
+			if state == nil {
+				t.Fatal("cleanup deleted the parent thread")
+			}
+			wantEmits, wantWorkers := 1, 0
+			if alive {
+				wantEmits, wantWorkers = 0, 1
+			}
+			if len(state.workers) != wantWorkers || len(tc.events)-before != wantEmits {
+				t.Fatalf("workers = %d, emits = %d; want %d, %d", len(state.workers), len(tc.events)-before, wantWorkers, wantEmits)
+			}
+		})
+	}
+}
+
+func TestWorkersPreserveNormalLiveStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		status    string
+		sessionID string
+		title     string
+		want      tracker.ProbeVerdict
+	}{
+		{name: "waiting session", status: "waiting", want: tracker.ProbeEnded},
+		{name: "idle session", status: "idle", want: tracker.ProbeEnded},
+		{name: "done session", status: "done", want: tracker.ProbeEnded},
+		{name: "replaced Claude process", status: "busy", sessionID: "other", want: tracker.ProbeEnded},
+		{name: "hung Claude process", status: "busy", want: tracker.ProbeEnded},
+		{name: "ended title", title: "✳ idle", want: tracker.ProbeEnded},
+		{name: "busy session", status: "busy", want: tracker.ProbeWorking},
+		{name: "no signal", want: tracker.ProbeWorking},
+		{name: "unknown title", title: "project", want: tracker.ProbeWorking},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, events := workerParent(t, "Stop")
+			a.ReportWorker(WorkerReport{ParentPID: 100, WorkerID: "worker", WorkerPID: 200, Status: wire.StatusRunning})
+			if tc.status != "" {
+				sessionID := tc.sessionID
+				if sessionID == "" {
+					sessionID = "parent"
+				}
+				updatedAt := a.now()
+				if tc.name == "hung Claude process" {
+					updatedAt -= busyHungMS + 1
+				}
+				writeSessionFile(t, a.SessionsDir, 100, map[string]any{"sessionId": sessionID, "status": tc.status, "updatedAt": updatedAt})
+			}
+			before := len(events.events)
+			if got := a.ProbeLiveStatus(100, "parent", tc.title); got != tc.want {
+				t.Fatalf("verdict = %v, want %v", got, tc.want)
+			}
+			_, retained := a.threads["parent"]
+			if retained != (tc.want != tracker.ProbeEnded) {
+				t.Fatalf("thread retained = %v for verdict %v", retained, tc.want)
+			}
+			if len(events.events) != before {
+				t.Fatal("live worker probe emitted an event")
+			}
+		})
+	}
+}
+
+func TestLastExitedWorkerReturnsNormalVerdict(t *testing.T) {
+	for _, status := range []string{"idle", "done", ""} {
+		t.Run("session status "+status, func(t *testing.T) {
+			a, tc := workerParent(t, "Stop")
+			a.ReportWorker(WorkerReport{ParentPID: 100, WorkerID: "worker", WorkerPID: 200, Status: wire.StatusRunning})
+			writeSessionFile(t, a.SessionsDir, 100, map[string]any{"sessionId": "parent", "status": status})
+			a.processExists = func(int) bool { return false }
+			before := len(tc.events)
+			want := tracker.ProbeEnded
+			if status == "" {
+				want = tracker.ProbeNoSignal
+			}
+			if got := a.ProbeLiveStatus(100, "parent", ""); got != want {
+				t.Fatalf("verdict = %v, want %v", got, want)
+			}
+			if len(tc.events) != before+1 {
+				t.Fatalf("cleanup emits = %d, want 1", len(tc.events)-before)
+			}
+			lastWorkerEvent(t, tc, wire.StatusDone)
+		})
 	}
 }

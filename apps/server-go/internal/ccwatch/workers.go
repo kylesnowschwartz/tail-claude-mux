@@ -57,12 +57,26 @@ func (a *Adapter) workerStatus(threadID string, state *threadState) string {
 	return state.status
 }
 
-// RecheckWorkers removes exited workers through the live-status probe.
+// RecheckWorkers removes exited workers and emits any effective status change.
 // Call with the server lock held during the periodic pane scan.
 func (a *Adapter) RecheckWorkers() {
 	for threadID, state := range a.threads {
 		if len(state.workers) > 0 {
-			a.ProbeLiveStatus(state.pid, threadID, "")
+			a.removeExitedWorkers(threadID, state)
+		}
+	}
+}
+
+func (a *Adapter) removeExitedWorkers(threadID string, state *threadState) {
+	before := a.workerStatus(threadID, state)
+	for id, pid := range state.workers {
+		if !a.processExists(pid) {
+			delete(state.workers, id)
+		}
+	}
+	if before != a.workerStatus(threadID, state) && a.ctx != nil {
+		if session := a.ctx.ResolveSessionByPid(state.pid); session != "" {
+			a.emit(threadID, state, session, emitUpdate)
 		}
 	}
 }

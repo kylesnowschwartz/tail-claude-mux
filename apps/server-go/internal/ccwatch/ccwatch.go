@@ -615,23 +615,9 @@ func ClassifyTitleStatus(title string) tracker.ProbeVerdict {
 // re-emit cleanly instead of staying pinned to "running". Call with the
 // server lock held.
 func (a *Adapter) ProbeLiveStatus(pid int, threadID, paneTitle string) tracker.ProbeVerdict {
-	if state := a.threads[threadID]; state != nil && state.pid == pid && len(state.workers) > 0 {
-		before := a.workerStatus(threadID, state)
-		for id, workerPID := range state.workers {
-			if !a.processExists(workerPID) {
-				delete(state.workers, id)
-			}
-		}
-		after := a.workerStatus(threadID, state)
-		if before != after && a.ctx != nil {
-			if session := a.ctx.ResolveSessionByPid(pid); session != "" {
-				a.emit(threadID, state, session, emitUpdate)
-			}
-		}
-		if after == wire.StatusRunning {
-			return tracker.ProbeWorking
-		}
-		return tracker.ProbeNoSignal
+	state := a.threads[threadID]
+	if state != nil && state.pid == pid {
+		a.removeExitedWorkers(threadID, state)
 	}
 	verdict := ClassifySessionStatus(a.readSessionFile(pid), threadID, a.now())
 	if verdict == tracker.ProbeNoSignal && paneTitle != "" {
@@ -639,6 +625,10 @@ func (a *Adapter) ProbeLiveStatus(pid int, threadID, paneTitle string) tracker.P
 	}
 	if verdict == tracker.ProbeEnded {
 		delete(a.threads, threadID)
+	}
+	if state != nil && state.pid == pid && len(state.workers) > 0 &&
+		(verdict == tracker.ProbeNoSignal || verdict == tracker.ProbeDone) {
+		return tracker.ProbeWorking
 	}
 	return verdict
 }
