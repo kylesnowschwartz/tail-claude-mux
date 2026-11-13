@@ -3,6 +3,7 @@ package codexwatch
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -840,5 +841,40 @@ func TestClaudeWorkerHooks(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestACPRolloutSuppressed(t *testing.T) {
+	for _, seed := range []bool{false, true} {
+		for _, acp := range []bool{false, true} {
+			t.Run(fmt.Sprintf("seed=%t/acp=%t", seed, acp), func(t *testing.T) {
+				h := newHarness(t)
+				id := "12345678-1234-1234-1234-123456789abc"
+				origin := ""
+				if acp {
+					origin = `,"originator":"@agentclientprotocol/codex-acp"`
+				}
+				path := writeRollout(t, h.adapter.SessionsDir, id, `"cli"`+origin, "{\"type\":\"turn_context\",\"payload\":{\"cwd\":\"/project\"}}\n{\"type\":\"response_item\",\"payload\":{\"type\":\"function_call\"}}\n")
+				if seed {
+					mtime := time.UnixMilli(999_000)
+					if err := os.Chtimes(path, mtime, mtime); err != nil {
+						t.Fatal(err)
+					}
+					h.adapter.seedFromJSONL()
+				} else {
+					h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: id, Cwd: "/project"})
+				}
+				want := 1
+				if acp {
+					want = 0
+				}
+				if got := len(h.snapshot()); got != want {
+					t.Fatalf("events = %d, want %d", got, want)
+				}
+				if seed && acp && h.adapter.threads[id] != nil {
+					t.Fatal("ACP seed created thread")
+				}
+			})
+		}
 	}
 }

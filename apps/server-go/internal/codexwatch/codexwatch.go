@@ -55,7 +55,11 @@ type Context struct {
 	Locked              func(fn func())
 }
 
+const acpOriginator = "@agentclientprotocol/codex-acp"
+
 type threadState struct {
+	rolloutChecked      bool
+	acpRollout          bool
 	status              string
 	threadName          string
 	projectDir          string
@@ -167,6 +171,21 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 			a.resolveThreadNameAsync(threadID, state)
 		}
 		return
+	}
+	if state.parentPID == 0 {
+		if !state.rolloutChecked {
+			path := a.rolloutPathForPID(state.pid, threadID)
+			if path == "" {
+				path = a.rolloutPathForThread(threadID)
+			}
+			if path != "" {
+				state.acpRollout = isACPRollout(path)
+				state.rolloutChecked = true
+			}
+		}
+		if state.acpRollout {
+			return
+		}
 	}
 	var evidence rollout.State
 	if claim.NeedsEvidence() {
@@ -462,6 +481,16 @@ func (a *Adapter) isRolloutPath(path string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && filepath.Ext(path) == ".jsonl"
 }
 
+func isACPRollout(path string) bool {
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	meta, ok, err := rollout.SessionMeta(file)
+	return err == nil && ok && meta.Payload.Originator == acpOriginator
+}
+
 func isPrimaryRollout(path string) bool {
 	file, err := os.Open(path)
 	if err != nil {
@@ -494,6 +523,9 @@ func (a *Adapter) seedFromJSONL() {
 	rollouts, _ := discover.DiscoverRollouts(a.SessionsDir)
 	for _, candidate := range rollouts {
 		if nowMS-candidate.ModTime.UnixMilli() > staleMS {
+			continue
+		}
+		if isACPRollout(candidate.Path) {
 			continue
 		}
 		threadID := candidate.SessionID
