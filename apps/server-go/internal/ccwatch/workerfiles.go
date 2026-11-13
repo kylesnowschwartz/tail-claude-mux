@@ -25,22 +25,27 @@ func (a *Adapter) scanWorkerFiles(threadID string, state *threadState) []agents.
 	if file := a.readSessionFile(state.pid); file != nil && file.SessionID == threadID && file.StartedAt > 0 {
 		startMS = int64(file.StartedAt)
 	}
-	active := make(map[string]int64)
+	active := make(map[string]bool)
+	if state.fleetStepOffsets == nil {
+		state.fleetStepOffsets = make(map[string]int64)
+	}
 	var steps []agents.FleetStep
 	for _, meta := range metas {
-		offset, wasActive := state.fileWorkers[meta.ID]
+		wasActive := state.fileWorkers[meta.ID]
+		offset := state.fleetStepOffsets[meta.ID]
 		isActive := !meta.Finished && !meta.Interrupted && !meta.ModTime.Before(time.UnixMilli(startMS))
-		if strings.HasPrefix(meta.AgentType, "fleet:") && (isActive || wasActive) {
-			if !wasActive && !state.workersScanned {
-				offset = meta.Size
+		if strings.HasPrefix(meta.AgentType, "fleet:") {
+			if !state.workersScanned {
+				state.fleetStepOffsets[meta.ID] = meta.Size
+			} else if isActive || wasActive || meta.Size > offset {
+				path := filepath.Join(strings.TrimSuffix(sessionPath, ".jsonl"), "subagents", "agent-"+meta.ID+".jsonl")
+				batch, next, _ := agents.ReadFleetSteps(path, offset)
+				steps = append(steps, batch...)
+				state.fleetStepOffsets[meta.ID] = next
 			}
-			path := filepath.Join(strings.TrimSuffix(sessionPath, ".jsonl"), "subagents", "agent-"+meta.ID+".jsonl")
-			batch, next, _ := agents.ReadFleetSteps(path, offset)
-			steps = append(steps, batch...)
-			offset = next
 		}
 		if isActive {
-			active[meta.ID] = offset
+			active[meta.ID] = true
 		}
 	}
 	state.fileWorkers = active

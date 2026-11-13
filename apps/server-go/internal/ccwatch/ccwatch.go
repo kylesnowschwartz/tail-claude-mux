@@ -110,9 +110,10 @@ type Context struct {
 type threadState struct {
 	workers map[string]int // active worker thread ids and process ids
 
-	fileWorkers    map[string]int64 // active file workers and their step byte offsets
-	workersScanned bool
-	firstSeenMS    int64
+	fileWorkers      map[string]bool  // active file workers
+	fleetStepOffsets map[string]int64 // byte offsets retained for the lifetime of the thread
+	workersScanned   bool
+	firstSeenMS      int64
 
 	status       string
 	threadName   string

@@ -2,6 +2,7 @@ package ccwatch
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -241,7 +242,7 @@ func TestNativeWorkerDoesNotReadSteps(t *testing.T) {
 	if len(tc.events) != before+1 || tc.events[before].ToolInvoked {
 		t.Fatal("native worker step emitted")
 	}
-	if a.threads["parent"].fileWorkers["a1"] != 0 {
+	if len(a.threads["parent"].fleetStepOffsets) != 0 {
 		t.Fatal("native step cursor advanced")
 	}
 	if got := a.ProbeLiveStatus(100, "parent", ""); got != tracker.ProbeWorking {
@@ -309,5 +310,49 @@ func TestFileWorkerTitleWidth(t *testing.T) {
 	ev := tc.events[len(tc.events)-1]
 	if ev.ToolDescription != strings.Repeat("a", 39)+"…" {
 		t.Fatalf("description = %q", ev.ToolDescription)
+	}
+}
+
+func TestFleetStepOffsetsAcrossRuns(t *testing.T) {
+	for _, finishedAtStart := range []bool{true, false} {
+		t.Run(fmt.Sprint(finishedAtStart), func(t *testing.T) {
+			a, tc, dir := fileWorkerParent(t, "Stop")
+			path := addFileWorker(t, dir, "a1", "fleet:pi", fleetStepLine("read", "history"), finishedAtStart)
+			a.RecheckWorkers()
+			if !finishedAtStart {
+				appendWorkerLines(t, path, fleetStepLine("edit", "first run"))
+				setWorkerMeta(t, dir, "a1", "fleet:pi", true)
+				a.RecheckWorkers()
+			}
+			before := len(tc.events)
+			appendWorkerLines(t, path, fleetStepLine("execute", "follow-up"))
+			setWorkerMeta(t, dir, "a1", "fleet:pi", false)
+			a.RecheckWorkers()
+			invoked := 0
+			for _, ev := range tc.events[before:] {
+				if ev.ToolInvoked {
+					invoked++
+					if ev.ToolDescription != "follow-up" {
+						t.Fatalf("replayed step: %+v", ev)
+					}
+				}
+			}
+			if invoked != 1 {
+				t.Fatalf("invoked = %d", invoked)
+			}
+			before = len(tc.events)
+			a.RecheckWorkers()
+			if len(tc.events) != before {
+				t.Fatal("follow-up replayed")
+			}
+			setWorkerMeta(t, dir, "a1", "fleet:pi", true)
+			a.RecheckWorkers()
+			before = len(tc.events)
+			appendWorkerLines(t, path, fleetStepLine("read", "between polls"))
+			a.RecheckWorkers()
+			if len(tc.events) != before+1 || tc.events[before].ToolDescription != "between polls" {
+				t.Fatal("completed follow-up missed")
+			}
+		})
 	}
 }
