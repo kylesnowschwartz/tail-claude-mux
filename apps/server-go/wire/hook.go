@@ -22,14 +22,6 @@ var validStopReasons = map[string]bool{
 	"stop": true, "length": true, "toolUse": true, "error": true, "aborted": true,
 }
 
-var validStartReasons = map[string]bool{
-	"startup": true, "reload": true, "new": true, "resume": true, "fork": true,
-}
-
-var validPromptKinds = map[string]bool{
-	"select": true, "confirm": true, "input": true, "editor": true, "custom": true,
-}
-
 var validShutdownReasons = map[string]bool{
 	"quit": true, "reload": true, "new": true, "resume": true, "fork": true,
 }
@@ -58,14 +50,6 @@ type HookPayload struct {
 	TranscriptPath string `json:"transcript_path,omitempty"`
 	// Aborted is set on Pi's agent_settled: the run was stopped.
 	Aborted *bool `json:"aborted,omitempty"`
-	// PromptKind and PromptTitle describe the dialog of Pi's
-	// ui_prompt_start and ui_prompt_end.
-	PromptKind  string `json:"prompt_kind,omitempty"`
-	PromptTitle string `json:"prompt_title,omitempty"`
-	// StartReason is Pi's session_start reason.
-	StartReason string `json:"start_reason,omitempty"`
-	// TmuxPane is the reporting process's $TMUX_PANE.
-	TmuxPane string `json:"tmux_pane,omitempty"`
 }
 
 // ParseHookPayload validates one POST /hook body. It returns (payload,
@@ -121,10 +105,6 @@ func ParseHookPayload(body []byte) (HookPayload, bool) {
 		ProcessSnapshot:  optBoundedString(raw["process_snapshot"], maxProcessSnapshotLen),
 		TranscriptPath:   optBoundedString(raw["transcript_path"], maxStringLen),
 		Aborted:          optBool(raw["aborted"]),
-		PromptKind:       optEnumString(raw["prompt_kind"], validPromptKinds),
-		PromptTitle:      optBoundedString(raw["prompt_title"], maxStringLen),
-		StartReason:      optEnumString(raw["start_reason"], validStartReasons),
-		TmuxPane:         optBoundedString(raw["tmux_pane"], maxSessionNameLen),
 	}
 	return p, true
 }
