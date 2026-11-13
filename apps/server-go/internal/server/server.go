@@ -361,6 +361,11 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 		if s.CodexWatcher != nil {
 			s.CodexWatcher.HandleHook(p)
 		}
+		if s.PiWatcher != nil {
+			for _, ev := range s.PiWatcher.HandleHook(p) {
+				s.emitLocked(ev)
+			}
+		}
 		s.mu.Unlock()
 	} else {
 		log.Printf("hook: rejected-malformed")

@@ -427,7 +427,7 @@ func TestAgentStateSourcesIncludePi(t *testing.T) {
 	live := livePiPids(map[string][]tracker.PanePresence{
 		"work": {{Agent: "pi", PID: 7}, {Agent: "codex", PID: 8}, {Agent: "pi"}},
 	})
-	if len(live) != 1 || !live[7] {
-		t.Fatalf("live pi pids = %v, want {7}", live)
+	if len(live) != 1 || live[7] != "work" {
+		t.Fatalf("live pi pids = %v, want {7: work}", live)
 	}
 }

@@ -202,13 +202,13 @@ func TestStatusMapping(t *testing.T) {
 
 // scanPid runs one scan of pid 42 alone.
 func scanPid(a *Adapter, pid int) tracker.ScanState {
-	a.SetLive(map[int]bool{pid: true})
+	a.SetLive(map[int]string{pid: "work"})
 	return a.ScanStateForPid(pid, "")
 }
 
 // scanBoth runs one scan of pids 42 and 43 and returns their thread ids.
 func scanBoth(a *Adapter) (string, string) {
-	a.SetLive(map[int]bool{42: true, 43: true})
+	a.SetLive(map[int]string{42: "work", 43: "work"})
 	return a.ScanStateForPid(42, "").ThreadID, a.ScanStateForPid(43, "").ThreadID
 }
 
@@ -310,7 +310,7 @@ func TestSetLiveDropsDeadPids(t *testing.T) {
 	a, dir := newTestAdapter(t, false)
 	writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
 	scanActivity(a)
-	a.SetLive(map[int]bool{})
+	a.SetLive(map[int]string{})
 	if len(a.byPID) != 0 || len(a.files) != 0 {
 		t.Fatalf("left %d pids, %d files", len(a.byPID), len(a.files))
 	}

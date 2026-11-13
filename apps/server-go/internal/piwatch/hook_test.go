@@ -1,0 +1,146 @@
+package piwatch
+
+import (
+	"testing"
+	"time"
+
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
+)
+
+func hook(event, file string) wire.HookPayload {
+	return wire.HookPayload{Agent: "pi", Event: event, PID: 42, SessionID: "sid", Cwd: testCwd, TranscriptPath: file}
+}
+
+func onlyStatus(t *testing.T, evs []wire.AgentEvent, want string) wire.AgentEvent {
+	t.Helper()
+	if len(evs) != 1 || evs[0].Status != want || evs[0].Agent != "pi" || evs[0].Session != "work" || evs[0].PID != 42 {
+		t.Fatalf("events %#v, want one %s", evs, want)
+	}
+	return evs[0]
+}
+
+func TestHookStatusMapping(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
+	a.SetLive(map[int]string{42: "work"})
+	ev := onlyStatus(t, a.HandleHook(hook("agent_start", path)), wire.StatusRunning)
+	if ev.ThreadID != "s" {
+		t.Fatalf("thread %q", ev.ThreadID)
+	}
+	onlyStatus(t, a.HandleHook(hook("ui_prompt_start", path)), wire.StatusWaiting)
+	onlyStatus(t, a.HandleHook(hook("ui_prompt_end", path)), wire.StatusRunning)
+	if evs := a.HandleHook(hook("ui_prompt_end", path)); len(evs) != 0 {
+		t.Fatalf("repeat status emitted %#v", evs)
+	}
+	aborted := true
+	settle := hook("agent_settled", path)
+	settle.Aborted = &aborted
+	onlyStatus(t, a.HandleHook(settle), wire.StatusInterrupted)
+	onlyStatus(t, a.HandleHook(hook("agent_start", path)), wire.StatusRunning)
+	onlyStatus(t, a.HandleHook(hook("agent_settled", path)), wire.StatusDone)
+	onlyStatus(t, a.HandleHook(hook("agent_start", path)), wire.StatusRunning)
+	appendLines(t, path, assistantLine("error"))
+	onlyStatus(t, a.HandleHook(hook("agent_settled", path)), wire.StatusError)
+}
+
+func TestHookFromUnknownPidWaitsForScan(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
+	if evs := a.HandleHook(hook("ui_prompt_start", path)); len(evs) != 0 {
+		t.Fatalf("unknown pid emitted %#v", evs)
+	}
+	if evs := scanActivity(a); len(evs) != 1 || evs[0].Status != wire.StatusWaiting {
+		t.Fatalf("pending hook not applied: %#v", evs)
+	}
+}
+
+func TestStalePendingHookDropped(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
+	a.HandleHook(hook("ui_prompt_start", path))
+	a.now = func() int64 { return 1_000 + (pendingHookTTL + time.Second).Milliseconds() }
+	if evs := scanActivity(a); len(evs) != 1 || evs[0].Status != wire.StatusRunning {
+		t.Fatalf("stale hook applied: %#v", evs)
+	}
+}
+
+func TestHookFileWinsOverHeuristic(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	named := writeSession(t, dir, "named", procStart.Add(-time.Hour), procStart.Add(time.Minute), userLine("a"))
+	writeSession(t, dir, "newer", procStart, procStart.Add(5*time.Minute), userLine("b"))
+	a.SetLive(map[int]string{42: "work"})
+	a.HandleHook(hook("session_start", named))
+	if st := scanPid(a, 42); st.ThreadID != "named" || st.Verdict != tracker.ProbeNoSignal {
+		t.Fatalf("got %#v", st)
+	}
+}
+
+func TestScanDoesNotUndoWaitingOrSettled(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
+	a.SetLive(map[int]string{42: "work"})
+	a.HandleHook(hook("ui_prompt_start", path))
+	for i := 0; i < 2; i++ {
+		if evs := scanActivity(a); len(evs) != 0 {
+			t.Fatalf("waiting undone: %#v", evs)
+		}
+	}
+	if v := a.ProbeLiveStatus(42, "s", ""); v != tracker.ProbeNoSignal {
+		t.Fatalf("probe while waiting %v", v)
+	}
+	a.HandleHook(hook("agent_start", path))
+	appendLines(t, path, assistantLine("toolUse", `bash {"command":"make"}`))
+	a.HandleHook(hook("agent_settled", path))
+	evs := scanActivity(a)
+	if len(evs) != 1 || !evs[0].ToolInvoked || evs[0].Status != wire.StatusDone {
+		t.Fatalf("settled undone: %#v", evs)
+	}
+}
+
+func TestFileOnlyPidUnchanged(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
+	if st := scanPid(a, 42); st.Verdict != tracker.ProbeWorking {
+		t.Fatalf("got %#v", st)
+	}
+	other := hook("agent_settled", "")
+	other.PID = 99
+	a.HandleHook(other)
+	if evs := a.Activity(42, "work"); len(evs) != 1 || evs[0].Status != wire.StatusRunning {
+		t.Fatalf("events %#v", evs)
+	}
+}
+
+func TestShutdownQuitEndsRow(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
+	a.SetLive(map[int]string{42: "work"})
+	a.HandleHook(hook("agent_start", path))
+	quit := hook("session_shutdown", path)
+	quit.ShutdownReason = "quit"
+	evs := a.HandleHook(quit)
+	if len(evs) != 1 || !evs[0].Ended || evs[0].ThreadID != "s" {
+		t.Fatalf("events %#v", evs)
+	}
+	if evs := scanActivity(a); len(evs) != 0 {
+		t.Fatalf("ended pid still active: %#v", evs)
+	}
+	newSession := hook("session_shutdown", path)
+	newSession.ShutdownReason = "new"
+	a2, _ := newTestAdapter(t, false)
+	a2.SetLive(map[int]string{42: "work"})
+	if evs := a2.HandleHook(newSession); len(evs) != 0 {
+		t.Fatalf("shutdown for /new emitted %#v", evs)
+	}
+}
+
+func TestNonPiHookIgnored(t *testing.T) {
+	a, _ := newTestAdapter(t, false)
+	a.SetLive(map[int]string{42: "work"})
+	p := hook("agent_start", "")
+	p.Agent = "codex"
+	if evs := a.HandleHook(p); evs != nil {
+		t.Fatalf("events %#v", evs)
+	}
+}

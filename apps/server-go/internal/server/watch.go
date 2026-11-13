@@ -326,11 +326,11 @@ func (s *Server) paneScanLoop() {
 			for i, pa := range paneAgents {
 				var state tracker.ScanState
 				paneAgents[i], state = scanStateForPane(pa, stateSources...)
-				if !state.HasSignal() {
-					continue
-				}
 				if pa.Agent == agentmatch.AgentPi && s.PiWatcher != nil {
 					piActivity = append(piActivity, s.PiWatcher.Activity(pa.PID, session)...)
+				}
+				if !state.HasSignal() {
+					continue
 				}
 				readings = append(readings, scanReading{
 					ev: wire.AgentEvent{
@@ -387,13 +387,14 @@ func (s *Server) paneScanLoop() {
 	}
 }
 
-// livePiPids is the set of Pi process ids one pane scan found.
-func livePiPids(next map[string][]tracker.PanePresence) map[int]bool {
-	live := map[int]bool{}
-	for _, paneAgents := range next {
+// livePiPids maps each Pi process id one pane scan found to its tmux
+// session.
+func livePiPids(next map[string][]tracker.PanePresence) map[int]string {
+	live := map[int]string{}
+	for session, paneAgents := range next {
 		for _, pa := range paneAgents {
 			if pa.Agent == agentmatch.AgentPi && pa.PID != 0 {
-				live[pa.PID] = true
+				live[pa.PID] = session
 			}
 		}
 	}

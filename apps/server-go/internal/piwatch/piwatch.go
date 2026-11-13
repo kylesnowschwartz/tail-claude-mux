@@ -1,12 +1,15 @@
-// Package piwatch derives tcm agent state for Pi coding agent processes from
-// Pi's session files alone. Pi sends no hooks, so every reading starts from
-// the process the pane scan found: its cwd and start time pick the session
-// file, and agent-ouija's pi packages read that file.
+// Package piwatch derives tcm agent state for Pi coding agent processes.
+// Every reading starts from a process the pane scan found. The session file,
+// read with agent-ouija's pi packages, supplies the thread name and tool
+// calls, and the status of a process that sends no hooks. A process running
+// tcm's Pi extension (integrations/pi-extension) reports its session file
+// and status through HandleHook; from its first accepted hook on, its status
+// comes only from hooks.
 //
 // ScanStateForPid and Activity run on the pane-scan goroutine outside the
-// server lock; ProbeLiveStatus runs under it on the liveness goroutine. The
-// per-pid file record they share is guarded by the Adapter's mutex; the
-// per-file read offsets belong to the scan goroutine alone.
+// server lock; ProbeLiveStatus and HandleHook run under it. The per-pid
+// records they share are guarded by the Adapter's mutex; the per-file read
+// offsets belong to the scan goroutine alone.
 package piwatch
 
 import (
@@ -33,6 +36,10 @@ import (
 // the process start time and still name that process's first session.
 const startMatchWindow = 2 * time.Second
 
+// pendingHookTTL is how long a hook from a pid the scan has not found yet is
+// kept to apply once the scan finds it.
+const pendingHookTTL = 10 * time.Second
+
 // Adapter maps Pi processes to their session files and reads status, names
 // and tool calls from them.
 type Adapter struct {
@@ -45,8 +52,9 @@ type Adapter struct {
 	startTimeForPID func(pid int) time.Time
 	now             func() int64
 
-	mu    sync.Mutex
-	byPID map[int]pidRecord
+	mu      sync.Mutex
+	byPID   map[int]pidRecord
+	pending map[int]pendingHook
 
 	files map[string]*fileState
 }
@@ -56,8 +64,26 @@ type Adapter struct {
 type pidRecord struct {
 	cwd     string
 	started time.Time
+	// session is the tmux session the scan found the pid in.
+	session string
 	path    string
 	verdict tracker.ProbeVerdict
+
+	// hooked is set by the pid's first accepted hook. hookFile is the
+	// session file its latest hook named, hookStatus the status its hooks
+	// set, sentStatus the last status emitted for it, and ended marks a
+	// quit.
+	hooked     bool
+	hookFile   string
+	hookStatus string
+	sentStatus string
+	ended      bool
+}
+
+// pendingHook is the latest hook from a pid the scan has not found yet.
+type pendingHook struct {
+	payload wire.HookPayload
+	at      time.Time
 }
 
 // fileState is the scan goroutine's read position in one session file.
@@ -78,6 +104,7 @@ func New(sessionsDir, overrideDir string) *Adapter {
 		startTimeForPID: psStartTimeForPID,
 		now:             func() int64 { return time.Now().UnixMilli() },
 		byPID:           map[int]pidRecord{},
+		pending:         map[int]pendingHook{},
 		files:           map[string]*fileState{},
 	}
 }
@@ -86,18 +113,27 @@ func New(sessionsDir, overrideDir string) *Adapter {
 func (a *Adapter) Name() string { return agentmatch.AgentPi }
 
 // ScanStateForPid resolves the pid's current session file and reads its
-// identity and trailing status. The pid is re-resolved on every call, so a
-// /new, /resume or /fork in the same process is followed.
+// identity and trailing status. A hooked pid's file is the one its latest
+// hook named, and its reading carries no verdict: hooks own its status. Any
+// other pid is re-resolved on every call, so a /new, /resume or /fork in
+// the same process is followed.
 func (a *Adapter) ScanStateForPid(pid int, _ string) tracker.ScanState {
-	path := a.sessionPathForPID(pid)
+	a.mu.Lock()
+	rec := a.byPID[pid]
+	a.mu.Unlock()
+	path := rec.hookFile
+	if path == "" {
+		path = a.sessionPathForPID(pid)
+	}
 	verdict := tracker.ProbeNoSignal
-	if path != "" {
+	if path != "" && !rec.hooked {
 		verdict = verdictForPath(path)
 	}
 	a.mu.Lock()
-	rec := a.byPID[pid]
-	rec.path, rec.verdict = path, verdict
-	a.byPID[pid] = rec
+	if cur, ok := a.byPID[pid]; ok {
+		cur.path, cur.verdict = path, verdict
+		a.byPID[pid] = cur
+	}
 	a.mu.Unlock()
 	if path == "" {
 		return tracker.ScanState{}
@@ -118,23 +154,34 @@ func (a *Adapter) ProbeLiveStatus(pid int, threadID, _ string) tracker.ProbeVerd
 	if !ok || rec.path == "" || threadID != "" && discover.SessionIDFromPath(rec.path) != threadID {
 		return tracker.ProbeNoSignal
 	}
+	if rec.hooked {
+		if rec.hookStatus == wire.StatusRunning {
+			return tracker.ProbeWorking
+		}
+		return tracker.ProbeNoSignal
+	}
 	return verdictForPath(rec.path)
 }
 
 // Activity returns the events the pid's session file produced since the
 // previous call: one per tool call written since, then, last, one carrying
-// the trailing status when it differs from the last status sent for that
-// file. At first sight of a file the tool offset starts at the end of its
+// the status when it differs from the last status sent. A hooked pid's
+// status is its hook status, which its tool-call events carry too; any
+// other pid's is the file's trailing status, compared per file. At first sight of a file the tool offset starts at the end of its
 // last complete line, so earlier calls are not replayed. Call it after
 // ScanStateForPid for the same pid, on the same goroutine.
 func (a *Adapter) Activity(pid int, tmuxSession string) []wire.AgentEvent {
 	a.mu.Lock()
 	rec, ok := a.byPID[pid]
 	a.mu.Unlock()
-	if !ok || rec.path == "" || tmuxSession == "" {
+	if !ok || rec.path == "" || rec.ended || tmuxSession == "" {
 		return nil
 	}
 	fs := a.fileState(rec.path)
+	toolStatus := wire.StatusRunning
+	if rec.hooked && rec.hookStatus != "" {
+		toolStatus = rec.hookStatus
+	}
 	base := wire.AgentEvent{
 		Agent:      agentmatch.AgentPi,
 		Session:    tmuxSession,
@@ -150,11 +197,25 @@ func (a *Adapter) Activity(pid int, tmuxSession string) []wire.AgentEvent {
 		fs.toolOffset = next
 		for _, call := range calls {
 			ev := base
-			ev.Status = wire.StatusRunning
+			ev.Status = toolStatus
 			ev.ToolInvoked = true
 			ev.ToolDescription, ev.ToolVerb = describeTool(call)
 			out = append(out, ev)
 		}
+	}
+	if rec.hooked {
+		if rec.hookStatus != "" && rec.hookStatus != rec.sentStatus {
+			a.mu.Lock()
+			if cur, ok := a.byPID[pid]; ok {
+				cur.sentStatus = rec.hookStatus
+				a.byPID[pid] = cur
+			}
+			a.mu.Unlock()
+			ev := base
+			ev.Status = rec.hookStatus
+			out = append(out, ev)
+		}
+		return out
 	}
 	if status := wireStatus(rec.verdict); status != "" && status != fs.status {
 		fs.status = status
@@ -165,11 +226,97 @@ func (a *Adapter) Activity(pid int, tmuxSession string) []wire.AgentEvent {
 	return out
 }
 
+// HandleHook applies one hook from tcm's Pi extension and returns the event
+// to emit now, if any. A hook from a pid the scan has not found as a live Pi
+// is kept for pendingHookTTL and applied when the scan finds it; a newer
+// hook from the same pid replaces it. Status: agent_start and ui_prompt_end
+// → running, ui_prompt_start → waiting, agent_settled → interrupted when
+// aborted, else error when the file ends in an error, else done;
+// session_shutdown with reason quit ends the row.
+func (a *Adapter) HandleHook(p wire.HookPayload) []wire.AgentEvent {
+	if p.Agent != agentmatch.AgentPi || p.PID == 0 {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	rec, ok := a.byPID[p.PID]
+	if !ok {
+		a.pending[p.PID] = pendingHook{payload: p, at: time.UnixMilli(a.now())}
+		return nil
+	}
+	applyHook(&rec, p)
+	a.byPID[p.PID] = rec
+	if rec.session == "" {
+		return nil
+	}
+	ev := wire.AgentEvent{
+		Agent:    agentmatch.AgentPi,
+		Session:  rec.session,
+		ThreadID: discover.SessionIDFromPath(rec.hookFile),
+		PID:      p.PID,
+		TS:       a.now(),
+	}
+	if ev.ThreadID == "" {
+		ev.ThreadID = p.SessionID
+	}
+	if rec.ended {
+		ev.Ended = true
+		return []wire.AgentEvent{ev}
+	}
+	if rec.hookStatus == "" || rec.hookStatus == rec.sentStatus {
+		return nil
+	}
+	rec.sentStatus = rec.hookStatus
+	a.byPID[p.PID] = rec
+	ev.Status = rec.hookStatus
+	return []wire.AgentEvent{ev}
+}
+
+// applyHook folds one hook into a pid's record.
+func applyHook(rec *pidRecord, p wire.HookPayload) {
+	rec.hooked = true
+	if p.TranscriptPath != "" {
+		rec.hookFile = p.TranscriptPath
+		rec.path = p.TranscriptPath
+	}
+	switch p.Event {
+	case "agent_start", "ui_prompt_end":
+		rec.hookStatus = wire.StatusRunning
+	case "ui_prompt_start":
+		rec.hookStatus = wire.StatusWaiting
+	case "agent_settled":
+		switch {
+		case p.Aborted != nil && *p.Aborted:
+			rec.hookStatus = wire.StatusInterrupted
+		case settledWithError(rec.hookFile):
+			rec.hookStatus = wire.StatusError
+		default:
+			rec.hookStatus = wire.StatusDone
+		}
+	case "session_shutdown":
+		if p.ShutdownReason == "quit" {
+			rec.ended = true
+		}
+	}
+}
+
+// settledWithError reports whether the session file's last turn ended in an
+// error.
+func settledWithError(path string) bool {
+	if path == "" {
+		return false
+	}
+	state, err := session.TrailingState(path)
+	return err == nil && state.Status == session.Error
+}
+
 // SetLive makes live the set of Pi pids the adapter knows: it records the
 // cwd and start time of each new pid, and drops dead pids and the files no
 // live pid reads. Call it with every pid of a scan before that scan's
 // ScanStateForPid calls, so each pid's resolution sees the others.
-func (a *Adapter) SetLive(live map[int]bool) {
+// Each pid maps to the tmux session it was found in. A pending hook for a
+// new pid is applied to its record; Activity emits the status it set.
+func (a *Adapter) SetLive(live map[int]string) {
 	var fresh []int
 	a.mu.Lock()
 	for pid := range live {
@@ -185,15 +332,27 @@ func (a *Adapter) SetLive(live map[int]bool) {
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	now := time.UnixMilli(a.now())
 	for pid, rec := range added {
+		if hook, ok := a.pending[pid]; ok && now.Sub(hook.at) <= pendingHookTTL {
+			applyHook(&rec, hook.payload)
+		}
 		a.byPID[pid] = rec
+	}
+	for pid, hook := range a.pending {
+		if _, ok := a.byPID[pid]; ok || now.Sub(hook.at) > pendingHookTTL {
+			delete(a.pending, pid)
+		}
 	}
 	used := map[string]bool{}
 	for pid, rec := range a.byPID {
-		if !live[pid] {
+		session, ok := live[pid]
+		if !ok {
 			delete(a.byPID, pid)
 			continue
 		}
+		rec.session = session
+		a.byPID[pid] = rec
 		used[rec.path] = true
 	}
 	for path := range a.files {
