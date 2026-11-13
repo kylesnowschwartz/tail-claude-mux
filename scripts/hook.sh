@@ -29,9 +29,6 @@ INJECTED="\"event\":\"$EVENT\",\"pid\":$HOOK_PID,\"process_snapshot\":$PS_SNAPSH
 if [[ -n "$AGENT" ]]; then
   INJECTED="$INJECTED,\"agent\":\"$AGENT\""
 fi
-if [[ -n "${TCM_DELEGATION_ID:-}" ]]; then
-  INJECTED="$INJECTED,\"delegation_id\":\"$TCM_DELEGATION_ID\""
-fi
 if [[ "$PAYLOAD" == "{"* ]]; then
   BODY="{${INJECTED},${PAYLOAD#\{}"
 else
