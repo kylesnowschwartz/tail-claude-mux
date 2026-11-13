@@ -1,0 +1,6 @@
+{
+  "name": "peer-session",
+  "version": "0.1.0",
+  "description": "Start Claude Code in another repository and receive its report through cross-session messaging.",
+  "author": {"name": "kylesnowschwartz"}
+}

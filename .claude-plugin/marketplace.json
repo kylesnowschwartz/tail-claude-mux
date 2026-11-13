@@ -4,13 +4,18 @@
     "name": "kylesnowschwartz"
   },
   "metadata": {
-    "description": "Personal marketplace for tail-claude-mux (TCM) tooling: the branch-pane plugin."
+    "description": "Personal marketplace for tail-claude-mux (TCM) tooling: the branch-pane and peer-session plugins."
   },
   "plugins": [
     {
       "name": "branch-pane",
       "source": "./integrations/branch-pane",
       "description": "/branch opens a fork of this conversation in a new tmux window and leaves this session running."
+    },
+    {
+      "name": "peer-session",
+      "source": "./integrations/peer-session",
+      "description": "Start Claude Code in another repository and receive its report through cross-session messaging."
     }
   ]
 }
