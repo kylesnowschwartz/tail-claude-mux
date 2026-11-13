@@ -24,29 +24,22 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/kylesnowschwartz/agent-ouija/claude/registry"
 	"github.com/kylesnowschwartz/agent-ouija/claude/transcript"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/agentmatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/textutil"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
-// claudeCmdRE is the path-segment aware matcher for the long-lived claude
-// process: `claude` or `claude-code` preceded by ^ or /, followed by
-// whitespace, /, or end — so `meta-claude` never false-positives. (The TS
-// original uses a lookahead; RE2 has none, but a consuming group is
-// equivalent for a boolean match.)
-var claudeCmdRE = regexp.MustCompile(`(?i)(?:^|/)claude(?:-code)?($|[\s/])`)
-
 // IsClaudeCommand reports whether command identifies a Claude Code process.
 func IsClaudeCommand(command string) bool {
-	return claudeCmdRE.MatchString(command)
+	return agentmatch.IsClaudeCommand(command)
 }
 
 // staleMS bounds the cold-start seed to recently-touched transcripts.
@@ -285,10 +278,10 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	// pid is the authoritative routing channel.
 	if payload.PID != 0 && payload.ProcessSnapshot != "" {
 		proc := procwalk.ParseProcessSnapshot(payload.ProcessSnapshot)
-		resolved := procwalk.ResolveAgentSessionPid(payload.PID, claudeCmdRE, proc)
+		resolved := procwalk.ResolveAgentSessionPid(payload.PID, agentmatch.ClaudeCommandPattern, proc)
 		if resolved != payload.PID {
 			state.pid = resolved // walked up to a claude ancestor
-		} else if info, ok := proc[payload.PID]; ok && claudeCmdRE.MatchString(info.Command) {
+		} else if info, ok := proc[payload.PID]; ok && agentmatch.ClaudeCommandPattern.MatchString(info.Command) {
 			// Walker gave up; trust the reported pid only when its OWN
 			// command matches — otherwise it's the wrapper shell and the
 			// liveness sweep would false-fire.

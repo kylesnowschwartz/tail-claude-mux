@@ -179,3 +179,16 @@ func TestCommMatchesBoundaryRules(t *testing.T) {
 		check(t, "", "codex", false)
 	})
 }
+
+func TestCommMatchesPi(t *testing.T) {
+	for _, comm := range []string{"pi", "/usr/local/bin/pi", "pi-rpc"} {
+		if !CommMatches(comm, "pi") {
+			t.Errorf("CommMatches(%q, pi) = false, want true", comm)
+		}
+	}
+	for _, comm := range []string{"pip", "pipenv", "pipx", "ping", "/usr/bin/pip3", "api"} {
+		if CommMatches(comm, "pi") {
+			t.Errorf("CommMatches(%q, pi) = true, want false", comm)
+		}
+	}
+}

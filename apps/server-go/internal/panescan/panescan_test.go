@@ -239,3 +239,59 @@ func TestScanEmptyPaneListSkipsPs(t *testing.T) {
 		t.Errorf("Scan([]) = %#v, want empty map", got)
 	}
 }
+
+func TestScanMatchesPiAtPaneRoot(t *testing.T) {
+	psComm := commLine(100, 1, "pi")
+	psFull := fullLine(100, 1, "pi")
+	s := &Scanner{Run: fakeExec(t, psComm, psFull)}
+	p := onlyPresence(t, s.Scan(workPane()), "work")
+	if p.Agent != "pi" || p.PID != 100 {
+		t.Fatalf("got %s pid %d, want pi pid 100", p.Agent, p.PID)
+	}
+}
+
+func TestScanMatchesPiUnderShell(t *testing.T) {
+	psComm := strings.Join([]string{commLine(100, 1, "-zsh"), commLine(200, 100, "/usr/local/bin/pi")}, "\n")
+	psFull := strings.Join([]string{fullLine(100, 1, "-zsh"), fullLine(200, 100, "/usr/local/bin/pi")}, "\n")
+	s := &Scanner{Run: fakeExec(t, psComm, psFull)}
+	p := onlyPresence(t, s.Scan(workPane()), "work")
+	if p.Agent != "pi" || p.PID != 200 {
+		t.Fatalf("got %s pid %d, want pi pid 200", p.Agent, p.PID)
+	}
+}
+
+func TestScanIgnoresPiLookalikes(t *testing.T) {
+	for _, comm := range []string{"pip", "pipenv", "pipx", "ping"} {
+		psComm := strings.Join([]string{commLine(100, 1, "-zsh"), commLine(200, 100, comm)}, "\n")
+		s := &Scanner{Run: fakeExec(t, psComm, "")}
+		if got := s.Scan(workPane()); len(got) != 0 {
+			t.Errorf("%s: got %#v, want no presence", comm, got)
+		}
+	}
+}
+
+func TestScanPiUnderClaudeYieldsClaudeOnly(t *testing.T) {
+	cases := map[string][][3]any{
+		"claude→pi": {
+			{100, 1, "-zsh"}, {200, 100, "claude"}, {300, 200, "pi"},
+		},
+		"claude→node→pi": {
+			{100, 1, "-zsh"}, {200, 100, "claude"}, {250, 200, "node"}, {300, 250, "pi"},
+		},
+	}
+	for name, rows := range cases {
+		var comm, full []string
+		for _, r := range rows {
+			comm = append(comm, commLine(r[0].(int), r[1].(int), r[2].(string)))
+			full = append(full, fullLine(r[0].(int), r[1].(int), r[2].(string)))
+		}
+		s := &Scanner{Run: fakeExec(t, strings.Join(comm, "\n"), strings.Join(full, "\n"))}
+		p := onlyPresence(t, s.Scan(workPane()), "work")
+		if p.Agent != "claude-code" || p.PID != 200 {
+			t.Errorf("%s: got %s pid %d, want claude-code pid 200", name, p.Agent, p.PID)
+		}
+		if pids := s.AgentPidsByPane(workPane(), "pi")["%1"]; len(pids) != 0 {
+			t.Errorf("%s: pi pids %v, want none", name, pids)
+		}
+	}
+}

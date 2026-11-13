@@ -11,12 +11,28 @@
 // and are rejected.
 package agentmatch
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // Agent keys AgentFromCommand can return.
 const (
 	AgentClaudeCode = "claude-code"
+	AgentPi         = "pi"
 )
+
+// ClaudeCommandPattern is the path-segment aware matcher for the long-lived claude
+// process: `claude` or `claude-code` preceded by ^ or /, followed by
+// whitespace, /, or end — so `meta-claude` never false-positives. RE2 has
+// no lookahead; a consuming group is equivalent for a boolean match.
+var ClaudeCommandPattern = regexp.MustCompile(`(?i)(?:^|/)claude(?:-code)?($|[\s/])`)
+
+// IsClaudeCommand reports whether a full command line identifies a Claude
+// Code process.
+func IsClaudeCommand(command string) bool {
+	return ClaudeCommandPattern.MatchString(command)
+}
 
 // CommMatches matches a comm string against a pattern as a whole word:
 // "claude" matches "claude", "/usr/bin/claude", "claude-code" but NOT

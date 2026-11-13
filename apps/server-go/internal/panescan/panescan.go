@@ -33,6 +33,7 @@ var AgentCommPatterns = []AgentPattern{
 	{Name: "claude-code", Patterns: []string{"claude"}},
 	{Name: "codex", Patterns: []string{"codex"}},
 	{Name: "opencode", Patterns: []string{"opencode"}},
+	{Name: agentmatch.AgentPi, Patterns: []string{"pi"}},
 }
 
 const maxTreeDepth = 2
@@ -61,6 +62,7 @@ type processTree struct {
 	childrenOf map[int][]int
 	commOf     map[int]string
 	cmdlineOf  map[int]string
+	snapshot   map[int]procwalk.ProcInfo
 }
 
 func (s *Scanner) buildProcessTree() processTree {
@@ -87,7 +89,8 @@ func (s *Scanner) buildProcessTree() processTree {
 	}
 	snap, err := s.Run("ps", "-axww", "-o", "pid=,ppid=,command=")
 	if err == nil {
-		for pid, info := range procwalk.ParseProcessSnapshot(snap) {
+		tree.snapshot = procwalk.ParseProcessSnapshot(snap)
+		for pid, info := range tree.snapshot {
 			tree.cmdlineOf[pid] = info.Command
 		}
 	}
@@ -97,15 +100,25 @@ func (s *Scanner) buildProcessTree() processTree {
 // pidMatchesAgent reports whether one pid's process matches the agent —
 // comm patterns first, then the AgentFromCommand wrapper fallback (which
 // only knows claude-code, preserving comm-only behavior for
-// amp/codex/opencode).
+// amp/codex/opencode/pi). A pi process with a Claude Code ancestor is a
+// worker Claude started, not a session of its own, and never matches.
 func pidMatchesAgent(pid int, patterns []string, agentName string, tree processTree) bool {
 	comm := tree.commOf[pid]
 	for _, pat := range patterns {
 		if comm != "" && agentmatch.CommMatches(comm, pat) {
+			if agentName == agentmatch.AgentPi && hasClaudeAncestor(pid, tree) {
+				return false
+			}
 			return true
 		}
 	}
 	return agentName == agentmatch.AgentClaudeCode && agentmatch.AgentFromCommand(comm, tree.cmdlineOf[pid]) == agentName
+}
+
+// hasClaudeAncestor reports whether any process above pid is Claude Code,
+// judged by its full command line.
+func hasClaudeAncestor(pid int, tree processTree) bool {
+	return procwalk.ResolveAncestorPid(pid, agentmatch.IsClaudeCommand, tree.snapshot) != 0
 }
 
 // matchTree tests the pane root itself, then walks up to 3 levels of child

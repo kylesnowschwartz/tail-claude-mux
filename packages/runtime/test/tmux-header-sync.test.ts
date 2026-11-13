@@ -107,7 +107,7 @@ describe("buildAgentGlyphs (Clawd detection)", () => {
   test("non-clawd glyphs are unaffected by detection state", () => {
     const installed = buildAgentGlyphs({ clawdInstalled: true });
     const missing = buildAgentGlyphs({ clawdInstalled: false });
-    for (const key of ["codex", "amp", "generic"]) {
+    for (const key of ["codex", "amp", "pi", "generic"]) {
       expect(installed[key]).toBe(missing[key]!);
     }
   });
