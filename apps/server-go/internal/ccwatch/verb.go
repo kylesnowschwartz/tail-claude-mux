@@ -11,8 +11,7 @@ import (
 
 // ToolVerb maps a tool call to its shared.ts MetadataVerb. The watcher knows
 // the tool name and input; tagging here spares renderers from regex-guessing
-// the verb back out of the message (the TUI's classify.ts remains the
-// fallback for untagged producers). Unknown/custom tools return "".
+// the verb back out of the message. Unknown/custom tools return "".
 //
 // agent-ouija's tool taxonomy is the base map, so Claude Code, Codex, and the
 // other agents it knows share one classification; tcmVerbOverrides holds the

@@ -24,12 +24,9 @@ const AbsoluteMin = 15
 
 // DefaultWidth is sidebar-width-sync.ts DEFAULT_SIDEBAR_WIDTH.
 //
-// Sized for both column tenants. Activity zone: at 33+ cols the
-// description budget fits the median `tmux …` /
-// `apps/tui/src/index.tsx`-style payloads without truncation. Companion
-// (gearshifter strip --compact, 12 rows): the chip flow wraps past 12
-// rows below 37 cols and degrades to "canvas too small" — 37 is the
-// narrowest width where both fit. Above ~37 the editing pane starts
+// Sized for the companion pane (gearshifter strip --compact, 12 rows): the
+// chip flow wraps past 12 rows below 37 cols and degrades to "canvas too
+// small", so 37 is the narrowest width that fits. Above ~37 the editing pane starts
 // feeling pinched on a 192-col terminal.
 //
 // `=` (equalize-width) snaps back to this constant. The runtime may push

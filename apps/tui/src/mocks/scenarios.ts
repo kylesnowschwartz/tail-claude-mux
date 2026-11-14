@@ -10,7 +10,7 @@
  * fixture is fed directly into the render store and stays static.
  */
 
-import type { SessionData, MetadataLogEntry } from "@tcm/runtime";
+import type { SessionData } from "@tcm/runtime";
 import type { AgentEvent } from "@tcm/runtime";
 
 export interface MockScenario {
@@ -23,7 +23,7 @@ export interface MockScenario {
 }
 
 // `NOW` is captured at module-load time — not a frozen literal — so relative
-// timestamps in the activity zone (e.g. `2s`, `5s`, `30s`) reflect realistic
+// log timestamps (e.g. `2s`, `5s`, `30s` ago) reflect realistic
 // recency in --mock mode. Within a single TUI session this is still
 // deterministic enough for screenshots; only cross-session reproducibility is
 // lost.
@@ -118,17 +118,6 @@ function makeSession(opts: {
     eventTimestamps: [],
     metadata: opts.metadata,
   };
-}
-
-/** N copies of one log spread 200 ms apart inside a single 8 s activity
- *  bucket — for scenarios that exercise per-bucket volume (activity-burst). */
-function burstLogs(n: number, ts: number, message: string, source: string): MetadataLogEntry[] {
-  return Array.from({ length: n }, (_, i) => ({
-    message,
-    source,
-    tone: "neutral" as const,
-    ts: ts - i * 200,
-  }));
 }
 
 // ── Reusable session pieces ──
@@ -258,203 +247,6 @@ export const MOCK_SCENARIOS: Record<string, MockScenario> = {
     focusedSession: "tcm",
     currentSession: "tcm",
     paneFocused: false,
-  },
-
-  // ── Activity-zone state mocks (one per canonical state in the spec) ──
-  // See docs/simmer/activity-zone/result.md §States.
-
-  "activity-empty": {
-    name: "activity-empty",
-    description: "tcm focused; no logs at all (Sparkline State 1 sub-case i — idle).",
-    sessions: [
-      aiEngineeringTemplate,
-      codexCli,
-      {
-        ...tcmLive,
-        metadata: { status: null, progress: null, logs: [] },
-      },
-      claudeCodeSystem,
-      theThemerReady,
-    ],
-    focusedSession: "tcm",
-    currentSession: "tcm",
-    paneFocused: true,
-  },
-
-  "activity-stale": {
-    name: "activity-stale",
-    description: "tcm focused; logs > 64 s old (Sparkline State 1 sub-case ii — wedged, shows ·Nm suffix).",
-    sessions: [
-      aiEngineeringTemplate,
-      codexCli,
-      {
-        ...tcmLive,
-        metadata: {
-          status: null,
-          progress: null,
-          logs: [
-            { message: "Reading build.ts",       source: "cd db92", tone: "neutral", ts: NOW - 15 * 60_000 },
-            { message: "Reading tsconfig.json",  source: "cd db92", tone: "neutral", ts: NOW - 15 * 60_000 - 4_000 },
-            { message: "Reading package.json",   source: "cd db92", tone: "neutral", ts: NOW - 15 * 60_000 - 8_000 },
-            { message: "Searching ActivityZone", source: "cd db92", tone: "neutral", ts: NOW - 15 * 60_000 - 12_000 },
-          ],
-        },
-      },
-      claudeCodeSystem,
-      theThemerReady,
-    ],
-    focusedSession: "tcm",
-    currentSession: "tcm",
-    paneFocused: true,
-  },
-
-  "activity-single": {
-    name: "activity-single",
-    description: "tcm focused; single-source steady run — 6 reads from cd db92 within 60 s (State 2).",
-    sessions: [
-      aiEngineeringTemplate,
-      codexCli,
-      {
-        ...tcmLive,
-        metadata: {
-          status: null,
-          progress: null,
-          logs: [
-            { message: "Reading tiers.ts",        source: "cd db92", tone: "neutral", ts: NOW - 2_000 },
-            { message: "Searching ActivityZone",  source: "cd db92", tone: "neutral", ts: NOW - 12_000 },
-            { message: "Reading scenarios.ts",    source: "cd db92", tone: "neutral", ts: NOW - 22_000 },
-            { message: "Reading package.json",    source: "cd db92", tone: "neutral", ts: NOW - 32_000 },
-            { message: "Reading tsconfig.json",   source: "cd db92", tone: "neutral", ts: NOW - 44_000 },
-            { message: "Reading build.ts",        source: "cd db92", tone: "neutral", ts: NOW - 56_000 },
-          ],
-        },
-      },
-      claudeCodeSystem,
-      theThemerReady,
-    ],
-    focusedSession: "tcm",
-    currentSession: "tcm",
-    paneFocused: true,
-  },
-
-  "activity-multi": {
-    name: "activity-multi",
-    description: "tcm focused; cd/cc multi-source interleave — chip mode throughout (State 3).",
-    sessions: [
-      aiEngineeringTemplate,
-      codexCli,
-      {
-        ...tcmLive,
-        metadata: {
-          status: null,
-          progress: null,
-          logs: [
-            { message: "Reading build.ts",       source: "cd db92", tone: "neutral", ts: NOW - 4_000 },
-            { message: "Reading types.ts",       source: "cc 1859", tone: "neutral", ts: NOW - 11_000 },
-            { message: "Reading scenarios.ts",   source: "cd db92", tone: "neutral", ts: NOW - 18_000 },
-            { message: "Editing index.tsx",      source: "cc 1859", tone: "neutral", ts: NOW - 25_000 },
-            { message: "Reading vocab.ts",       source: "cd db92", tone: "neutral", ts: NOW - 33_000 },
-            { message: "Reading tiers.ts",       source: "cc 1859", tone: "neutral", ts: NOW - 41_000 },
-          ],
-        },
-      },
-      claudeCodeSystem,
-      theThemerReady,
-    ],
-    focusedSession: "tcm",
-    currentSession: "tcm",
-    paneFocused: true,
-  },
-
-  "activity-errors": {
-    name: "activity-errors",
-    description: "tcm focused; error-heavy cascade — 4 failed rows + 1 surviving read (State 4).",
-    sessions: [
-      aiEngineeringTemplate,
-      codexCli,
-      {
-        ...tcmLive,
-        metadata: {
-          status: null,
-          progress: null,
-          logs: [
-            { message: "Editing src/index.tsx (failed)", source: "cd 15c8", tone: "error",   ts: NOW - 2_000 },
-            { message: "Editing types.ts (failed)",      source: "cd 15c8", tone: "error",   ts: NOW - 8_000 },
-            { message: "Reading tsconfig.json",          source: "cd 15c8", tone: "neutral", ts: NOW - 18_000 },
-            { message: "Editing vocab.ts (failed)",      source: "cd 15c8", tone: "error",   ts: NOW - 28_000 },
-            { message: "Editing tiers.ts (failed)",      source: "cd 15c8", tone: "error",   ts: NOW - 40_000 },
-          ],
-        },
-      },
-      claudeCodeSystem,
-      theThemerReady,
-    ],
-    focusedSession: "tcm",
-    currentSession: "tcm",
-    paneFocused: true,
-  },
-
-  "activity-burst": {
-    name: "activity-burst",
-    description: "tcm focused; varied per-bucket volume (1/2/4/6/14 events) — exercises the sqrt y-axis and the histogram overflow row.",
-    sessions: [
-      aiEngineeringTemplate,
-      codexCli,
-      {
-        ...tcmLive,
-        metadata: {
-          status: null,
-          progress: null,
-          logs: [
-            // 1 event ~4 s ago → small bump
-            { message: "Reading build.ts", source: "cd db92", tone: "neutral", ts: NOW - 4_000 },
-            // 2 events ~20 s ago
-            ...burstLogs(2, NOW - 20_000, "Searching ActivityZone", "cd db92"),
-            // 4 events ~36 s ago → full bottom row
-            ...burstLogs(4, NOW - 36_000, "Editing index.tsx", "cc 1859"),
-            // 6 events ~52 s ago, one failed → red cross + overflow-row bar
-            ...burstLogs(5, NOW - 52_000, "Running bun test", "cc 1859"),
-            { message: "Running bun test (failed)", source: "cc 1859", tone: "error", ts: NOW - 52_500 },
-            // 14 events ~68 s ago → full two-row tower
-            ...burstLogs(14, NOW - 68_000, "Ran rg --json vocab", "cd db92"),
-          ],
-        },
-      },
-      claudeCodeSystem,
-      theThemerReady,
-    ],
-    focusedSession: "tcm",
-    currentSession: "tcm",
-    paneFocused: true,
-  },
-
-  "activity-bell": {
-    name: "activity-bell",
-    description: "tcm focused; system-tag [bell] precedence — the bell shares its bucket with a NEWER read and must still render (attention signals are never swallowed).",
-    sessions: [
-      aiEngineeringTemplate,
-      codexCli,
-      {
-        ...tcmLive,
-        metadata: {
-          status: null,
-          progress: null,
-          logs: [
-            { message: "Reading build.ts",         source: "cd db92", tone: "neutral", ts: NOW - 3_000 },
-            // Same 8 s bucket as the bell below, but newer — the bell must win.
-            { message: "Reading header.tmux",      source: "cd db92", tone: "neutral", ts: NOW - 8_500 },
-            { message: "awaiting confirmation",    source: "[bell]",  tone: "warn",    ts: NOW - 9_000 },
-            { message: "Reading tsconfig.json",    source: "cd db92", tone: "neutral", ts: NOW - 22_000 },
-            { message: "Reading scenarios.ts",     source: "cd db92", tone: "neutral", ts: NOW - 32_000 },
-          ],
-        },
-      },
-      claudeCodeSystem,
-      theThemerReady,
-    ],
-    focusedSession: "tcm",
-    currentSession: "tcm",
-    paneFocused: true,
   },
 };
 

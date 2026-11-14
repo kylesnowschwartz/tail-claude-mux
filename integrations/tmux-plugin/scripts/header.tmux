@@ -39,7 +39,7 @@ set -g window-status-current-style "fg=#{?@tcm-thm-blue,#{@tcm-thm-blue},default
 
 # Clear legacy oh-my-tmux / tmux-default tab indicators that duplicate our
 # vocabulary. tcm surfaces the same information through:
-#   • activity zone (panel §7)         vs window-status-activity-style underscore
+#   • sidebar agent status             vs window-status-activity-style underscore
 #   • severity glyph colour (Stage 5)   vs window-status-bell-style blink+bold
 #   • yellow last-window arrow (§6.2)   vs window-status-last-style cyan fg
 # Without these resets the legacy underscore (etc.) renders alongside our own

@@ -6,8 +6,8 @@
  * `.length` silently produce:
  *
  *   1. CJK / fullwidth / emoji characters occupy 2 terminal cells but count as
- *      1-2 code units, so column-budgeted layouts (the activity zone's
- *      sparkline, the verb stripe) misalign the moment a wide char shows up.
+ *      1-2 code units, so column-budgeted layouts (session cards, agent
+ *      rows) misalign the moment a wide char shows up.
  *
  *   2. Raw C0/C1 control bytes pasted into a user prompt propagate through to
  *      the renderer and either disturb layout or get reinterpreted as escape

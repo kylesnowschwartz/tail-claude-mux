@@ -233,7 +233,7 @@ func TestScanEventOverNonWaitingRows(t *testing.T) {
 	})
 }
 
-// deriveLogEntriesLocked is the seismograph's data source: every entry it
+// deriveLogEntriesLocked is the waterfall's data source: every entry it
 // returns becomes one activity-log event. The contract under test: tool
 // entries are keyed on ToolInvoked (each fresh call counts, even identical
 // back-to-back ones), never on description change.

@@ -51,22 +51,6 @@ const GLYPH_SNAPSHOT: Record<string, string> = {
   "F0143": "md-chevron_up",
   "F0140": "md-chevron_down",
 
-  // ── Activity-zone gutter ──
-  // (Activity-zone gutter glyph F044A md-record retired — see vocab.ts)
-
-  // ── Verb stripe ──
-  "E28B":  "fae-book_open_o",
-  "F0279": "md-format_list_bulleted",
-  "F0968": "md-folder_search",
-  "EE75":  "fa-pen_nib",
-  "F0BE0": "md-wrench_outline",
-  "F059F": "md-web",
-  "F1425": "md-power_plug_outline",
-  "F167A": "md-robot_outline",
-  "F0EB":  "fa-lightbulb_o",      // "fa-lightbulb" was renamed to "_o" in nerd-fonts 3.x
-  "F00D":  "fa-xmark",            // "fa-cross" was renamed to "fa-xmark" in nerd-fonts 3.x
-  "F08BB": "md-cog_outline",      // misc / fallback verb
-
   // ── Vendored ──
   "100CC0": "<vendored Clawd glyph (fonts/Clawd.ttf — not in SymbolsNerdFontMono)>",
 };

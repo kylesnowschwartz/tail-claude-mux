@@ -45,7 +45,7 @@ var heatGlyphs = [...]string{"░", "▒", "▓", "█"}
 
 // column describes one verb group on screen.
 type column struct {
-	icon string // one display cell; codepoints match ACTIVITY_VERB_* in apps/tui/src/vocab.ts
+	icon string // Nerd Font glyph, one display cell wide
 	hue  string // palette key
 }
 

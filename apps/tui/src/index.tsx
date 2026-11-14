@@ -1,5 +1,5 @@
 import { render } from "@opentui/solid";
-import { createSignal, createEffect, onCleanup, onMount, batch, For, Index, Show, createMemo, type Accessor } from "solid-js";
+import { createSignal, createEffect, onCleanup, onMount, batch, For, Show, createMemo, type Accessor } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid";
 import { TextAttributes, type InputRenderable, type KeyEvent } from "@opentui/core";
@@ -11,7 +11,6 @@ import {
   type ClientCommand,
   type Theme,
   type ThemePalette,
-  type MetadataTone,
   SERVER_PORT,
   SERVER_HOST,
   BUILTIN_THEMES,
@@ -32,21 +31,6 @@ import {
   AGENT_GLYPHS,
 } from "./vocab";
 import { tier, type TierStyle } from "./tiers";
-import {
-  type ActivityLog,
-  type BucketIcon,
-  SPARKLINE_BUCKET_MS,
-  SPARK_ROWS,
-  BLANK_SLOT,
-  seismographGeometry,
-  windowMs,
-  bucketSparklineLogs,
-  sparklineRows,
-  expandSparklineRows,
-  bucketIconLogs,
-  iconSlot,
-  formatRelTime,
-} from "./activity";
 import { getScenario, listScenarios } from "./mocks/scenarios";
 
 // Detect which mux we're running inside
@@ -69,21 +53,10 @@ const DIM = TextAttributes.DIM;
 const THEME_NAMES = Object.keys(BUILTIN_THEMES);
 const HEADER_ROWS = 2; // App header: one title row plus paddingTop={1}; keep in sync with its box.
 const FOOTER_ROWS = 3; // App footer: separator, key row, and paddingBottom={1}; keep in sync with its box.
-const ACTIVITY_ZONE_ROWS = SPARK_ROWS + 1; // ActivityZone: histogram rows plus the icon/suffix row.
 const CARD_CHROME_ROWS = 3; // Session frame: rounded border top/bottom plus the name row.
 const BRANCH_ROWS = 1; // SessionCard adds exactly one row when session.branch is present.
 const HIDDEN_AGENTS_ROWS = 1; // SessionCard adds exactly one "+N more" row when agents are trimmed.
 const OVERFLOW_INDICATOR_ROWS = 1; // "▲ N more" / "▼ N more" line when the session stack scrolls.
-
-function toneColor(tone: MetadataTone | undefined, palette: ReturnType<() => Theme["palette"]>): string {
-  switch (tone) {
-    case "success": return palette.green;
-    case "error": return palette.red;
-    case "warn": return palette.yellow;
-    case "info": return palette.blue;
-    default: return palette.overlay0;
-  }
-}
 
 function sanitizeThreadName(raw: string): string {
   // Belt-and-braces: watchers already sanitize at their boundary, but the
@@ -173,133 +146,12 @@ function getLocalSessionName(): string | null {
   return null;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Activity zone — pure histogram/icon logic lives in ./activity.ts. The
-// original text-stream layout spec (docs/simmer/activity-zone/result.md) is
-// superseded by the seismograph below; its sparkline contract carries over.
-// ────────────────────────────────────────────────────────────────────────────
-
-/**
- * Activity zone: a two-row, full-width "seismograph" beneath the session list.
- *
- *            ▂▂▂                ← histogram overflow row (bursts stack up)
- *   ▁▁▁▄▄▄▁▁▁███▅▅▅▁▁▁▁▁▁▁▁▁   ← histogram: activity density, one bucket = 8 s,
- *       R       E   W           ← each bucket BUCKET_COLS wide; verb glyphs
- *                                  centred in the slot of their bucket
- *
- * The old text stream (eyebrows, chips, descriptions) is retired. Both rows
- * share one time axis (activity.ts bucketIndex) — histogram slot N and glyph
- * slot N cover the same 8 s bucket — so the glyphs scroll left with the
- * histogram as the window slides. Newest bucket is the rightmost slot. The
- * freshest occupied glyph renders bright, older ones dim; system-tag bells
- * keep their tone colour and errors render red (severity bypasses the
- * text tiers).
- *
- * Empty states: no logs → flat baseline + blank glyph row; window slid past
- * the newest log → flat baseline + a dim right-aligned `·Nm` age marker (the
- * one text survivor — it disambiguates "quiet now" from "dead for an hour").
- */
-function ActivityZone(props: {
-  focusedSession: SessionData | null;
-  palette: ThemePalette;
-}) {
-  // Reactive terminal size, read here (not via a prop) so a stale-width
-  // caller mistake is unrepresentable — see the note on App's termDims.
-  const dims = useTerminalDimensions();
-
-  // 1 Hz tick for the `·Ns` stale marker; the heavy bucketing pipeline keys
-  // off bucketEpoch below and only recomputes when the 8 s window slides.
-  const [nowMs, setNowMs] = createSignal(Date.now());
-  const tick = setInterval(() => setNowMs(Date.now()), 1000);
-  onCleanup(() => clearInterval(tick));
-
-  // Quantised clock: changes once per bucket, so sparkline/icons memos skip
-  // the 7-of-8 ticks whose output would be byte-identical, and every cell
-  // slides left in lockstep at bucket boundaries (logs newer than the
-  // quantised boundary clamp into the freshest bucket via bucketIndex).
-  const bucketNow = createMemo(() => Math.floor(nowMs() / SPARKLINE_BUCKET_MS) * SPARKLINE_BUCKET_MS);
-
-  const logs = createMemo<readonly ActivityLog[]>(() => props.focusedSession?.metadata?.logs ?? []);
-  const newestTs = createMemo(() => {
-    let max = -Infinity;
-    for (const log of logs()) max = Math.max(max, log.ts);
-    return max; // -Infinity when there are no logs
-  });
-
-  // Full-width geometry: the box pads 1 cell each side; the remaining columns
-  // split into BUCKET_COLS-wide slots (activity.ts owns the arithmetic).
-  const PAD = 1;
-  const contentWidth = createMemo(() => Math.max(1, dims().width - PAD * 2));
-  const geometry = createMemo(() => seismographGeometry(contentWidth()));
-
-  const sparkline = createMemo(() =>
-    expandSparklineRows(
-      sparklineRows(bucketSparklineLogs(logs(), bucketNow(), geometry().buckets)),
-      contentWidth(),
-    ),
-  );
-  const icons = createMemo(() => bucketIconLogs(logs(), bucketNow(), geometry().buckets));
-
-  const freshestIdx = createMemo(() => {
-    const arr = icons();
-    for (let i = arr.length - 1; i >= 0; i--) if (arr[i]) return i;
-    return -1;
-  });
-
-  // Window-empty detection — newest log is older than the visible window.
-  const staleSuffix = createMemo(() => {
-    const age = nowMs() - newestTs();
-    if (!Number.isFinite(age) || age < windowMs(geometry().buckets)) return null;
-    return "·" + formatRelTime(age);
-  });
-
-  const sparklineStyle = () => tier("secondary", props.palette);
-  const suffixStyle    = () => tier("dim",       props.palette);
-  // Glyph freshness mirrors the retired description tiers: bright on the
-  // newest occupied bucket, dim on older ones. Severity/tone bypass the tiers.
-  const freshFg = () => props.palette.text;
-  const oldFg   = () => props.palette.overlay1;
-  const iconStyle = (cell: BucketIcon, idx: number) => {
-    if (cell.kind === "error")  return { fg: props.palette.red };
-    if (cell.kind === "system") return { fg: toneColor(cell.tone, props.palette) };
-    return { fg: idx === freshestIdx() ? freshFg() : oldFg() };
-  };
-
-  return (
-    <box flexDirection="column" flexShrink={0} paddingLeft={PAD} paddingRight={PAD}>
-      <Index each={sparkline()}>
-        {(row) => (
-          <text wrapMode="none" style={sparklineStyle()}>
-            <span style={sparklineStyle()}>{row()}</span>
-          </text>
-        )}
-      </Index>
-      <Show when={!staleSuffix()} fallback={
-        <box height={1} flexDirection="row" justifyContent="flex-end">
-          <text style={suffixStyle()}>{staleSuffix()}</text>
-        </box>
-      }>
-        <text wrapMode="none" style={sparklineStyle()}>
-          <span style={sparklineStyle()}>{" ".repeat(geometry().leftoverCols)}</span>
-          <Index each={icons()}>
-            {(cell, idx) => (
-              <Show when={cell()} fallback={<span style={sparklineStyle()}>{BLANK_SLOT}</span>}>
-                <span style={iconStyle(cell()!, idx)}>{iconSlot(cell()!.glyph)}</span>
-              </Show>
-            )}
-          </Index>
-        </text>
-      </Show>
-    </box>
-  );
-}
-
 
 function App() {
   const renderer = useRenderer();
   // Reactive terminal size — `renderer.terminalWidth` is a plain property and
   // goes stale after SIGWINCH; every layout computation must read this signal
-  // instead so pane resizes re-flow the sidebar (QA: seismograph wrap bug).
+  // instead so pane resizes re-flow the sidebar.
   const termDims = useTerminalDimensions();
 
   // --- Theme state (driven by server) ---
@@ -358,7 +210,7 @@ function App() {
   });
 
   const listBudgetRows = createMemo(() =>
-    Math.max(0, termDims().height - HEADER_ROWS - FOOTER_ROWS - ACTIVITY_ZONE_ROWS));
+    Math.max(0, termDims().height - HEADER_ROWS - FOOTER_ROWS));
 
   // Cards show every agent row; the scrolling session window absorbs the
   // height. "+N more" survives only as a guard when a single card on its own
@@ -1010,12 +862,6 @@ function App() {
         </For>
       </box>
 
-      {/* Activity zone: two-row full-width seismograph below the session list. */}
-      <ActivityZone
-        focusedSession={focusedData()}
-        palette={P()}
-      />
-
       {/* Footer */}
       {(() => {
         const keyFg = () => P().subtext0;
@@ -1447,10 +1293,6 @@ function AgentListItem(props: AgentListItemProps) {
             <span style={{ fg: color() }}>{" "}{icon()}</span>
           </text>
         </box>
-
-        {/* Row 2 (tool description / thread name) retired — now surfaced
-            in the standalone ActivityZone, persistently and across focus
-            changes. */}
       </box>
     </box>
   );

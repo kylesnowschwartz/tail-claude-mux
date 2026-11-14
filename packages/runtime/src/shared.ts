@@ -100,8 +100,7 @@ export interface MetadataProgress {
 
 /** Closed verb dictionary for activity-log entries. Producers that know the
  *  structured tool name (e.g. the claude-code hook watcher's toolName switch)
- *  tag entries at the source; renderers fall back to message-prefix
- *  classification (apps/tui/src/classify.ts) for untagged entries. */
+ *  tag entries at the source; untagged entries have no verb. */
 export type MetadataVerb =
   | "read"
   | "list"
