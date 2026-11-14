@@ -45,20 +45,20 @@ var heatGlyphs = [...]string{"░", "▒", "▓", "█"}
 
 // column describes one verb group on screen.
 type column struct {
-	label string
-	hue   string // palette key
+	icon string // one display cell; codepoints match ACTIVITY_VERB_* in apps/tui/src/vocab.ts
+	hue  string // palette key
 }
 
 // columns run left to right roughly in the order a turn unfolds: think, look
 // at the code, change it, run it, reach outside the repo, hand work to other
 // agents.
 var columns = [...]column{
-	{"think", "lavender"},
-	{"read", "blue"},
-	{"edit", "peach"},
-	{"run", "green"},
-	{"ext", "teal"},
-	{"agents", "mauve"},
+	{"", "lavender"},       // think: nf-fa-lightbulb_o
+	{"", "blue"},           // read: nf-fae-book_open_o
+	{"", "peach"},          // edit: nf-fa-pen_nib
+	{"\U000F0BE0", "green"}, // run: nf-md-wrench_outline
+	{"\U000F059F", "teal"},  // ext: nf-md-web
+	{"\U000F167A", "mauve"}, // agents: nf-md-robot_outline
 }
 
 // verbColumn maps an activity verb to its index in columns. Verbs absent from
@@ -86,9 +86,7 @@ var fallbackColors = map[string]string{
 // BucketRow returns the row (0 = newest) holding timestamp ts in a grid of
 // rows time slices, or -1 when ts is older than the grid. Slices are aligned
 // to multiples of BucketMs; row 0 spans from the current slice boundary
-// onward, so future timestamps land there. For a now on a slice boundary this
-// agrees with the sidebar seismograph's bucketIndex (mirrored: row =
-// rows-1-bucketIndex).
+// onward, so future timestamps land there.
 func BucketRow(ts, now int64, rows int) int {
 	if rows <= 0 {
 		return -1
@@ -119,7 +117,7 @@ type cell struct {
 }
 
 // Render returns exactly height lines (none when height <= 0), each at most
-// width display cells wide: a header of column labels followed by one line per
+// width display cells wide: a header of column icons followed by one line per
 // time slice, newest first. waiting is the number of sessions waiting on the
 // user.
 //
@@ -195,10 +193,8 @@ func Render(logs []wire.MetadataLogEntry, now int64, width, height, waiting int,
 
 // layout picks how many columns to show, their widths, and whether the gutter
 // fits. The gutter shows only when every column keeps at least
-// minCellWidthWithGutter cells. When every label fits, each column starts at
-// its label's width; otherwise all start at zero and labels are cut. Spare
-// cells then go one at a time to the narrowest column, the rightmost among
-// equals, up to maxCellWidth.
+// minCellWidthWithGutter cells. Columns share the width equally, up to
+// maxCellWidth; a remainder goes one cell each to the rightmost columns.
 func layout(width int) (nCols int, widths []int, gutter bool) {
 	n := len(columns)
 	avail := width
@@ -212,52 +208,36 @@ func layout(width int) (nCols int, widths []int, gutter bool) {
 		return 0, nil, false
 	}
 	cells := avail - (n - 1)
+	each, extra := cells/n, cells%n
 	widths = make([]int, n)
-	labels := 0
 	for i := range widths {
-		labels += len(columns[i].label)
-	}
-	if labels <= cells {
-		for i := range widths {
-			widths[i] = len(columns[i].label)
+		w := each
+		if i >= n-extra {
+			w++
 		}
-		cells -= labels
-	}
-	for ; cells > 0; cells-- {
-		narrowest := n - 1
-		for i := n - 2; i >= 0; i-- {
-			if widths[i] < widths[narrowest] {
-				narrowest = i
-			}
-		}
-		if widths[narrowest] >= maxCellWidth {
-			break
-		}
-		widths[narrowest]++
+		widths[i] = min(w, maxCellWidth)
 	}
 	return n, widths, gutter
 }
 
+// headerLine centres each column's one-cell icon, leaning left when the
+// spare cells are odd. Padding stays outside the color escapes so trailing
+// blanks trim the same in plain and colored output.
 func headerLine(nCols int, widths []int, gutter bool, st styler) string {
 	var b strings.Builder
 	for col := 0; col < nCols; col++ {
 		if col > 0 {
 			b.WriteByte(' ')
 		}
-		b.WriteString(st.paint(centered(columns[col].label, widths[col]), st.header()))
+		left := (widths[col] - 1) / 2
+		b.WriteString(strings.Repeat(" ", left))
+		b.WriteString(st.paint(columns[col].icon, st.header()))
+		b.WriteString(strings.Repeat(" ", widths[col]-1-left))
 	}
 	if gutter {
 		b.WriteString(strings.Repeat(" ", gutterWidth))
 	}
 	return strings.TrimRight(b.String(), " ")
-}
-
-func centered(s string, w int) string {
-	if len(s) > w {
-		return s[:w]
-	}
-	left := (w - len(s)) / 2
-	return strings.Repeat(" ", left) + s + strings.Repeat(" ", w-len(s)-left)
 }
 
 // heat returns the shade index 0..3 for a non-zero count and its 0..1

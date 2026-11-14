@@ -36,12 +36,16 @@ func repeat(l wire.MetadataLogEntry, n int) []wire.MetadataLogEntry {
 
 func width(s string) int { return utf8.RuneCountInString(plain(s)) }
 
+// header37 is the header at width 37: column widths 4 4 5 5 5 5, each icon
+// centred, leaning left.
+const header37 = "               \U000F0BE0     \U000F059F     \U000F167A"
+
 func TestEmptyState(t *testing.T) {
 	got := Render(nil, now, 37, 10, 0, nil)
 	if len(got) != 10 {
 		t.Fatalf("lines = %d, want 10", len(got))
 	}
-	if got[0] != "think read edit run   ext  agents" {
+	if got[0] != header37 {
 		t.Errorf("header = %q", got[0])
 	}
 	for i, l := range got[1:] {
@@ -70,16 +74,16 @@ func TestGolden37x10(t *testing.T) {
 	logs = append(logs, log("thinking", now-50_000))
 	got := strings.Join(Render(logs, now, 37, 10, 1, nil), "\n")
 	want := strings.Join([]string{
-		"think read edit run   ext  agents",
-		"▒▒▒▒▒ ···· ▓▓▓▓ ████ ····· ······ \U000F0D59",
-		"····· ░░░░ ···· ···· ····· ······",
-		"····· ░░░░ ···· ···· ░░░░░ ······",
-		"····· ···· ···· ···· ░░░░░ ······",
-		"····· ···· ░░░░ ···· ····· ······",
-		"····· ···· ···· ···· ····· ······ \uF00D",
-		"····· ···· ···· ···· ····· ▒▒▒▒▒▒",
-		"░░░░░ ···· ···· ···· ····· ······",
-		"····· ···· ···· ···· ····· ······ -1m",
+		header37,
+		"▒▒▒▒ ···· ▓▓▓▓▓ █████ ····· ····· \U000F0D59",
+		"···· ░░░░ ····· ····· ····· ·····",
+		"···· ░░░░ ····· ····· ░░░░░ ·····",
+		"···· ···· ····· ····· ░░░░░ ·····",
+		"···· ···· ░░░░░ ····· ····· ·····",
+		"···· ···· ····· ····· ····· ····· \uF00D",
+		"···· ···· ····· ····· ····· ▒▒▒▒▒",
+		"░░░░ ···· ····· ····· ····· ·····",
+		"···· ···· ····· ····· ····· ····· -1m",
 	}, "\n")
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
@@ -170,37 +174,26 @@ func TestAgedOutLogsDropped(t *testing.T) {
 	}
 }
 
-// seismographBucketIndex is activity.ts bucketIndex.
-func seismographBucketIndex(ts, now int64, cells int) int {
-	age := now - ts
-	if age < 0 {
-		return cells - 1
-	}
-	if age >= int64(cells)*BucketMs {
-		return -1
-	}
-	return cells - 1 - int(age/BucketMs)
-}
-
-func TestBucketRowMatchesSeismographAtBoundaries(t *testing.T) {
+// With now on a slice boundary, a log k slices back lands in row k, and the
+// slice just before row 0 starts at now-BucketMs.
+func TestBucketRowAtBoundaries(t *testing.T) {
 	rows := 9
 	for k := int64(-2); k <= int64(rows)+1; k++ {
 		for _, d := range []int64{-1, 0, 1} {
 			ts := now - k*BucketMs + d
-			want := seismographBucketIndex(ts, now+BucketMs-1, rows)
-			if want >= 0 {
-				want = rows - 1 - want
+			want := int(k)
+			if d < 0 {
+				want++
+			}
+			if want < 0 {
+				want = 0
+			}
+			if want >= rows {
+				want = -1
 			}
 			if got := BucketRow(ts, now, rows); got != want {
 				t.Errorf("ts=now-%d*8s%+d: row %d, want %d", k, d, got, want)
 			}
-		}
-	}
-	// On the boundary, the seismograph with now itself agrees for past logs.
-	for k := int64(1); k < int64(rows); k++ {
-		ts := now - k*BucketMs
-		if got, want := BucketRow(ts, now, rows), rows-1-seismographBucketIndex(ts, now, rows); got != want {
-			t.Errorf("aligned now: k=%d got %d want %d", k, got, want)
 		}
 	}
 }
@@ -241,7 +234,7 @@ func TestDegradation(t *testing.T) {
 		gutter     bool
 		minCellWid int
 	}{
-		{37, 6, true, 5},
+		{37, 6, true, 4},
 		{27, 6, true, 3},
 		{26, 6, false, 3},
 		{24, 6, false, 3},
@@ -257,7 +250,7 @@ func TestDegradation(t *testing.T) {
 		}
 	}
 	lines := Render(nil, now, 5, 3, 0, nil)
-	if lines[0] != "t r e" || lines[1] != "· · ·" {
+	if lines[0] != "  " || lines[1] != "· · ·" {
 		t.Errorf("width 5: %q", lines)
 	}
 	lines = Render(nil, now, 12, 2, 0, nil)
@@ -265,20 +258,16 @@ func TestDegradation(t *testing.T) {
 		t.Errorf("width 12: %q", lines)
 	}
 	lines = Render(nil, now, 24, 2, 0, nil)
-	if lines[0] != "thi rea edi run ext agen" {
+	if lines[0] != "          \U000F0BE0   \U000F059F   \U000F167A" {
 		t.Errorf("width 24 header: %q", lines[0])
 	}
 }
 
-// At the default companion width every label is shown whole, with the gutter.
-func TestLabelsFitAt37(t *testing.T) {
-	n, widths, gutter := layout(37)
-	if n != len(columns) || !gutter {
-		t.Fatalf("layout(37) = %d columns, gutter %v", n, gutter)
-	}
+// Every header icon is one display cell, so centring and width math hold.
+func TestIconsAreOneCell(t *testing.T) {
 	for i, c := range columns {
-		if widths[i] < len(c.label) {
-			t.Errorf("column %q is %d cells, label needs %d", c.label, widths[i], len(c.label))
+		if utf8.RuneCountInString(c.icon) != 1 {
+			t.Errorf("column %d icon %q is not a single rune", i, c.icon)
 		}
 	}
 }
