@@ -52,7 +52,6 @@ const BOLD = TextAttributes.BOLD;
 const DIM = TextAttributes.DIM;
 const THEME_NAMES = Object.keys(BUILTIN_THEMES);
 const HEADER_ROWS = 2; // App header: one title row plus paddingTop={1}; keep in sync with its box.
-const FOOTER_ROWS = 3; // App footer: separator, key row, and paddingBottom={1}; keep in sync with its box.
 const CARD_CHROME_ROWS = 3; // Session frame: rounded border top/bottom plus the name row.
 const BRANCH_ROWS = 1; // SessionCard adds exactly one row when session.branch is present.
 const HIDDEN_AGENTS_ROWS = 1; // SessionCard adds exactly one "+N more" row when agents are trimmed.
@@ -210,7 +209,7 @@ function App() {
   });
 
   const listBudgetRows = createMemo(() =>
-    Math.max(0, termDims().height - HEADER_ROWS - FOOTER_ROWS));
+    Math.max(0, termDims().height - HEADER_ROWS));
 
   // Cards show every agent row; the scrolling session window absorbs the
   // height. "+N more" survives only as a guard when a single card on its own
@@ -861,42 +860,6 @@ function App() {
           }}
         </For>
       </box>
-
-      {/* Footer */}
-      {(() => {
-        const keyFg = () => P().subtext0;
-        const labelFg = () => P().overlay1;
-        return (
-          <box flexDirection="column" paddingLeft={1} paddingBottom={1} paddingTop={0} flexShrink={0}>
-            <box height={1}><text style={{ fg: P().overlay0 }}>{"─".repeat(200)}</text></box>
-            <Show when={panelFocus() === "sessions"} fallback={
-              <text>
-                <span style={{ fg: keyFg() }}>{"←"}</span>
-                <span style={{ fg: labelFg() }}>{" back  "}</span>
-                <span style={{ fg: keyFg() }}>{"⏎"}</span>
-                <span style={{ fg: labelFg() }}>{" focus  "}</span>
-                <span style={{ fg: keyFg() }}>{"d"}</span>
-                <span style={{ fg: labelFg() }}>{" dismiss  "}</span>
-                <span style={{ fg: keyFg() }}>{"x"}</span>
-                <span style={{ fg: labelFg() }}>{" kill  "}</span>
-                <span style={{ fg: keyFg() }}>{"?"}</span>
-                <span style={{ fg: labelFg() }}>{" help"}</span>
-              </text>
-            }>
-              <text>
-                <span style={{ fg: keyFg() }}>{"⇥"}</span>
-                <span style={{ fg: labelFg() }}>{" cycle  "}</span>
-                <span style={{ fg: keyFg() }}>{"⏎"}</span>
-                <span style={{ fg: labelFg() }}>{" go  "}</span>
-                <span style={{ fg: keyFg() }}>{"d"}</span>
-                <span style={{ fg: labelFg() }}>{" hide  "}</span>
-                <span style={{ fg: keyFg() }}>{"?"}</span>
-                <span style={{ fg: labelFg() }}>{" help"}</span>
-              </text>
-            </Show>
-          </box>
-        );
-      })()}
 
       {/* Theme picker overlay */}
       <Show when={modal() === "theme-picker"}>
