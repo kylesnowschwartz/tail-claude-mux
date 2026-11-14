@@ -1,7 +1,9 @@
 # peer-session
 
-Start Claude Code in a new tmux session in another repository, submit a written
-brief, and receive its report through Claude Code's cross-session messaging.
+Start Claude Code or the pi coding agent in a new tmux session in another
+repository and submit a written brief. A Claude Code peer reports through
+Claude Code's cross-session messaging; a pi peer reports with the
+`love-letters` CLI, which the orchestrator reads with `love-letters peek`.
 The skill checks for an existing session before starting another one.
 
 ## Install
@@ -18,12 +20,16 @@ waits for stable pane text.
 ## Script
 
 ```text
-start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--window <name>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]
+start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--agent claude|pi] [--window <name>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]
 ```
 
 Run `scripts/start-peer-session.sh` from this plugin directory. Defaults are
-window `claude`, permission mode `auto`, timeout 60 seconds, and port
-`$TCM_PORT` or 7391. The prompt file must be readable and non-empty.
+agent `claude`, window named after the agent, permission mode `auto`, timeout
+60 seconds, and port `$TCM_PORT` or 7391. The prompt file must be readable
+and non-empty. `--agent pi` runs `pi` in the pane and waits for the pi row in
+tcm state; `--permission-mode` with `--agent pi` is a validation error.
+Both agents start in a shell pane, so the tmux session outlives the agent.
+Pi requires the `pi` and `love-letters` commands on PATH.
 
 Stdout contains one JSON line; diagnostics go to stderr. Success exits zero:
 
@@ -34,6 +40,7 @@ Stdout contains one JSON line; diagnostics go to stderr. Success exits zero:
 `pane` identifies the new pane and `session` names its tmux session.
 `ready` is `idle` for tcm readiness or `pane-stable` for the fallback.
 `peer_name` is a hint; the skill resolves the address with `ListAgents`.
+A pi launch adds `"agent":"pi"`.
 
 Failure exits nonzero with `ok:false` and `error`. Validation failures create
 nothing. After creation, a blocked trust dialog returns `ready:"dialog"`;

@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-usage='start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--window <name>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]'
-repo='' session='' prompt_file='' pane='' ready='' peer_name=''
-window=claude permission_mode=auto ready_timeout=60 port=${TCM_PORT:-7391}
+usage='start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--agent claude|pi] [--window <name>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]'
+repo='' session='' prompt_file='' pane='' ready='' peer_name='' window='' permission_mode=''
+agent=claude ready_timeout=60 port=${TCM_PORT:-7391}
 result() {
-    python3 - "$1" "$2" "$pane" "$session" "$ready" "$peer_name" <<'PY'
+    python3 - "$1" "$2" "$pane" "$session" "$ready" "$peer_name" "$agent" <<'PY'
 import json, sys
-ok, error, pane, session, ready, peer = sys.argv[1:]
+ok, error, pane, session, ready, peer, agent = sys.argv[1:]
 value = {"ok": ok == "true"}
 if pane:
     value.update(pane=pane, session=session, ready=ready,
                  prompt_sent=ok == "true")
     if ok == "true":
         value["peer_name"] = peer
+    if agent != "claude":
+        value["agent"] = agent
 if error:
     value["error"] = error
 print(json.dumps(value, separators=(",", ":")))
@@ -31,11 +33,12 @@ unexpected() {
 trap unexpected ERR
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --repo|--session|--prompt-file|--window|--permission-mode|--ready-timeout|--port)
+        --repo|--session|--prompt-file|--agent|--window|--permission-mode|--ready-timeout|--port)
             [[ $# -ge 2 ]] || fail "Missing value for $1. Usage: $usage"
             case "$1" in
                 --repo) repo=$2 ;; --session) session=$2 ;;
-                --prompt-file) prompt_file=$2 ;; --window) window=$2 ;;
+                --prompt-file) prompt_file=$2 ;; --agent) agent=$2 ;;
+                --window) window=$2 ;;
                 --permission-mode) permission_mode=$2 ;;
                 --ready-timeout) ready_timeout=$2 ;; --port) port=$2 ;;
             esac
@@ -43,6 +46,16 @@ while [[ $# -gt 0 ]]; do
         *) fail "Unknown argument: $1. Usage: $usage" ;;
     esac
 done
+case "$agent" in
+    claude)
+        window=${window:-claude}
+        launch="claude --permission-mode ${permission_mode:=auto}"
+        tcm_agent=claude-code ;;
+    pi)
+        [[ -z "$permission_mode" ]] || fail "--permission-mode applies only to --agent claude."
+        window=${window:-pi} launch=pi tcm_agent=pi ;;
+    *) fail "--agent must be claude or pi." ;;
+esac
 command -v tmux >/dev/null 2>&1 || fail "tmux is required on PATH."
 [[ -d "$repo" ]] || fail "--repo must be an existing directory."
 [[ -f "$prompt_file" && -r "$prompt_file" && -s "$prompt_file" ]] || fail "--prompt-file must be a readable, non-empty file."
@@ -52,12 +65,12 @@ ready_timeout=$((10#$ready_timeout))
 [[ "$port" =~ ^[0-9]+$ && ${#port} -le 5 ]] || fail "--port must be an integer from 1 to 65535."
 port=$((10#$port))
 (( port > 0 && port <= 65535 )) || fail "--port must be an integer from 1 to 65535."
-[[ "$permission_mode" =~ ^[a-zA-Z0-9_-]+$ ]] || fail "--permission-mode must be a mode name."
+[[ "$agent" == pi || "$permission_mode" =~ ^[a-zA-Z0-9_-]+$ ]] || fail "--permission-mode must be a mode name."
 if tmux has-session -t "=$session" 2>/dev/null; then
     fail "tmux session '$session' already exists."
 fi
 pane=$(tmux new-session -d -P -F '#{pane_id}' -s "$session" -n "$window" -x 200 -y 50 -c "$repo")
-tmux send-keys -t "$pane" "claude --permission-mode $permission_mode" Enter >&2
+tmux send-keys -t "$pane" "$launch" Enter >&2
 elapsed=0 stable=0 previous=
 name_wait_polls=5
 while (( elapsed < ready_timeout )); do
@@ -80,14 +93,14 @@ try:
     state = json.load(sys.stdin)
     for session in state.get("sessions", []):
         for agent in session.get("agents", []):
-            if (agent.get("agent") == "claude-code" and
+            if (agent.get("agent") == sys.argv[2] and
                 agent.get("paneId") == sys.argv[1] and agent.get("status") == "idle"):
                 print(agent.get("threadName") or "")
                 sys.exit(0)
 except (ValueError, TypeError, AttributeError):
     pass
 sys.exit(1)
-' "$pane"); then
+' "$pane" "$tcm_agent"); then
             ready=idle
             for ((name_poll=0; name_poll<name_wait_polls && elapsed+1<ready_timeout; name_poll++)); do
                 [[ -z "$peer_name" ]] || break
@@ -101,13 +114,13 @@ import json, sys
 try:
     for session in json.load(sys.stdin).get("sessions", []):
         for agent in session.get("agents", []):
-            if agent.get("agent") == "claude-code" and agent.get("paneId") == sys.argv[1]:
+            if agent.get("agent") == sys.argv[2] and agent.get("paneId") == sys.argv[1]:
                 print(agent.get("status") or "")
                 print(agent.get("threadName") or "")
                 sys.exit(0)
 except (ValueError, TypeError, AttributeError):
     pass
-' "$pane")
+' "$pane" "$tcm_agent")
                 peer_name=${name_state#*$'\n'}
                 [[ "$name_state" == *$'\n'* ]] || peer_name=
                 [[ "${name_state%%$'\n'*}" == idle ]] || break

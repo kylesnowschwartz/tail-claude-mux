@@ -1,6 +1,6 @@
 {
   "name": "peer-session",
-  "version": "0.1.0",
-  "description": "Start Claude Code in another repository and receive its report through cross-session messaging.",
+  "version": "0.2.0",
+  "description": "Start Claude Code or the pi coding agent in another repository and receive its report through cross-session messaging or love-letters.",
   "author": {"name": "kylesnowschwartz"}
 }

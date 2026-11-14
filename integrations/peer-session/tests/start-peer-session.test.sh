@@ -42,7 +42,9 @@ run() {
     : > "$CALL_LOG.extra"
     printf 0 > "$FAKE_COUNT"
     code=0
-    bash "$root/scripts/start-peer-session.sh" --repo "$tmp" --session peer --prompt-file "$1" --ready-timeout 7 > "$tmp/out" || code=$?
+    local prompt=$1
+    shift
+    bash "$root/scripts/start-peer-session.sh" --repo "$tmp" --session peer --prompt-file "$prompt" --ready-timeout 7 "$@" > "$tmp/out" || code=$?
 }
 check() {
     python3 - "$tmp" "$1" "$code" <<'PY'
@@ -57,22 +59,31 @@ v = json.loads(lines[0])
 events = (p / "calls").read_text().splitlines()
 calls = [json.loads(s) for s in events if s != "curl"]
 names = [c[0] for c in calls]
-if case in ("existing", "missing", "empty"):
+pi = case.startswith("pi-")
+if case in ("existing", "missing", "empty", "pi-mode", "bad-agent"):
     require(code != 0 and v["ok"] is False, "validation must fail")
     require("new-session" not in names, "validation created session")
+    if case == "pi-mode":
+        require("--permission-mode" in v["error"], "pi mode error")
+    if case == "bad-agent":
+        require("--agent" in v["error"], "agent error")
 else:
     require(names[:3] == ["has-session", "new-session", "send-keys"], "startup order")
     require(calls[0] == ["has-session", "-t", "=peer"], "exact session match")
     require(calls[1] == ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s",
-                        "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", str(p)],
+                        "peer", "-n", "pi" if pi else "claude", "-x", "200", "-y", "50", "-c", str(p)],
             "session arguments")
+    require(calls[2] == ["send-keys", "-t", "%128",
+                         "pi" if pi else "claude --permission-mode auto", "Enter"],
+            "launch command")
+    require(v.get("agent") == ("pi" if pi else None), "agent field")
     for c in calls[2:]:
         if c[0] != "load-buffer":
             require("-t" in c and c[c.index("-t")+1] == "%128", "pane target: " + str(c))
-    if case in ("idle", "fallback", "delayed", "unnamed"):
+    if case in ("idle", "fallback", "delayed", "unnamed", "pi-idle"):
         require(code == 0 and v["ok"] and v["prompt_sent"], "success")
         require(v["ready"] == ("pane-stable" if case == "fallback" else "idle"), "ready")
-        require(v["peer_name"] == ("other-project" if case in ("idle", "delayed") else ""), "peer")
+        require(v["peer_name"] == ("other-project" if case in ("idle", "delayed", "pi-idle") else ""), "peer")
         require(names[-3:] == ["load-buffer", "paste-buffer", "send-keys"], "prompt order")
         if case == "delayed":
             require(events.count("curl") == 3, "name poll count")
@@ -88,7 +99,7 @@ else:
         require(all("-l" not in c for c in calls), "literal send-keys")
     else:
         require(code != 0 and not v["ok"] and not v["prompt_sent"], "failure")
-        require(v["ready"] == case and "remains running" in v["error"], "failure details")
+        require(v["ready"] == case.removeprefix("pi-") and "remains running" in v["error"], "failure details")
         require("paste-buffer" not in names and "load-buffer" not in names, "unexpected prompt")
 print("PASS " + case)
 PY
@@ -114,3 +125,11 @@ printf '{"sessions":[]}\n' > "$FAKE_STATE"
 run "$tmp/prompt"; check timeout
 SERVER_DOWN=1
 run "$tmp/prompt"; check fallback
+SERVER_DOWN=0
+printf 'pi input\n' > "$FAKE_PANE"
+printf '%s\n' '{"sessions":[{"agents":[{"agent":"pi","paneId":"%128","status":"idle","threadName":"other-project"}]}]}' > "$FAKE_STATE"
+run "$tmp/prompt" --agent pi; check pi-idle
+printf '%s\n' '{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","status":"idle","threadName":"other-project"}]}]}' > "$FAKE_STATE"
+run "$tmp/prompt" --agent pi; check pi-timeout
+run "$tmp/prompt" --agent pi --permission-mode auto; check pi-mode
+run "$tmp/prompt" --agent codex; check bad-agent
