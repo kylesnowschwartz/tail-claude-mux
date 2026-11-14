@@ -3,6 +3,7 @@ package ccwatch
 import (
 	"encoding/json"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/kylesnowschwartz/agent-ouija/claude/tools"
@@ -15,8 +16,11 @@ import (
 //
 // agent-ouija's tool taxonomy is the base map, so Claude Code, Codex, and the
 // other agents it knows share one classification; tcmVerbOverrides holds the
-// tcm-specific exceptions to it. A shell call is classified by its command
-// (see ShellVerb), since agents read and search through the shell.
+// tcm-specific exceptions to it. A shell call is classified by its first
+// real command, looked through wrappers such as sudo or timeout (see
+// ShellVerb): "web" when it reaches the network, search, list, or read when
+// it only looks at files, and "run" otherwise, since agents read, search,
+// and fetch through the shell.
 func ToolVerb(toolName string, toolInput map[string]json.RawMessage) string {
 	if verb, ok := tcmVerbOverrides[toolName]; ok {
 		return verb
@@ -98,13 +102,24 @@ var shellReadVerbs = map[string]string{
 
 // ShellVerb classifies a shell command line by its first real command:
 // leading `cd ...` steps (joined by &&, ||, ; or newlines), comment lines,
-// and VAR=value assignments are skipped. Read-only commands map to search,
-// list, or read; sed is read only when it prints with -n and does not edit
-// in place. A command that redirects its output into a file (`cat > f`) is
-// a write. Everything else, and an empty command, is "run".
+// and VAR=value assignments are skipped. Wrappers such as sudo, env,
+// timeout, time, nice and xargs are looked through to the command they run;
+// a wrapper that runs nothing (`command -v`, a bare `sudo`) is "run".
+// A command that reaches the network (curl, gh, ssh, `git push`,
+// `npm install`, `go mod download`, ...) is "web". Otherwise, a command that
+// redirects its output into a file (`cat > f`) is a write ("run");
+// read-only commands map to search, list, or read; sed is read only when it
+// prints with -n and does not edit in place. Everything else, and an empty
+// command, is "run".
 func ShellVerb(command string) string {
-	words := firstCommand(command)
-	if len(words) == 0 || writesFile(words[1:]) {
+	words := unwrap(firstCommand(command))
+	if len(words) == 0 {
+		return "run"
+	}
+	if reachesNetwork(words) {
+		return "web"
+	}
+	if writesFile(words[1:]) {
 		return "run"
 	}
 	name := path.Base(words[0])
@@ -139,6 +154,155 @@ func firstCommand(command string) []string {
 		}
 	}
 	return nil
+}
+
+// shellWrapper describes a command that runs another command. takes lists
+// its flags that consume the next word; skip is how many words of its own
+// follow the flags; a flag in asks means it runs nothing.
+type shellWrapper struct {
+	takes []string
+	skip  int
+	asks  []string
+}
+
+var shellWrappers = map[string]shellWrapper{
+	"sudo":       {takes: []string{"-u", "-g", "-p", "-h", "-C", "-D", "-R", "-T", "-U", "-r", "-t"}},
+	"doas":       {takes: []string{"-u", "-C"}},
+	"env":        {takes: []string{"-u", "-C"}},
+	"time":       {},
+	"timeout":    {takes: []string{"-s", "-k"}, skip: 1},
+	"nohup":      {},
+	"nice":       {takes: []string{"-n"}},
+	"ionice":     {takes: []string{"-c", "-n"}},
+	"stdbuf":     {takes: []string{"-i", "-o", "-e"}},
+	"caffeinate": {takes: []string{"-t", "-w"}},
+	"command":    {asks: []string{"-v", "-V"}},
+	"exec":       {takes: []string{"-a"}},
+	"xargs":      {takes: []string{"-n", "-I", "-P", "-L", "-d", "-E", "-s", "-a", "-J", "-R"}},
+}
+
+// maxUnwrapDepth bounds how many nested wrappers unwrap looks through.
+const maxUnwrapDepth = 6
+
+// unwrap returns the words of the command a chain of wrappers runs, with
+// VAR=value assignments after a wrapper removed. Words that do not start
+// with a wrapper are returned as they are; a wrapper that runs nothing is
+// returned as itself.
+func unwrap(words []string) []string {
+	for range maxUnwrapDepth {
+		if len(words) == 0 {
+			return words
+		}
+		w, ok := shellWrappers[path.Base(words[0])]
+		if !ok || (len(words) > 1 && slices.Contains(w.asks, words[1])) {
+			return words
+		}
+		words = pastFlags(words[1:], w.takes)
+		for len(words) > 0 && isAssignment(words[0]) {
+			words = words[1:]
+		}
+		words = words[min(w.skip, len(words)):]
+	}
+	return words
+}
+
+// pastFlags returns the words after the leading flags; a flag in takes
+// consumes the word after it.
+func pastFlags(words, takes []string) []string {
+	i := 0
+	for i < len(words) && strings.HasPrefix(words[i], "-") {
+		if slices.Contains(takes, words[i]) {
+			i += 2
+		} else {
+			i++
+		}
+	}
+	return words[min(i, len(words)):]
+}
+
+// netCommands reach the network whatever their arguments.
+var netCommands = map[string]bool{
+	"curl": true, "wget": true, "gh": true, "ssh": true, "scp": true, "sftp": true,
+	"ftp": true, "rsync": true, "nc": true, "ncat": true, "telnet": true,
+	"ping": true, "dig": true, "nslookup": true,
+}
+
+// netSubcommands are commands that reach the network only with some
+// subcommands, one or two words long.
+var netSubcommands = map[string][]string{
+	"git":            {"push", "pull", "fetch", "clone", "ls-remote"},
+	"npm":            {"install", "i", "ci", "add", "update", "publish", "view", "audit"},
+	"pnpm":           {"install", "i", "add", "update", "publish", "dlx"},
+	"yarn":           {"install", "add", "upgrade", "publish", "dlx"},
+	"bun":            {"install", "add", "update", "publish"},
+	"pip":            {"install", "download"},
+	"pip3":           {"install", "download"},
+	"pipx":           {"install", "upgrade", "upgrade-all", "run"},
+	"uv":             {"add", "sync", "lock", "publish", "tool install"},
+	"poetry":         {"install", "add", "update", "lock", "publish"},
+	"docker":         {"pull", "push", "login"},
+	"docker compose": {"pull", "push"},
+	"brew":           {"install", "update", "upgrade", "fetch"},
+	"cargo":          {"install", "fetch", "publish", "update"},
+	"go":             {"get", "install", "mod download"},
+	"apt":            {"install", "update", "upgrade", "full-upgrade", "dist-upgrade"},
+	"apt-get":        {"install", "update", "upgrade", "dist-upgrade"},
+}
+
+// pythonModules are programs `python -m` runs that reach the network the
+// same way their own command does.
+var pythonModules = map[string]bool{"pip": true, "uv": true, "pipx": true, "poetry": true}
+
+// gitGlobalTakes and dockerGlobalTakes are the flags before the subcommand
+// that consume the next word.
+var (
+	gitGlobalTakes    = []string{"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"}
+	dockerGlobalTakes = []string{"-c", "--context", "-H", "--host", "--config", "-l", "--log-level", "-f", "--file", "-p", "--project-name", "--profile", "--env-file", "--project-directory"}
+)
+
+// reachesNetwork reports whether a command reaches the network, by its name
+// or by its name and subcommand. npx counts only when told to install
+// (-y, --yes).
+func reachesNetwork(words []string) bool {
+	head, rest := path.Base(words[0]), words[1:]
+	if netCommands[head] {
+		return true
+	}
+	if isPython(head) && len(rest) > 1 && rest[0] == "-m" && pythonModules[rest[1]] {
+		head, rest = rest[1], rest[2:]
+	}
+	if head == "uv" && len(rest) > 0 && rest[0] == "pip" {
+		head, rest = "pip", rest[1:]
+	}
+	switch head {
+	case "git":
+		rest = pastFlags(rest, gitGlobalTakes)
+	case "docker":
+		rest = pastFlags(rest, dockerGlobalTakes)
+		if len(rest) > 0 && rest[0] == "compose" {
+			head, rest = "docker compose", pastFlags(rest[1:], dockerGlobalTakes)
+		}
+	case "npx":
+		return slices.Contains(rest, "-y") || slices.Contains(rest, "--yes")
+	}
+	subs, ok := netSubcommands[head]
+	if !ok || len(rest) == 0 {
+		return false
+	}
+	if slices.Contains(subs, rest[0]) {
+		return true
+	}
+	return len(rest) > 1 && slices.Contains(subs, rest[0]+" "+rest[1])
+}
+
+// isPython reports whether name is a Python interpreter: python, python3,
+// python3.12, or py.
+func isPython(name string) bool {
+	if name == "py" {
+		return true
+	}
+	v, ok := strings.CutPrefix(name, "python")
+	return ok && strings.Trim(v, "0123456789.") == ""
 }
 
 // splitAll splits s at every occurrence of any separator.

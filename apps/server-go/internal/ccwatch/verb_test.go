@@ -117,9 +117,7 @@ func TestShellVerb(t *testing.T) {
 
 		// run
 		{`git log -3 --format='%h %s'`, "run"},
-		{`gh pr view 42 --json title`, "run"},
 		{`python3 - <<'EOF'`, "run"},
-		{`curl -s https://example.com | jq .`, "run"},
 		{`go test ./...`, "run"},
 		{`sed -i '' 's/a/b/' file.go`, "run"},
 		{`sed -i.bak -n 's/a/b/p' file.go`, "run"},
@@ -134,6 +132,44 @@ func TestShellVerb(t *testing.T) {
 		{``, "run"},
 		{`   `, "run"},
 		{`cd /tmp`, "run"},
+
+		// wrappers
+		{`timeout 30 rg foo`, "search"},
+		{`sudo cat /etc/hosts`, "read"},
+		{`env A=1 B=2 ls -la`, "list"},
+		{`xargs -n 1 grep x`, "search"},
+		{`time go test ./...`, "run"},
+		{`sudo -u bob ls`, "list"},
+		{`nice -n 10 timeout -s KILL 5 cat f`, "read"},
+		{`command -v rg`, "run"},
+		{`sudo`, "run"},
+
+		// web
+		{`gh pr view 42 --json title`, "web"},
+		{`curl -s https://example.com | jq .`, "web"},
+		{`curl -s https://example.com`, "web"},
+		{`curl https://x > out.json`, "web"},
+		{`gh pr view 12`, "web"},
+		{`git push origin main`, "web"},
+		{`git -C repo fetch`, "web"},
+		{`npm install`, "web"},
+		{`npx -y cowsay`, "web"},
+		{`python3 -m pip install x`, "web"},
+		{`uv pip install x`, "web"},
+		{`uv tool install ruff`, "web"},
+		{`go mod download`, "web"},
+		{`docker compose pull`, "web"},
+		{`brew install jq`, "web"},
+		{`cd repo && sudo git pull`, "web"},
+		{`ssh host ls`, "web"},
+
+		// local subcommands of network-capable tools
+		{`git status`, "run"},
+		{`git log --oneline`, "run"},
+		{`npm run build`, "run"},
+		{`npx vitest`, "run"},
+		{`uv run pytest`, "run"},
+		{`docker ps`, "run"},
 	}
 	for _, c := range cases {
 		if got := ShellVerb(c.command); got != c.want {
