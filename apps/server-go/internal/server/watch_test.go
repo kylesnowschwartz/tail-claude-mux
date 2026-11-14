@@ -365,6 +365,46 @@ func TestScanEventOverRestoresWaitingFromOpenDialog(t *testing.T) {
 	}
 }
 
+func TestScanEventOverBlockedBeforeStartup(t *testing.T) {
+	const blockedAt = int64(1_000_000)
+	scanned := wire.AgentEvent{Agent: "claude-code", Session: "work", PID: 42, PaneID: "%1", TS: blockedAt + 2000}
+	minted := &wire.AgentEvent{Agent: "claude-code", Session: "work", PID: 42, PaneID: "%1", Status: wire.StatusIdle, TS: blockedAt - 2500}
+
+	if ev, ok := scanEventOver(minted, scanned, tracker.ScanState{}); ok {
+		t.Fatalf("scanEventOver inside the grace = (%q, true), want untouched", ev.Status)
+	}
+
+	ev, ok := scanEventOver(minted, scanned, tracker.ScanState{BlockedBeforeStartupSinceMS: blockedAt})
+	if !ok || ev.Status != wire.StatusWaiting || ev.TS != blockedAt {
+		t.Fatalf("scanEventOver past the grace = (%q at %d, %v), want waiting at %d", ev.Status, ev.TS, ok, blockedAt)
+	}
+	waiting := &ev
+
+	started := wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", PID: 42, PaneID: "%1", TS: blockedAt + 4000}
+	cases := []struct {
+		name  string
+		state tracker.ScanState
+		want  string
+	}{
+		{"file records idle", tracker.ScanState{ThreadID: "t", Prompt: tracker.PromptResolution{Verdict: tracker.ProbeDone, AtMS: blockedAt + 3000}}, wire.StatusIdle},
+		{"file records busy", tracker.ScanState{ThreadID: "t", Prompt: tracker.PromptResolution{Verdict: tracker.ProbeWorking, AtMS: blockedAt + 3000}}, wire.StatusRunning},
+		{"file records an open dialog", tracker.ScanState{ThreadID: "t", WaitingSinceMS: blockedAt + 3000}, wire.StatusWaiting},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := scanEventOver(waiting, started, c.state)
+			if !ok || got.Status != c.want || got.ThreadID != "t" {
+				t.Fatalf("scanEventOver once the file appears = (%q thread %q, %v), want %q on thread t", got.Status, got.ThreadID, ok, c.want)
+			}
+		})
+	}
+
+	running := &wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", PID: 42, Status: wire.StatusRunning, TS: blockedAt - 500}
+	if got, ok := scanEventOver(running, scanned, tracker.ScanState{BlockedBeforeStartupSinceMS: blockedAt}); ok {
+		t.Fatalf("scanEventOver over a running thread row = (%q, true), want untouched", got.Status)
+	}
+}
+
 func TestCodexWorkerHookEmitsNothing(t *testing.T) {
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

@@ -2123,6 +2123,50 @@ func TestWindowIndexPaneIndex(t *testing.T) {
 	})
 }
 
+func TestScanStateBlockedBeforeStartup(t *testing.T) {
+	const blockedAt = baseTS + 3000
+	blocked := ScanState{BlockedBeforeStartupSinceMS: blockedAt}
+	scanned := wire.AgentEvent{Agent: "claude-code", Session: "work", PID: 42, PaneID: "%1", TS: baseTS + 5000}
+
+	t.Run("turns the pane's thread-less row waiting in place", func(t *testing.T) {
+		tr := New(fixedNow())
+		tr.ApplyPanePresence("work", []PanePresence{{Agent: "claude-code", PaneID: "%1", PID: 42}})
+		previous := tr.GetEvent("work", "claude-code", "", "%1")
+		if previous == nil || previous.Status != wire.StatusIdle {
+			t.Fatalf("minted row = %+v, want idle", previous)
+		}
+		ev, ok := blocked.WaitingOver(previous, scanned)
+		if !ok || ev.Status != wire.StatusWaiting || ev.TS != blockedAt {
+			t.Fatalf("WaitingOver = (%q at %d, %v), want waiting at %d", ev.Status, ev.TS, ok, blockedAt)
+		}
+		tr.ApplyEvent(ev, false)
+		tr.ApplyPanePresence("work", []PanePresence{{Agent: "claude-code", PaneID: "%1", PID: 42}})
+		agents := tr.GetAgents("work")
+		if len(agents) != 1 || agents[0].Status != wire.StatusWaiting || agents[0].PaneID != "%1" || agents[0].Liveness != wire.LivenessAlive {
+			t.Fatalf("agents = %+v, want one alive waiting row on %%1", agents)
+		}
+		if again, ok := blocked.WaitingOver(tr.GetEvent("work", "claude-code", "", "%1"), scanned); ok {
+			t.Fatalf("WaitingOver on the waiting row = (%q, true), want untouched", again.Status)
+		}
+	})
+
+	for _, status := range []string{wire.StatusRunning, wire.StatusDone} {
+		t.Run("leaves a "+status+" row with a thread alone", func(t *testing.T) {
+			previous := &wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", Status: status, TS: blockedAt - 500}
+			if ev, ok := blocked.WaitingOver(previous, scanned); ok {
+				t.Fatalf("WaitingOver = (%q, true), want untouched", ev.Status)
+			}
+		})
+	}
+
+	t.Run("a newer thread-less row outranks the block", func(t *testing.T) {
+		previous := &wire.AgentEvent{Agent: "claude-code", Session: "work", Status: wire.StatusRunning, TS: blockedAt + 1}
+		if ev, ok := blocked.WaitingOver(previous, scanned); ok {
+			t.Fatalf("WaitingOver = (%q, true), want untouched", ev.Status)
+		}
+	})
+}
+
 func TestScanStateWaitingOver(t *testing.T) {
 	const dialogAt = baseTS + 1000
 	scanned := wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t", PID: 42, TS: baseTS + 5000}

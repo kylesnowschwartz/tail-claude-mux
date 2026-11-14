@@ -94,9 +94,15 @@ func scanStateForPane(pa tracker.PanePresence, sources ...agentStateSource) (tra
 // resolution recorded after the row went waiting clears it; an approval
 // keeps the description of the call the prompt was about. Any other row
 // goes waiting when the agent's own record shows a dialog opened after the
-// row's latest event, and otherwise takes the general verdict. ok=false
-// leaves the row untouched.
+// row's latest event, or when the process is blocked before startup, and
+// otherwise takes the general verdict. A waiting row with no thread
+// identity waits on startup, so the first reading that names the thread
+// ends that wait with the session's own status. ok=false leaves the row
+// untouched.
 func scanEventOver(previous *wire.AgentEvent, ev wire.AgentEvent, state tracker.ScanState) (wire.AgentEvent, bool) {
+	if previous != nil && previous.Status == wire.StatusWaiting && previous.ThreadID == "" && state.ThreadID != "" {
+		return startedEvent(ev, state), true
+	}
 	if previous != nil && previous.Status == wire.StatusWaiting {
 		if !state.Prompt.Clears(previous.TS) {
 			return ev, false
@@ -113,6 +119,22 @@ func scanEventOver(previous *wire.AgentEvent, ev wire.AgentEvent, state tracker.
 	}
 	ev.Status = scanStatus(state.Verdict)
 	return ev, ev.Status != ""
+}
+
+// startedEvent is the first status of a session that has just recorded its
+// thread: waiting on a dialog it records as open, running when it records
+// work, idle otherwise.
+func startedEvent(ev wire.AgentEvent, state tracker.ScanState) wire.AgentEvent {
+	switch {
+	case state.WaitingSinceMS != 0:
+		ev.Status = wire.StatusWaiting
+		ev.TS = state.WaitingSinceMS
+	case state.Verdict == tracker.ProbeWorking || state.Prompt.Verdict == tracker.ProbeWorking:
+		ev.Status = wire.StatusRunning
+	default:
+		ev.Status = wire.StatusIdle
+	}
+	return ev
 }
 
 // scanReading is one pane's scan result awaiting the fold under the lock.
@@ -344,6 +366,7 @@ func (s *Server) paneScanLoop() {
 						ThreadID:   paneAgents[i].ThreadID,
 						ThreadName: paneAgents[i].ThreadName,
 						PID:        paneAgents[i].PID,
+						PaneID:     paneAgents[i].PaneID,
 					},
 					state: state,
 				})
@@ -356,7 +379,7 @@ func (s *Server) paneScanLoop() {
 		}
 		changed := false
 		for _, reading := range readings {
-			previous := s.Tracker.GetEvent(reading.ev.Session, reading.ev.Agent, reading.ev.ThreadID, "")
+			previous := s.Tracker.GetEvent(reading.ev.Session, reading.ev.Agent, reading.ev.ThreadID, reading.ev.PaneID)
 			ev, ok := scanEventOver(previous, reading.ev, reading.state)
 			if !ok {
 				continue

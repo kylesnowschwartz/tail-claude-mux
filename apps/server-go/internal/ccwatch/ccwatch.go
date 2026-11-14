@@ -141,7 +141,16 @@ type Adapter struct {
 	ctx     *Context
 	threads map[string]*threadState
 	now     func() int64 // epoch ms, injectable for tests
+
+	// withoutSessionFileSince: claude pid → when the pane scan first found
+	// it with no sessions/<pid>.json. Only the pane scan reads or writes it.
+	withoutSessionFileSince map[int]int64
 }
+
+// startupGraceMS is how long a Claude Code process may run without a
+// session file before it counts as blocked on a startup dialog (the
+// workspace trust prompt). A normal start writes the file well within it.
+const startupGraceMS = 3000
 
 // New returns an Adapter reading the given Claude dirs.
 func New(projectsDir, sessionsDir string) *Adapter {
@@ -150,6 +159,8 @@ func New(projectsDir, sessionsDir string) *Adapter {
 		SessionsDir: sessionsDir,
 		threads:     map[string]*threadState{},
 		now:         func() int64 { return time.Now().UnixMilli() },
+
+		withoutSessionFileSince: map[int]int64{},
 	}
 }
 
@@ -162,12 +173,15 @@ func (a *Adapter) Name() string { return "claude-code" }
 // the prompt resolution that may clear a waiting row. The waiting time lets
 // the pane scan restore a waiting row whose hook never reached the server
 // (a server restart, or a dropped hook). Hooks own every other transition,
-// so every other status leaves the general verdict at ProbeNoSignal.
+// so every other status leaves the general verdict at ProbeNoSignal. A
+// process with no session file past startupGraceMS is blocked before
+// startup: Claude Code writes the file only after its startup dialogs.
 func (a *Adapter) ScanStateForPid(pid int, _ string) tracker.ScanState {
 	l := a.readSessionFile(pid)
 	if l == nil {
-		return tracker.ScanState{}
+		return tracker.ScanState{BlockedBeforeStartupSinceMS: a.blockedBeforeStartupSince(pid)}
 	}
+	delete(a.withoutSessionFileSince, pid)
 	state := tracker.ScanState{
 		ThreadID:       l.SessionID,
 		ThreadName:     textutil.SanitizeSessionName(l.Name),
@@ -178,6 +192,32 @@ func (a *Adapter) ScanStateForPid(pid int, _ string) tracker.ScanState {
 		state.Verdict = tracker.ProbeWorking
 	}
 	return state
+}
+
+// blockedBeforeStartupSince records the first scan that found pid without a
+// session file and returns when its startup grace ran out, 0 while it is
+// still inside the grace.
+func (a *Adapter) blockedBeforeStartupSince(pid int) int64 {
+	now := a.now()
+	first, ok := a.withoutSessionFileSince[pid]
+	if !ok {
+		if a.withoutSessionFileSince == nil {
+			a.withoutSessionFileSince = map[int]int64{}
+		}
+		a.withoutSessionFileSince[pid] = now
+		first = now
+	}
+	return BlockedBeforeStartupSince(first, now)
+}
+
+// BlockedBeforeStartupSince returns when a process first seen without a
+// session file at firstSeenMS ran out of startup grace, 0 while nowMS is
+// still inside it. Pure — unit-testable off disk.
+func BlockedBeforeStartupSince(firstSeenMS, nowMS int64) int64 {
+	if nowMS-firstSeenMS <= startupGraceMS {
+		return 0
+	}
+	return firstSeenMS + startupGraceMS
 }
 
 // DialogOpenSince returns when the session file recorded an open dialog

@@ -1314,6 +1314,58 @@ func TestClassifyPromptResolution(t *testing.T) {
 	}
 }
 
+func TestBlockedBeforeStartupSince(t *testing.T) {
+	const first = int64(1_000_000_000_000)
+	cases := []struct {
+		name string
+		now  int64
+		want int64
+	}{
+		{"just seen → inside grace", first, 0},
+		{"at the grace edge → inside grace", first + startupGraceMS, 0},
+		{"past the grace → blocked since the grace ran out", first + startupGraceMS + 1, first + startupGraceMS},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := BlockedBeforeStartupSince(first, c.now); got != c.want {
+				t.Errorf("BlockedBeforeStartupSince = %d, want %d", got, c.want)
+			}
+		})
+	}
+}
+
+func TestScanStateForPidWithoutSessionFile(t *testing.T) {
+	sessionsDir := t.TempDir()
+	a := New(t.TempDir(), sessionsDir)
+	now := int64(1_000_000_000_000)
+	a.now = func() int64 { return now }
+	const pid = 701
+
+	if got := a.ScanStateForPid(pid, ""); got.HasSignal() {
+		t.Fatalf("first scan without a file = %+v, want no signal", got)
+	}
+	now += startupGraceMS - 1000
+	if got := a.ScanStateForPid(pid, ""); got.HasSignal() {
+		t.Fatalf("scan inside the grace = %+v, want no signal", got)
+	}
+	start := now - (startupGraceMS - 1000)
+	now = start + startupGraceMS + 500
+	got := a.ScanStateForPid(pid, "")
+	if got.BlockedBeforeStartupSinceMS != start+startupGraceMS || got.ThreadID != "" {
+		t.Fatalf("scan past the grace = %+v, want blocked since %d", got, start+startupGraceMS)
+	}
+
+	writeSessionFile(t, sessionsDir, pid, map[string]any{
+		"pid": pid, "sessionId": "sid", "status": "idle", "updatedAt": now, "statusUpdatedAt": now,
+	})
+	if got := a.ScanStateForPid(pid, ""); got.BlockedBeforeStartupSinceMS != 0 || got.ThreadID != "sid" {
+		t.Fatalf("scan with the file = %+v, want thread sid and not blocked", got)
+	}
+	if _, tracked := a.withoutSessionFileSince[pid]; tracked {
+		t.Fatal("pid still tracked as without a session file after the file appeared")
+	}
+}
+
 func TestDialogOpenSince(t *testing.T) {
 	const changedAt = int64(1_000_000_000_000)
 	cases := []struct {

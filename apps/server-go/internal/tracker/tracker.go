@@ -88,7 +88,8 @@ const (
 // ScanState is one watcher's pane-scan reading of an agent process: its
 // thread identity, the status verdict for rows in any state but waiting,
 // the separate verdict that may clear a waiting row, and the agent's own
-// record of an open dialog that may put a row into waiting.
+// record of an open dialog, or a process blocked before its startup record,
+// that may put a row into waiting.
 type ScanState struct {
 	ThreadID   string
 	ThreadName string
@@ -97,11 +98,17 @@ type ScanState struct {
 	// WaitingSinceMS is when the agent recorded a dialog open for this
 	// thread; 0 = no open dialog.
 	WaitingSinceMS int64
+	// BlockedBeforeStartupSinceMS is when the agent process counts as
+	// blocked on the human before it recorded any thread: it has run past
+	// its startup grace with no startup record. 0 = not blocked. Only a row
+	// with no thread identity can be in this state.
+	BlockedBeforeStartupSinceMS int64
 }
 
 // HasSignal reports whether the reading can change a row.
 func (s ScanState) HasSignal() bool {
-	return s.Verdict != ProbeNoSignal || s.Prompt.Verdict != ProbeNoSignal || s.WaitingSinceMS != 0
+	return s.Verdict != ProbeNoSignal || s.Prompt.Verdict != ProbeNoSignal || s.WaitingSinceMS != 0 ||
+		s.BlockedBeforeStartupSinceMS != 0
 }
 
 // WaitingOver returns ev as a waiting event when the reading records an
@@ -110,17 +117,23 @@ func (s ScanState) HasSignal() bool {
 // hook event at or after the dialog's time outranks the older record. The
 // event takes the dialog's time, so a prompt resolution recorded after it
 // clears the row, and keeps the previous row's call description, which
-// names the call the dialog is about. ok=false leaves ev for the other
-// scan verdicts.
+// names the call the dialog is about. A process blocked before startup
+// puts a row into waiting the same way, but only a row with no thread
+// identity: a row that knows its thread is past startup. ok=false leaves ev
+// for the other scan verdicts.
 func (s ScanState) WaitingOver(previous *wire.AgentEvent, ev wire.AgentEvent) (wire.AgentEvent, bool) {
-	if s.WaitingSinceMS == 0 {
+	since := s.WaitingSinceMS
+	if since == 0 && s.BlockedBeforeStartupSinceMS != 0 && (previous == nil || previous.ThreadID == "") {
+		since = s.BlockedBeforeStartupSinceMS
+	}
+	if since == 0 {
 		return ev, false
 	}
-	if previous != nil && (previous.Status == wire.StatusWaiting || previous.TS >= s.WaitingSinceMS) {
+	if previous != nil && (previous.Status == wire.StatusWaiting || previous.TS >= since) {
 		return ev, false
 	}
 	ev.Status = wire.StatusWaiting
-	ev.TS = s.WaitingSinceMS
+	ev.TS = since
 	if previous != nil {
 		ev.ToolDescription = previous.ToolDescription
 		ev.ToolVerb = previous.ToolVerb
@@ -240,6 +253,12 @@ func (t *Tracker) deleteInstance(session, key string) {
 // state from the cold-start scan).
 func (t *Tracker) ApplyEvent(event wire.AgentEvent, seed bool) {
 	key := InstanceKey(event.Agent, event.ThreadID)
+	// A thread-less event for a pane describes that pane's synthetic row.
+	if event.ThreadID == "" && event.PaneID != "" {
+		if sk := syntheticKey(event.Agent, event.PaneID); t.instances[event.Session][sk] != nil {
+			key = sk
+		}
+	}
 
 	// Definitive end: remove now; suppress ghost synthetics for the pane.
 	if event.Ended {
