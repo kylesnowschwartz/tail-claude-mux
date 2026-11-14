@@ -245,3 +245,55 @@ func TestNonPiHookIgnored(t *testing.T) {
 		t.Fatalf("events %#v", evs)
 	}
 }
+
+func children(n int, file string) wire.HookPayload {
+	p := hook("children_running", file)
+	p.ChildrenRunning = &n
+	return p
+}
+
+func TestChildAgentsShowRunning(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
+	other := writeSession(t, dir, "t", procStart, procStart.Add(2*time.Minute), userLine("b"))
+	a.SetLive(map[int]string{42: "work"})
+	onlyStatus(t, a.HandleHook(hook("agent_start", path)), wire.StatusRunning)
+	if evs := a.HandleHook(children(1, path)); len(evs) != 0 {
+		t.Fatalf("children while running emitted %#v", evs)
+	}
+	if evs := a.HandleHook(hook("agent_settled", path)); len(evs) != 0 {
+		t.Fatalf("settle with children emitted %#v", evs)
+	}
+	if got := a.ProbeLiveStatus(42, "", ""); got != tracker.ProbeWorking {
+		t.Fatalf("probe %v, want working", got)
+	}
+	if evs := a.HandleHook(children(2, path)); len(evs) != 0 {
+		t.Fatalf("count change emitted %#v", evs)
+	}
+	onlyStatus(t, a.HandleHook(children(0, path)), wire.StatusDone)
+	onlyStatus(t, a.HandleHook(children(1, path)), wire.StatusRunning)
+	onlyStatus(t, a.HandleHook(hook("ui_prompt_start", path)), wire.StatusWaiting)
+	if evs := a.HandleHook(children(3, path)); len(evs) != 0 {
+		t.Fatalf("count change while waiting emitted %#v", evs)
+	}
+	onlyStatus(t, a.HandleHook(hook("ui_prompt_end", path)), wire.StatusRunning)
+	aborted := true
+	settle := hook("agent_settled", path)
+	settle.Aborted = &aborted
+	onlyStatus(t, a.HandleHook(settle), wire.StatusInterrupted)
+	onlyStatus(t, a.HandleHook(hook("agent_start", other)), wire.StatusRunning)
+	onlyStatus(t, a.HandleHook(hook("agent_settled", other)), wire.StatusDone)
+}
+
+func TestChildAgentsKeepSettleError(t *testing.T) {
+	a, dir := newTestAdapter(t, false)
+	path := writeSession(t, dir, "s", procStart, procStart.Add(time.Minute), userLine("a"))
+	a.SetLive(map[int]string{42: "work"})
+	a.HandleHook(hook("agent_start", path))
+	a.HandleHook(children(1, path))
+	appendLines(t, path, assistantLine("error"))
+	if evs := a.HandleHook(hook("agent_settled", path)); len(evs) != 0 {
+		t.Fatalf("settle with children emitted %#v", evs)
+	}
+	onlyStatus(t, scanActivity(a), wire.StatusError)
+}

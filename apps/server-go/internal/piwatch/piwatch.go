@@ -76,7 +76,8 @@ type pidRecord struct {
 	// checkSettleError asks the next scan whether a settled turn ended in
 	// an error; terminalScans counts scans in a row whose file shows a
 	// finished turn newer than lastHookAt while hookStatus is running.
-	// ended marks a quit.
+	// children is the number of child agents working in the process, as
+	// its latest children_running hook reported. ended marks a quit.
 	hooked           bool
 	hookFile         string
 	lastHookAt       time.Time
@@ -85,6 +86,7 @@ type pidRecord struct {
 	sentStatus       string
 	checkSettleError bool
 	terminalScans    int
+	children         int
 	ended            bool
 }
 
@@ -154,7 +156,7 @@ func (a *Adapter) ScanStateForPid(pid int, _ string) tracker.ScanState {
 }
 
 // ProbeLiveStatus answers for the file the last scan resolved for pid. A
-// hooked pid is working while its hook status is running; any other pid
+// hooked pid is working while its shown status is running; any other pid
 // reads the file's trailing status. It starts no process.
 func (a *Adapter) ProbeLiveStatus(pid int, threadID, _ string) tracker.ProbeVerdict {
 	a.mu.Lock()
@@ -164,7 +166,7 @@ func (a *Adapter) ProbeLiveStatus(pid int, threadID, _ string) tracker.ProbeVerd
 		return tracker.ProbeNoSignal
 	}
 	if rec.hooked {
-		if rec.hookStatus == wire.StatusRunning {
+		if shownStatus(rec) == wire.StatusRunning {
 			return tracker.ProbeWorking
 		}
 		return tracker.ProbeNoSignal
@@ -240,7 +242,7 @@ func (a *Adapter) Activity(pid int, tmuxSession string) *Reading {
 // Resolve turns a Reading into the events to emit, deciding status with the
 // pid's record as it stands now: the tool-call events, then, last, one
 // status event when the status differs from the last one sent. A hooked
-// pid's events carry its current hook status. Two file checks can change
+// pid's events carry its current shown status (see shownStatus). Two file checks can change
 // that status: after a settled turn, an error at the end of the file makes
 // it error; and while it is running, a finished turn in the file newer than
 // the pid's last hook, seen on two scans in a row, replaces it. A reading
@@ -273,14 +275,14 @@ func (a *Adapter) Resolve(r *Reading) []wire.AgentEvent {
 			rec.hookStatus, rec.terminalScans = r.fileStatus, 0
 		}
 		status = ""
-		if rec.hookStatus != rec.sentStatus {
-			status = rec.hookStatus
+		if shown := shownStatus(rec); shown != rec.sentStatus {
+			status = shown
 			rec.sentStatus = status
 		}
 	}
 	toolStatus := wire.StatusRunning
 	if rec.hooked {
-		toolStatus = rec.hookStatus
+		toolStatus = shownStatus(rec)
 	}
 	a.byPID[r.pid] = rec
 	out := make([]wire.AgentEvent, 0, len(r.tools)+1)
@@ -300,8 +302,9 @@ func (a *Adapter) Resolve(r *Reading) []wire.AgentEvent {
 // to emit now, if any. It reads no file. A hook from a pid the scan has not
 // found as a live Pi is kept for pendingHookTTL and applied when the scan
 // finds it; a newer hook from the same pid replaces it. See applyHook for
-// the status each hook sets; session_shutdown with reason quit ends the
-// row.
+// the status each hook sets and shownStatus for the status it emits; an
+// event is returned only when the shown status changes, and session_shutdown
+// with reason quit ends the row.
 func (a *Adapter) HandleHook(p wire.HookPayload) []wire.AgentEvent {
 	if p.Agent != agentmatch.AgentPi || p.PID == 0 {
 		return nil
@@ -333,12 +336,13 @@ func (a *Adapter) HandleHook(p wire.HookPayload) []wire.AgentEvent {
 		ev.Ended = true
 		return []wire.AgentEvent{ev}
 	}
-	if rec.hookStatus == rec.sentStatus {
+	shown := shownStatus(rec)
+	if shown == rec.sentStatus {
 		return nil
 	}
-	rec.sentStatus = rec.hookStatus
+	rec.sentStatus = shown
 	a.byPID[p.PID] = rec
-	ev.Status = rec.hookStatus
+	ev.Status = shown
 	return []wire.AgentEvent{ev}
 }
 
@@ -347,15 +351,17 @@ func (a *Adapter) HandleHook(p wire.HookPayload) []wire.AgentEvent {
 // agent_start → running; ui_prompt_start → waiting, remembering the status
 // it interrupts; ui_prompt_end → that remembered status; agent_settled →
 // interrupted when aborted, else done, with the next scan checking the file
-// for an error; session_shutdown with reason quit → ended. A pid whose
-// hooks have set no status yet is idle.
+// for an error; children_running → no status change, recording the count
+// of working child agents; session_shutdown with reason quit → ended. A
+// hook naming a different session file also resets the child count. A pid
+// whose hooks have set no status yet is idle.
 func applyHook(rec *pidRecord, p wire.HookPayload, at time.Time) {
 	rec.hooked = true
 	rec.lastHookAt = at
 	if p.TranscriptPath != "" && p.TranscriptPath != rec.hookFile {
 		if rec.hookFile != "" {
 			rec.hookStatus, rec.beforePrompt, rec.sentStatus = "", "", ""
-			rec.checkSettleError, rec.terminalScans = false, 0
+			rec.checkSettleError, rec.terminalScans, rec.children = false, 0, 0
 		}
 		rec.hookFile = p.TranscriptPath
 		rec.path = p.TranscriptPath
@@ -379,6 +385,10 @@ func applyHook(rec *pidRecord, p wire.HookPayload, at time.Time) {
 			rec.hookStatus = wire.StatusDone
 			rec.checkSettleError = true
 		}
+	case "children_running":
+		if p.ChildrenRunning != nil {
+			rec.children = *p.ChildrenRunning
+		}
 	case "session_shutdown":
 		if p.ShutdownReason == "quit" {
 			rec.ended = true
@@ -387,6 +397,16 @@ func applyHook(rec *pidRecord, p wire.HookPayload, at time.Time) {
 	if rec.hookStatus == "" {
 		rec.hookStatus = wire.StatusIdle
 	}
+}
+
+// shownStatus is the status a hooked pid's row shows: its hook status,
+// except that done or idle shows running while child agents work. Every
+// reader of a hooked pid's status goes through it.
+func shownStatus(rec pidRecord) string {
+	if rec.children > 0 && (rec.hookStatus == wire.StatusDone || rec.hookStatus == wire.StatusIdle) {
+		return wire.StatusRunning
+	}
+	return rec.hookStatus
 }
 
 func sessionStatus(status session.Status) string {

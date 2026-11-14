@@ -4,6 +4,10 @@
 // and swallows every error: the extension never throws or prints. Only the
 // session_shutdown handler returns its post, so Pi waits for the quit
 // report, at most 500 ms; every other post is fired without waiting.
+// Background child agents from pi-agent-fleet announce their count on Pi's
+// event bus; each change is posted as children_running, using the context
+// of the latest lifecycle event, so a settled session with working children
+// shows as running.
 
 type Ctx = {
   mode: string;
@@ -11,7 +15,10 @@ type Ctx = {
   sessionManager: { getSessionFile(): string | undefined; getSessionId(): string };
 };
 type Handler = (event: Record<string, unknown>, ctx: Ctx) => unknown;
-type Pi = { on(event: string, handler: Handler): unknown };
+type EventBus = { on(channel: string, handler: (data: unknown) => void): unknown };
+type Pi = { on(event: string, handler: Handler): unknown; events?: EventBus };
+
+const childrenChannel = "pi-agent-fleet:children-running";
 
 const url = `http://${process.env.TCM_HOST || "127.0.0.1"}:${process.env.TCM_PORT || "7391"}/hook`;
 
@@ -40,10 +47,25 @@ function report(event: string, ctx: Ctx, extra: Record<string, unknown>): Promis
 }
 
 export default function (pi: Pi): void {
-  pi.on("session_start", (_e, ctx) => void report("session_start", ctx, {}));
-  pi.on("agent_start", (_e, ctx) => void report("agent_start", ctx, {}));
-  pi.on("agent_settled", (e, ctx) => void report("agent_settled", ctx, { aborted: e.aborted }));
-  pi.on("ui_prompt_start", (_e, ctx) => void report("ui_prompt_start", ctx, {}));
-  pi.on("ui_prompt_end", (_e, ctx) => void report("ui_prompt_end", ctx, {}));
-  pi.on("session_shutdown", (e, ctx) => report("session_shutdown", ctx, { shutdown_reason: e.reason }));
+  let lastCtx: Ctx | undefined;
+  const on = (event: string, handler: Handler) =>
+    pi.on(event, (e, ctx) => {
+      lastCtx = ctx;
+      return handler(e, ctx);
+    });
+  on("session_start", (_e, ctx) => void report("session_start", ctx, {}));
+  on("agent_start", (_e, ctx) => void report("agent_start", ctx, {}));
+  on("agent_settled", (e, ctx) => void report("agent_settled", ctx, { aborted: e.aborted }));
+  on("ui_prompt_start", (_e, ctx) => void report("ui_prompt_start", ctx, {}));
+  on("ui_prompt_end", (_e, ctx) => void report("ui_prompt_end", ctx, {}));
+  on("session_shutdown", (e, ctx) => report("session_shutdown", ctx, { shutdown_reason: e.reason }));
+  try {
+    pi.events?.on(childrenChannel, (data) => {
+      const running = (data as { running?: unknown } | null)?.running;
+      if (!lastCtx || typeof running !== "number" || !Number.isInteger(running) || running < 0) return;
+      void report("children_running", lastCtx, { children_running: running });
+    });
+  } catch {
+    // A Pi without a usable event bus reports no child agents.
+  }
 }

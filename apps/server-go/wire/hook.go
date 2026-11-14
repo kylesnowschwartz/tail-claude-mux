@@ -50,6 +50,9 @@ type HookPayload struct {
 	TranscriptPath string `json:"transcript_path,omitempty"`
 	// Aborted is set on Pi's agent_settled: the run was stopped.
 	Aborted *bool `json:"aborted,omitempty"`
+	// ChildrenRunning is set on Pi's children_running: the number of child
+	// agents working in the session's process.
+	ChildrenRunning *int `json:"children_running,omitempty"`
 }
 
 // ParseHookPayload validates one POST /hook body. It returns (payload,
@@ -105,6 +108,7 @@ func ParseHookPayload(body []byte) (HookPayload, bool) {
 		ProcessSnapshot:  optBoundedString(raw["process_snapshot"], maxProcessSnapshotLen),
 		TranscriptPath:   optBoundedString(raw["transcript_path"], maxStringLen),
 		Aborted:          optBool(raw["aborted"]),
+		ChildrenRunning:  optCount(raw["children_running"]),
 	}
 	return p, true
 }
@@ -162,6 +166,19 @@ func optEnumString(data json.RawMessage, allowed map[string]bool) string {
 		return ""
 	}
 	return s
+}
+
+// optCount returns a non-negative integer, or nil when absent or malformed.
+func optCount(data json.RawMessage) *int {
+	var f float64
+	if data == nil || json.Unmarshal(data, &f) != nil {
+		return nil
+	}
+	n := int(f)
+	if float64(n) != f || n < 0 {
+		return nil
+	}
+	return &n
 }
 
 // optPositiveInt returns an integer pid > 1 (0/1 are kernel/init and never
