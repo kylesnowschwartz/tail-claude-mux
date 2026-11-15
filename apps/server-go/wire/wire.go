@@ -105,6 +105,9 @@ type AgentEvent struct {
 	// needs them. AttentionSince is when that reason started, in epoch
 	// milliseconds. The server fills both for Claude Code conversations
 	// when it builds state; the tracker never stores them.
+	// StatusSince is when the row's current status started, in epoch
+	// milliseconds. The tracker keeps it.
+	StatusSince    int64  `json:"statusSince,omitempty"`
 	Attention      string `json:"attention,omitempty"`
 	AttentionSince int64  `json:"attentionSince,omitempty"`
 }

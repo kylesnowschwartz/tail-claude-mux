@@ -340,6 +340,13 @@ func (t *Tracker) ApplyEvent(event wire.AgentEvent, seed bool) {
 	if event.FirstSeenTS == 0 {
 		event.FirstSeenTS = event.TS
 	}
+	// StatusSince carries over while the status holds and restarts at the
+	// event's ts when it changes or the row is new.
+	if prev != nil && prev.Status == event.Status && prev.StatusSince != 0 {
+		event.StatusSince = prev.StatusSince
+	} else {
+		event.StatusSince = event.TS
+	}
 	stored := event
 	// ToolInvoked and ThinkingBlocks are edge semantics ("this event STARTS
 	// a tool call", "these blocks were just written") and must not persist as
@@ -665,6 +672,7 @@ func (t *Tracker) ReconcileStaleRunning(staleMS int64, probe func(wire.AgentEven
 			case ProbeEnded:
 				ev.Status = wire.StatusDone
 				ev.TS = now
+				ev.StatusSince = now
 				changed = true
 			case ProbeWorking:
 				ev.TS = now
@@ -881,6 +889,7 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 				Session:     session,
 				Status:      wire.StatusIdle,
 				TS:          t.now(),
+				StatusSince: t.now(),
 				ThreadID:    threadID,
 				ThreadName:  threadName,
 				PaneID:      pa.PaneID,

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,5 +89,15 @@ func TestPaneScanWithUnchangedStatusDoesNotRebuildEndedReason(t *testing.T) {
 	s.mu.Unlock()
 	if got := s.Watcher.Attention.Get("a"); got.Name != "" {
 		t.Fatalf("scan rebuilt an ended reason: %+v", got)
+	}
+}
+
+func TestStateCarriesStatusSince(t *testing.T) {
+	s := newAttentionTestServer(t)
+	postHook(t, s, ccHook("Stop", "a"))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/state", nil))
+	if !strings.Contains(rec.Body.String(), `"statusSince":`) {
+		t.Fatalf("state JSON lacks statusSince: %s", rec.Body.String())
 	}
 }
