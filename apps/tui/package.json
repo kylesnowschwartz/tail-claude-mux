@@ -8,6 +8,7 @@
     "start": "bun run src/index.tsx",
     "dev": "bun --watch run src/index.tsx",
     "build": "bun run build.ts",
+    "test": "bun test",
     "audit:glyphs": "bun run scripts/glyph-audit.ts"
   },
   "dependencies": {

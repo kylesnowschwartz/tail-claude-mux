@@ -29,8 +29,23 @@ import {
   BRAND_CLAWD,
   BRANCH_GLYPH,
   AGENT_GLYPHS,
+  LIAISON_GLYPH,
 } from "./vocab";
 import { tier, type TierStyle } from "./tiers";
+import {
+  findLiaisons,
+  fleetCounts,
+  formatAge,
+  fleetFits,
+  formatFleet,
+  isLiveAgent,
+  liaisonTitle,
+  needsSummary,
+  needsYou,
+  statusLabel,
+  type SessionAgentRef,
+  type StatusLabel,
+} from "./attention";
 import { getScenario, listScenarios } from "./mocks/scenarios";
 
 // Detect which mux we're running inside
@@ -56,6 +71,26 @@ const CARD_CHROME_ROWS = 3; // Session frame: rounded border top/bottom plus the
 const BRANCH_ROWS = 1; // SessionCard adds exactly one row when session.branch is present.
 const HIDDEN_AGENTS_ROWS = 1; // SessionCard adds exactly one "+N more" row when agents are trimmed.
 const OVERFLOW_INDICATOR_ROWS = 1; // "▲ N more" / "▼ N more" line when the session stack scrolls.
+const LIAISON_BASE_ROWS = 4; // Liaison block: header, fleet and needs rows plus its closing rule; a status-text row adds one.
+const KEY_WIDTH = 7; // Label column of the liaison block's rows.
+const BLOCK_PAD = 2; // Left and right padding of the liaison block.
+
+function statusColor(label: StatusLabel, p: ThemePalette): string {
+  if (label === "working") return p.blue;
+  if (label === "waiting") return p.yellow;
+  if (label === "ready") return p.green;
+  if (label === "error") return p.red;
+  return p.surface2;
+}
+
+/** Static status glyphs for compact counts; working shows the spinner's first frame. */
+const STATUS_GLYPHS: Record<StatusLabel, string> = {
+  working: SEV_WORKING_SPINNER[0],
+  waiting: SEV_WAITING,
+  ready: SEV_READY,
+  stopped: SEV_STOPPED,
+  error: SEV_ERROR,
+};
 
 function sanitizeThreadName(raw: string): string {
   // Belt-and-braces: watchers already sanitize at their boundary, but the
@@ -77,11 +112,6 @@ function shortThreadId(id: string): string {
 }
 
 type SessionAgent = SessionData["agents"][number];
-
-function isLiveAgent(agent: SessionAgent): boolean {
-  return agent.liveness === "alive"
-    || (agent.liveness !== "exited" && !["done", "error", "interrupted"].includes(agent.status));
-}
 
 function liveFirstAgents(agents: readonly SessionAgent[]): SessionAgent[] {
   const live: SessionAgent[] = [];
@@ -208,8 +238,24 @@ function App() {
     return sessions.findIndex(s => s.name === name);
   });
 
+  // Wall clock for the liaison block's ages; ticks only while a liaison or a need shows.
+  const [nowMs, setNowMs] = createSignal(Date.now());
+
+  const liaisons = createMemo(() => findLiaisons(sessions));
+  const needs = createMemo(() => needsYou(sessions));
+
+  createEffect(() => {
+    if (liaisons().length === 0 && needs().length === 0) return;
+    setNowMs(Date.now());
+    const interval = setInterval(() => setNowMs(Date.now()), 1000);
+    onCleanup(() => clearInterval(interval));
+  });
+
+  const liaisonRows = createMemo(() =>
+    liaisons().reduce((rows, { session }) => rows + LIAISON_BASE_ROWS + (session.metadata?.status?.text ? 1 : 0), 0));
+
   const listBudgetRows = createMemo(() =>
-    Math.max(0, termDims().height - HEADER_ROWS));
+    Math.max(0, termDims().height - HEADER_ROWS - liaisonRows()));
 
   // Cards show every agent row; the scrolling session window absorbs the
   // height. "+N more" survives only as a guard when a single card on its own
@@ -793,6 +839,23 @@ function App() {
         </Show>
       </box>
 
+      {/* Liaison blocks: one per open liaison, pinned above everything else. */}
+      <box flexDirection="column" flexShrink={0}>
+        <For each={liaisons()}>
+          {(ref) => (
+            <LiaisonBlock
+              liaison={ref}
+              palette={P}
+              nowMs={nowMs}
+              fleet={() => fleetCounts(sessions)}
+              width={() => termDims().width}
+              needs={() => needsSummary(needs(), nowMs())}
+              needsCount={() => needs().length}
+            />
+          )}
+        </For>
+      </box>
+
       <box flexDirection="column" flexGrow={1} flexShrink={1} justifyContent="flex-end" gap={0}>
         <For each={listItems()}>
           {(item) => {
@@ -1133,21 +1196,7 @@ function AgentListItem(props: AgentListItemProps) {
   const [isFlash, setIsFlash] = createSignal(false);
 
   // Resolve the five-label scheme from tracker status + liveness
-  const label = (): "working" | "waiting" | "ready" | "stopped" | "error" => {
-    const s = props.agent.status;
-    if (s === "running") return "working";
-    if (s === "waiting") return "waiting";
-    if (s === "error") return "error";
-    // done/interrupted/idle — liveness determines ready vs stopped
-    // "alive" means pane scanner confirmed the process exists → ready at prompt
-    // "exited" means pane scanner saw it disappear → stopped
-    // undefined means no pane data (e.g. watcher-seeded, server just started)
-    //   → for terminal statuses (done/interrupted), assume stopped
-    //   → for idle (synthetic cold-start), assume ready
-    if (props.agent.liveness === "alive") return "ready";
-    if (s === "done" || s === "interrupted") return "stopped";
-    return "ready";
-  };
+  const label = (): StatusLabel => statusLabel(props.agent);
 
   const isUnseen = () => props.agent.unseen === true;
 
@@ -1161,15 +1210,7 @@ function AgentListItem(props: AgentListItemProps) {
     return SEV_READY;
   };
 
-  const color = () => {
-    const l = label();
-    if (l === "working") return P().blue;
-    if (l === "waiting") return P().yellow;
-    if (l === "ready") return P().green;
-    if (l === "stopped") return P().surface2;
-    if (l === "error") return P().red;
-    return P().surface2;
-  };
+  const color = () => statusColor(label(), P());
 
   const triggerFlash = () => {
     setIsFlash(true);
@@ -1257,6 +1298,86 @@ function AgentListItem(props: AgentListItemProps) {
           </text>
         </box>
       </box>
+    </box>
+  );
+}
+
+// --- Liaison Block ---
+
+interface LiaisonBlockProps {
+  liaison: SessionAgentRef;
+  palette: Accessor<ThemePalette>;
+  nowMs: Accessor<number>;
+  fleet: Accessor<{ label: StatusLabel; count: number }[]>;
+  width: Accessor<number>;
+  needs: Accessor<string>;
+  needsCount: Accessor<number>;
+}
+
+/** Heads-up rows for one liaison: who it is, the fleet, and what waits. */
+function LiaisonBlock(props: LiaisonBlockProps) {
+  const P = () => props.palette();
+  const label = () => statusLabel(props.liaison.agent);
+  const statusText = () => props.liaison.session.metadata?.status?.text ?? "";
+  const title = () => liaisonTitle(props.liaison.agent.threadName ?? "");
+  const age = () => formatAge(props.liaison.agent.ts, props.nowMs());
+  // Narrow sidebars keep the whole title and show only the age, in the status colour.
+  const headerFits = () => 2 + title().length + 1 + label().length + 1 + age().length <= props.width() - BLOCK_PAD;
+  const key = (k: string) => <span style={tier("muted", P())}>{k.padEnd(KEY_WIDTH)}</span>;
+  // Status words when they fit the row, else each status glyph with its count.
+  const fleetInWords = () => fleetFits(props.fleet(), props.width() - BLOCK_PAD - KEY_WIDTH);
+  return (
+    <box flexDirection="column" flexShrink={0}>
+    <box flexDirection="column" flexShrink={0} paddingLeft={1} paddingRight={1}>
+      <box flexDirection="row">
+        <text flexGrow={1} wrapMode="none">
+          <span style={{ fg: P().blue }}>{LIAISON_GLYPH}{" "}</span>
+          <span style={{ fg: P().text, attributes: BOLD }}>{title()}</span>
+        </text>
+        <text flexShrink={0} wrapMode="none">
+          <Show when={headerFits()} fallback={
+            <span style={{ fg: statusColor(label(), P()) }}>{" "}{age()}</span>
+          }>
+            <span style={{ fg: statusColor(label(), P()) }}>{" "}{label()}</span>
+            <span style={tier("muted", P())}>{" "}{age()}</span>
+          </Show>
+        </text>
+      </box>
+      <text wrapMode="none">
+        {key("fleet")}
+        <Show when={props.fleet().length > 0} fallback={<span style={tier("muted", P())}>none</span>}>
+          <Show when={fleetInWords()} fallback={
+            <For each={props.fleet()}>
+              {({ label, count }, i) => (
+                <span style={{ fg: statusColor(label, P()) }}>{i() > 0 ? " " : ""}{STATUS_GLYPHS[label]}{count}</span>
+              )}
+            </For>
+          }>
+            <span style={{ fg: P().subtext0 }}>{formatFleet(props.fleet())}</span>
+          </Show>
+        </Show>
+      </text>
+      <text wrapMode="none">
+        {key("needs")}
+        <span style={props.needsCount() > 0 ? { fg: P().peach } : tier("muted", P())}>{props.needs()}</span>
+      </text>
+      <Show when={statusText()}>
+        <text wrapMode="none">
+          {key("status")}
+          <span style={{ fg: P().subtext1 }}>{statusText()}</span>
+        </text>
+      </Show>
+    </box>
+    <BlockRule palette={P} />
+    </box>
+  );
+}
+
+/** Closing rule that sets a top block apart from what follows. */
+function BlockRule(props: { palette: Accessor<ThemePalette> }) {
+  return (
+    <box height={1} flexShrink={0} paddingLeft={1} paddingRight={1}>
+      <text wrapMode="none" style={{ fg: props.palette().surface2 }}>{"─".repeat(200)}</text>
     </box>
   );
 }

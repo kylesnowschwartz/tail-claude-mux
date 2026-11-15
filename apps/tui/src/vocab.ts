@@ -48,3 +48,7 @@ export { STATUSLINE_LAST_WINDOW, STATUSLINE_SHELL, AGENT_GLYPHS } from "@tcm/run
 export const BRAND_CLAWD = ID_CLAUDE_CODE;   // header product mark
 export const BRANCH_GLYPH = "\u{F062C}";     // nf-md-source-branch
 
+
+// ── Liaison block ──
+export const LIAISON_GLYPH = "\u{F1308}";   // nf-md-account-tie-voice
+
