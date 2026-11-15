@@ -5,6 +5,7 @@
 package server
 
 import (
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/activity"
 	"log"
 	"strings"
 	"time"
@@ -228,7 +229,23 @@ func (s *Server) emitLocked(ev wire.AgentEvent) {
 		}
 	}
 	s.Tracker.ApplyEvent(ev, !s.watchersSeeded)
+	s.recordStatusLocked(ev)
 	s.debouncedBroadcastLocked()
+}
+
+// recordStatusLocked appends the derived status change to the activity
+// record, including the ones a cold-start seed reconstructs.
+func (s *Server) recordStatusLocked(ev wire.AgentEvent) {
+	if s.Activity == nil {
+		return
+	}
+	err := s.Activity.AppendStatus(activity.Status{
+		TmuxSession: ev.Session, PaneID: ev.PaneID, SessionID: ev.ThreadID,
+		Status: ev.Status, ToolVerb: ev.ToolVerb,
+	})
+	if err != nil {
+		log.Printf("activity: append status: %v", err)
+	}
 }
 
 // lastSeen tracks the last thread name/status surfaced per thread so the

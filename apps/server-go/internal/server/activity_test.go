@@ -10,6 +10,10 @@ import (
 	"time"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/activity"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/state"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
@@ -100,4 +104,33 @@ func TestHookLineHoldsNoConversationContent(t *testing.T) {
 			t.Fatalf("record holds %q:\n%s", secret, text)
 		}
 	}
+}
+
+func TestMatchedHookEventRecordsHookThenStatus(t *testing.T) {
+	dir := t.TempDir()
+	s := New(&state.Builder{Tmux: &tmux.Tmux{Run: func(...string) (string, error) { return "", nil }}}, tracker.New(), ccwatch.New(t.TempDir(), t.TempDir()), nil, nil)
+	s.Activity = openActivity(t, dir, nil)
+	// A pending broadcast timer keeps emitLocked from scheduling a real one.
+	s.broadcastTimer = time.NewTimer(time.Hour)
+	s.broadcastTimer.Stop()
+	locked := func(fn func()) { s.mu.Lock(); defer s.mu.Unlock(); fn() }
+	s.Watcher.Start(&ccwatch.Context{
+		ResolveSession:      func(string) string { return "work" },
+		ResolveSessionByPid: func(int) string { return "work" },
+		Emit:                s.emitLocked,
+		Locked:              locked,
+	})
+	postHook(t, s, wire.HookPayload{Event: "UserPromptSubmit", SessionID: "sess-1", Cwd: "/project", Prompt: "hello"})
+
+	lines := readRecord(t, dir)
+	if len(lines) < 2 {
+		t.Fatalf("lines = %v", lines)
+	}
+	if lines[0]["kind"] != "hook" || lines[0]["seq"] != 1.0 || lines[1]["kind"] != "status" || lines[1]["seq"] != 2.0 {
+		t.Fatalf("lines = %v", lines)
+	}
+	if lines[1]["tmux_session"] != "work" || lines[1]["session_id"] != "sess-1" || lines[1]["status"] == "" {
+		t.Fatalf("status line = %v", lines[1])
+	}
+	t.Logf("record:\n%s", recordFileText(t, dir))
 }
