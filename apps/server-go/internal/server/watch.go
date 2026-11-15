@@ -181,6 +181,7 @@ func (s *Server) StartWatchers() {
 			Emit:                s.emitLocked,
 			Locked:              locked,
 			AttentionChanged:    s.debouncedBroadcastLocked,
+			PaneFocused:         s.paneFocusedLocked,
 		})
 		log.Printf("agent watcher started: %s", s.Watcher.Name())
 	}

@@ -171,6 +171,22 @@ func (t *Tmux) ListClients() []Client {
 	return clients
 }
 
+// FocusedPaneIDs returns the current pane of every attached client.
+// ok=false when tmux could not answer.
+func (t *Tmux) FocusedPaneIDs() (panes map[string]bool, ok bool) {
+	out, err := t.Run("list-clients", "-F", "#{pane_id}")
+	if err != nil {
+		return nil, false
+	}
+	panes = map[string]bool{}
+	for line := range strings.SplitSeq(out, "\n") {
+		if line != "" {
+			panes[line] = true
+		}
+	}
+	return panes, true
+}
+
 // CurrentSession resolves which session is "current" for a client
 // (client.ts resolveCurrentSession, verbatim semantics): with a clientTty,
 // that client's session or none; without one, the lone client's session

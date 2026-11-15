@@ -97,6 +97,10 @@ type Context struct {
 	Emit func(ev wire.AgentEvent)
 	// Locked runs fn under the server's state lock (async re-entry).
 	Locked func(fn func())
+	// PaneFocused reports whether an attached tmux client is looking at
+	// the pane of the thread in the session. nil, or false when unknown,
+	// lets every reason start.
+	PaneFocused func(session, threadID string) bool
 	// AttentionChanged reports that a hook changed a conversation's
 	// attention reason while emitting no event, so the server broadcasts
 	// state. Called with the server lock held; nil is allowed.
@@ -415,7 +419,9 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	// cannot end a question the user has not answered.
 	attentionChanged := a.Attention.Apply(threadID, attention.Event{
 		Hook: payload.Event, ToolName: payload.ToolName, NotificationType: payload.NotificationType,
-	}, a.now())
+	}, a.now(), func() bool {
+		return a.ctx.PaneFocused != nil && a.ctx.PaneFocused(session, threadID)
+	})
 
 	hasToolContext := payload.Event == "PreToolUse" || payload.Event == "PermissionRequest"
 	// PreToolUse fires exactly once per tool call, BEFORE the permission

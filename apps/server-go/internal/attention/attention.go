@@ -72,6 +72,17 @@ func Next(cur Reason, ev Event, nowMS int64) Reason {
 	return cur
 }
 
+// WhileFocused is the reason after an event that would start finished,
+// input, or error while the engineer looks at the conversation's pane: the
+// end of a turn leaves no reason, and an idle_prompt notification keeps the
+// current one.
+func WhileFocused(cur Reason, ev Event) Reason {
+	if ev.Hook == "Notification" {
+		return cur
+	}
+	return Reason{}
+}
+
 // endsOnFocus reports whether focusing the conversation's pane ends the
 // reason. An open permission question or question tool stays open.
 func endsOnFocus(name string) bool {
@@ -90,13 +101,19 @@ func NewStore() *Store {
 }
 
 // Apply runs the transition for one hook event and reports whether the
-// reason or its start time changed.
-func (s *Store) Apply(threadID string, ev Event, nowMS int64) bool {
+// reason or its start time changed. focused, when not nil, reports whether
+// the engineer is looking at the conversation's pane; it is asked only when
+// the event would start finished, input, or error, and a focused pane
+// starts none of them (see WhileFocused).
+func (s *Store) Apply(threadID string, ev Event, nowMS int64, focused func() bool) bool {
 	if threadID == "" {
 		return false
 	}
 	cur := s.reasons[threadID]
 	next := Next(cur, ev, nowMS)
+	if next != cur && endsOnFocus(next.Name) && focused != nil && focused() {
+		next = WhileFocused(cur, ev)
+	}
 	if next == cur {
 		return false
 	}

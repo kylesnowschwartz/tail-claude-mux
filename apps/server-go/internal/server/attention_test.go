@@ -20,9 +20,19 @@ import (
 // that always rebuilds.
 func newAttentionTestServer(t *testing.T) *Server {
 	t.Helper()
+	return newAttentionTestServerWithClients(t, func() (string, error) { return "", nil })
+}
+
+// newAttentionTestServerWithClients answers `tmux list-clients` with
+// clients, the focused pane of each attached client one per line.
+func newAttentionTestServerWithClients(t *testing.T, clients func() (string, error)) *Server {
+	t.Helper()
 	run := func(args ...string) (string, error) {
-		if args[0] == "list-sessions" {
+		switch args[0] {
+		case "list-sessions":
 			return "$1\twork\t100\t1\t1\t/p\t0", nil
+		case "list-clients":
+			return clients()
 		}
 		return "", nil
 	}
@@ -40,6 +50,7 @@ func newAttentionTestServer(t *testing.T) *Server {
 		Emit:                s.emitLocked,
 		Locked:              locked,
 		AttentionChanged:    s.debouncedBroadcastLocked,
+		PaneFocused:         s.paneFocusedLocked,
 	})
 	return s
 }
