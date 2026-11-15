@@ -43,8 +43,8 @@ and non-empty.
 Without `--attach-existing`, the launcher creates the tmux session named by
 `--session` and fails when that session exists. With `--attach-existing`, it
 opens a new window in the tmux session whose directory is `--repo` and leaves
-the current window selected. The directory of each tmux session comes from tcm
-state, or from tmux's `#{session_path}` when tcm does not answer. When no tmux
+the current window selected. The directory of a tmux session is tmux's
+`#{session_path}`, the directory the session was created in. When no tmux
 session has that directory, the launcher creates the one named by `--session`.
 
 `--agent pi` runs `pi` in the pane and waits for the pi row in

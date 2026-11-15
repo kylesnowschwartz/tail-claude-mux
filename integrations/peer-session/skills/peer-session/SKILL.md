@@ -62,8 +62,8 @@ apply to Claude Code peers only; pi cannot use them.
    ```
 
    With `--attach-existing`, the launcher opens a new window in the tmux
-   session whose directory is `--repo`. When no tmux session has that
-   directory, it creates one named by `--session`, so pass an unused tmux
+   session that was created in the `--repo` directory. When no tmux session
+   was created there, it creates one named by `--session`, so pass an unused tmux
    session name.
 
    Read its one JSON line. `ok` indicates success; `pane` is the exact tmux
