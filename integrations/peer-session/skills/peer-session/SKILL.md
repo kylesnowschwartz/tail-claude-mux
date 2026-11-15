@@ -109,7 +109,8 @@ apply to Claude Code peers only; pi cannot use them.
    them answer it. A folder-trust question is the person's decision.
    For `exited` or `unconfirmed`, read `pane_tail` and report it.
    For `timeout`, inspect once with the same command and report what you see.
-   Failures leave the pane running. Once the person has answered any
+   Failures leave the pane open; for `exited`, the program in it has
+   ended. Once the person has answered any
    dialog and Claude Code is at its prompt, find the peer with `ListAgents`
    (step 4) and send the full text of the brief with `SendMessage`.
    For pi, tell the person and let them decide how to deliver the brief.

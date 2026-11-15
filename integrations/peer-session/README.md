@@ -101,7 +101,8 @@ A pi launch adds `"agent":"pi"`.
 Failure exits nonzero with `ok:false` and `error`. Validation failures create
 nothing. After creation, a blocked trust dialog returns `ready:"dialog"`;
 a readiness timeout returns `ready:"timeout"`. Both include `pane`,
-`session`, and `prompt_sent:false` and leave the pane running for inspection.
+`session`, and `prompt_sent:false` and leave the pane open for inspection.
+After `ready:"exited"`, the program in the pane has ended.
 The launcher never kills a session, pane, or process.
 
 The launcher submits the initial brief through a tmux buffer. After a dialog
