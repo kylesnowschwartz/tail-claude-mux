@@ -15,7 +15,14 @@ export type AttentionReason = "permission" | "question" | "input" | "error" | "f
 export type AttentionAgent = AgentEvent & {
   attention?: AttentionReason;
   attentionSince?: number;
+  /** When the row's current status started, in epoch ms. */
+  statusSince?: number;
 };
+
+/** When the conversation entered its current status; the last event time when the server does not say. */
+export function statusStart(agent: AttentionAgent): number {
+  return agent.statusSince ?? agent.ts;
+}
 
 /** The sidebar's five row labels, derived from tracker status + liveness. */
 export type StatusLabel = "working" | "waiting" | "ready" | "stopped" | "error";

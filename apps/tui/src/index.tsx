@@ -46,6 +46,7 @@ import {
   needsSummary,
   needsYou,
   statusLabel,
+  statusStart,
   type AttentionReason,
   type SessionAgentRef,
   type StatusLabel,
@@ -1411,7 +1412,7 @@ function LiaisonBlock(props: LiaisonBlockProps) {
   const label = () => statusLabel(props.liaison.agent);
   const statusText = () => props.liaison.session.metadata?.status?.text ?? "";
   const title = () => liaisonTitle(props.liaison.agent.threadName ?? "");
-  const age = () => formatAge(props.liaison.agent.ts, props.nowMs());
+  const age = () => formatAge(statusStart(props.liaison.agent), props.nowMs());
   // Narrow sidebars keep the whole title and show only the age, in the status colour.
   const headerFits = () => 2 + title().length + 1 + label().length + 1 + age().length <= props.width() - BLOCK_PAD;
   const key = (k: string) => <span style={tier("muted", P())}>{k.padEnd(KEY_WIDTH)}</span>;

@@ -12,6 +12,7 @@ import {
   needsSummary,
   needsYou,
   statusLabel,
+  statusStart,
   type AttentionAgent,
 } from "./attention";
 
@@ -150,5 +151,12 @@ describe("liaisonBlockRows", () => {
     expect(liaisonBlockRows(0, true)).toBe(5);
     expect(liaisonBlockRows(1, false)).toBe(2);
     expect(liaisonBlockRows(1, true)).toBe(3);
+  });
+});
+
+describe("statusStart", () => {
+  test("uses statusSince, falling back to ts", () => {
+    expect(statusStart(agent({ ts: NOW, statusSince: NOW - 5 * MIN }))).toBe(NOW - 5 * MIN);
+    expect(statusStart(agent({ ts: NOW }))).toBe(NOW);
   });
 });
