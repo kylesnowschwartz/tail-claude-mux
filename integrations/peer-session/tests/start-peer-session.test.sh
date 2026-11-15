@@ -13,6 +13,7 @@ python3 - "$@" >> "$CALL_LOG" <<'PY'
 import json, sys
 print(json.dumps(sys.argv[1:]))
 PY
+[[ "$1" != "${FAIL_CMD:-}" ]] || exit 1
 case "$1" in
     has-session) [[ "$EXISTING" == 1 ]] ;;
     new-session|new-window) printf '%%128\n' ;;
@@ -229,7 +230,8 @@ else:
               "close-busy": ("timeout", "no idle conversation"),
               "close-changed": ("unconfirmed", "'running'"),
               "close-gone": ("unconfirmed", "tcm gave no answer"),
-              "close-dead": ("exited", "kept for reading")}[case]
+              "close-dead": ("exited", "kept for reading"),
+              "close-dialog": ("dialog", "trust dialog")}[case]
     require(v["ready"] == expect[0] and expect[1] in v["error"], "details: " + str(v))
     if v["ready"] == "unconfirmed":
         load = calls[names.index("load-buffer")]
@@ -259,6 +261,17 @@ rm "$FAKE_STATE.1"
 printf '1\n' > "$FAKE_PANE.dead"
 run "$tmp/prompt" --close-on-exit; close_check close-dead
 rm "$FAKE_PANE.dead"
+printf 'Claude input\n' > "$FAKE_PANE"
+export FAIL_CMD=paste-buffer
+run "$tmp/prompt" --close-on-exit
+FAIL_CMD=
+python3 - "$tmp/out" "$code" <<'PY'
+import json, sys
+v = json.loads(open(sys.argv[1]).read())
+if sys.argv[2] == "0" or v["error"] != "Command failed; tmux session 'peer' remains running." or "pane_tail" in v:
+    sys.exit("FAIL close-paste-fails: " + str(v))
+print("PASS close-paste-fails")
+PY
 printf 'say "hi" \\ back\tslash\nbefore \377 after\n' > "$FAKE_PANE"
 SERVER_DOWN=1
 run "$tmp/prompt" --close-on-exit

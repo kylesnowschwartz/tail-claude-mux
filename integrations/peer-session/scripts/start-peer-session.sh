@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage='start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--close-on-exit] [--agent claude|pi] [--window <name>] [--name <name>] [--session-id <uuid>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]'
 repo='' session='' prompt_file='' pane='' ready='' peer_name='' window='' permission_mode='' name='' session_id='' pane_tail=''
-agent=claude attach=0 close_on_exit=0 tcm_seen=0 session_id_set=0 ready_timeout=60 port=${TCM_PORT:-7391}
+agent=claude attach=0 close_on_exit=0 tcm_seen=0 remain_off=0 session_id_set=0 ready_timeout=60 port=${TCM_PORT:-7391}
 result() {
     python3 - "$1" "$2" "$pane" "$session" "$ready" "$peer_name" "$agent" "$pane_tail" <<'PY'
 import json, sys
@@ -38,7 +38,7 @@ unexpected() {
     trap - ERR
     if [[ -n "$pane" ]]; then
         ready=${ready:-timeout}
-        if (( close_on_exit )); then
+        if (( close_on_exit && ! remain_off )); then
             fail_kept "Command failed; the pane is kept for reading."
         fi
         fail "Command failed; tmux session '$session' remains running."
@@ -240,6 +240,7 @@ except (ValueError, TypeError, AttributeError):
         ready=unconfirmed
         fail_kept "The conversation status changed to '${status:-none}' before the paste; nothing was pasted and the pane is kept for reading."
     fi
+    remain_off=1
     tmux set-option -p -t "$pane" remain-on-exit off >&2
 fi
 tmux paste-buffer -p -d -b "$buffer" -t "$pane" >&2
