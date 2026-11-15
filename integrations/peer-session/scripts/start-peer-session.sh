@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-usage='start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--agent claude|pi] [--window <name>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]'
+usage='start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--agent claude|pi] [--window <name>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]'
 repo='' session='' prompt_file='' pane='' ready='' peer_name='' window='' permission_mode=''
-agent=claude ready_timeout=60 port=${TCM_PORT:-7391}
+agent=claude attach=0 ready_timeout=60 port=${TCM_PORT:-7391}
 result() {
     python3 - "$1" "$2" "$pane" "$session" "$ready" "$peer_name" "$agent" <<'PY'
 import json, sys
@@ -43,6 +43,7 @@ while [[ $# -gt 0 ]]; do
                 --ready-timeout) ready_timeout=$2 ;; --port) port=$2 ;;
             esac
             shift 2 ;;
+        --attach-existing) attach=1; shift ;;
         *) fail "Unknown argument: $1. Usage: $usage" ;;
     esac
 done
@@ -66,10 +67,46 @@ ready_timeout=$((10#$ready_timeout))
 port=$((10#$port))
 (( port > 0 && port <= 65535 )) || fail "--port must be an integer from 1 to 65535."
 [[ "$agent" == pi || "$permission_mode" =~ ^[a-zA-Z0-9_-]+$ ]] || fail "--permission-mode must be a mode name."
-if tmux has-session -t "=$session" 2>/dev/null; then
-    fail "tmux session '$session' already exists."
+# Prints the name of the first tmux session whose directory is --repo.
+# Stdin is tcm state JSON for "state", or "<path><tab><name>" lines for "tmux".
+session_for_repo() {
+    python3 -c '
+import json, os, sys
+repo = os.path.realpath(sys.argv[1])
+text = sys.stdin.read()
+try:
+    if sys.argv[2] == "state":
+        rows = [(s.get("dir"), s.get("name")) for s in json.loads(text).get("sessions", [])]
+    else:
+        rows = [line.split("\t", 1) for line in text.splitlines() if "\t" in line]
+    for path, name in rows:
+        if path and name and os.path.realpath(path) == repo:
+            print(name)
+            break
+except (ValueError, TypeError, AttributeError):
+    pass
+' "$repo" "$1"
+}
+existing=
+if (( attach )); then
+    # tcm's directory for a tmux session is the one its sidebar shows; tmux's
+    # own session path is the source only when tcm does not answer.
+    if state=$(curl --fail --silent --show-error --max-time 1 "http://127.0.0.1:$port/state" 2>/dev/null); then
+        existing=$(printf '%s' "$state" | session_for_repo state)
+    else
+        sessions=$(tmux list-sessions -F '#{session_path}	#{session_name}' 2>/dev/null) || sessions=
+        existing=$(printf '%s\n' "$sessions" | session_for_repo tmux)
+    fi
 fi
-pane=$(tmux new-session -d -P -F '#{pane_id}' -s "$session" -n "$window" -x 200 -y 50 -c "$repo")
+if [[ -n "$existing" ]]; then
+    pane=$(tmux new-window -d -P -F '#{pane_id}' -t "=$existing:" -n "$window" -c "$repo")
+    session=$existing
+else
+    if tmux has-session -t "=$session" 2>/dev/null; then
+        fail "tmux session '$session' already exists."
+    fi
+    pane=$(tmux new-session -d -P -F '#{pane_id}' -s "$session" -n "$window" -x 200 -y 50 -c "$repo")
+fi
 tmux send-keys -t "$pane" "$launch" Enter >&2
 elapsed=0 stable=0 previous=
 name_wait_polls=5

@@ -5,7 +5,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir "$tmp/bin"
 export CALL_LOG="$tmp/calls" FAKE_STATE="$tmp/state" FAKE_PANE="$tmp/pane"
-export EXISTING=0 SERVER_DOWN=0 FAKE_COUNT="$tmp/count"
+export EXISTING=0 SERVER_DOWN=0 FAKE_COUNT="$tmp/count" FAKE_SESSIONS="$tmp/sessions"
 cat > "$tmp/bin/tmux" <<'FAKE'
 #!/usr/bin/env bash
 set -eu
@@ -15,7 +15,8 @@ print(json.dumps(sys.argv[1:]))
 PY
 case "$1" in
     has-session) [[ "$EXISTING" == 1 ]] ;;
-    new-session) printf '%%128\n' ;;
+    new-session|new-window) printf '%%128\n' ;;
+    list-sessions) cat "$FAKE_SESSIONS" ;;
     capture-pane) cat "$FAKE_PANE" ;;
 esac
 FAKE
@@ -60,30 +61,44 @@ events = (p / "calls").read_text().splitlines()
 calls = [json.loads(s) for s in events if s != "curl"]
 names = [c[0] for c in calls]
 pi = case.startswith("pi-")
-if case in ("existing", "missing", "empty", "pi-mode", "bad-agent"):
+if case in ("existing", "attach-taken", "missing", "empty", "pi-mode", "bad-agent"):
     require(code != 0 and v["ok"] is False, "validation must fail")
     require("new-session" not in names, "validation created session")
+    if case in ("existing", "attach-taken"):
+        require(v == {"ok": False, "error": "tmux session 'peer' already exists."}, "existing session error")
     if case == "pi-mode":
         require("--permission-mode" in v["error"], "pi mode error")
     if case == "bad-agent":
         require("--agent" in v["error"], "agent error")
 else:
-    require(names[:3] == ["has-session", "new-session", "send-keys"], "startup order")
-    require(calls[0] == ["has-session", "-t", "=peer"], "exact session match")
-    require(calls[1] == ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s",
-                        "peer", "-n", "pi" if pi else "claude", "-x", "200", "-y", "50", "-c", str(p)],
-            "session arguments")
-    require(calls[2] == ["send-keys", "-t", "%128",
-                         "pi" if pi else "claude --permission-mode auto", "Enter"],
+    if case in ("attach-match", "attach-tmux"):
+        lookup = ["list-sessions"] if case == "attach-tmux" else []
+        require(names[:len(lookup) + 2] == lookup + ["new-window", "send-keys"], "startup order")
+        require("has-session" not in names and "new-session" not in names, "attach created session")
+        require(calls[len(lookup)] == ["new-window", "-d", "-P", "-F", "#{pane_id}", "-t",
+                                       "=work:", "-n", "claude", "-c", str(p)],
+                "window arguments")
+        require(v["session"] == "work", "session field names the existing session")
+        launch = calls[len(lookup) + 1]
+    else:
+        require(names[:3] == ["has-session", "new-session", "send-keys"], "startup order")
+        require(calls[0] == ["has-session", "-t", "=peer"], "exact session match")
+        require(calls[1] == ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s",
+                            "peer", "-n", "pi" if pi else "claude", "-x", "200", "-y", "50", "-c", str(p)],
+                "session arguments")
+        require(v["session"] == "peer", "session field")
+        launch = calls[2]
+    require(launch == ["send-keys", "-t", "%128",
+                       "pi" if pi else "claude --permission-mode auto", "Enter"],
             "launch command")
     require(v.get("agent") == ("pi" if pi else None), "agent field")
     for c in calls[2:]:
         if c[0] != "load-buffer":
             require("-t" in c and c[c.index("-t")+1] == "%128", "pane target: " + str(c))
-    if case in ("idle", "fallback", "delayed", "unnamed", "pi-idle"):
+    if case in ("idle", "fallback", "delayed", "unnamed", "pi-idle", "attach-match", "attach-tmux", "attach-none"):
         require(code == 0 and v["ok"] and v["prompt_sent"], "success")
-        require(v["ready"] == ("pane-stable" if case == "fallback" else "idle"), "ready")
-        require(v["peer_name"] == ("other-project" if case in ("idle", "delayed", "pi-idle") else ""), "peer")
+        require(v["ready"] == ("pane-stable" if case in ("fallback", "attach-tmux") else "idle"), "ready")
+        require(v["peer_name"] == ("other-project" if case in ("idle", "delayed", "pi-idle", "attach-match", "attach-none") else ""), "peer")
         require(names[-3:] == ["load-buffer", "paste-buffer", "send-keys"], "prompt order")
         if case == "delayed":
             require(events.count("curl") == 3, "name poll count")
@@ -133,3 +148,15 @@ printf '%s\n' '{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","s
 run "$tmp/prompt" --agent pi; check pi-timeout
 run "$tmp/prompt" --agent pi --permission-mode auto; check pi-mode
 run "$tmp/prompt" --agent codex; check bad-agent
+printf 'Claude input\n' > "$FAKE_PANE"
+agents='"agents":[{"agent":"claude-code","paneId":"%128","status":"idle","threadName":"other-project"}]'
+printf '{"sessions":[{"name":"work","dir":"%s",%s}]}\n' "$tmp" "$agents" > "$FAKE_STATE"
+run "$tmp/prompt" --attach-existing; check attach-match
+printf '{"sessions":[{"name":"work","dir":"%s/elsewhere",%s}]}\n' "$tmp" "$agents" > "$FAKE_STATE"
+run "$tmp/prompt" --attach-existing; check attach-none
+EXISTING=1
+run "$tmp/prompt" --attach-existing; check attach-taken
+EXISTING=0
+SERVER_DOWN=1
+printf '%s/elsewhere\tother\n%s\twork\n' "$tmp" "$tmp" > "$FAKE_SESSIONS"
+run "$tmp/prompt" --attach-existing; check attach-tmux
