@@ -97,6 +97,7 @@ type Writer struct {
 	mu        sync.Mutex
 	seq       int64
 	day       string // day of the open file
+	newestDay string // newest day file written or found on disk
 	file      *os.File
 	prunedDay string // day retention last ran
 }
@@ -121,6 +122,9 @@ func Open(dir string, now func() time.Time) (*Writer, error) {
 		return nil, err
 	}
 	w.seq = seq
+	if days, err := dayFiles(dir); err == nil && len(days) > 0 {
+		w.newestDay = days[len(days)-1]
+	}
 	return w, nil
 }
 
@@ -182,10 +186,15 @@ func (w *Writer) append(build func(seq, ms int64) any) error {
 }
 
 // rollLocked opens the file for now's day, and runs retention once per day.
+// It never moves to a day earlier than the newest day file: a clock that
+// steps back keeps appending to the newest file until its date is later.
 func (w *Writer) rollLocked(now time.Time) error {
 	day := now.Format(dayLayout)
 	if w.prunedDay != day {
 		w.pruneLocked(now)
+	}
+	if day < w.newestDay {
+		day = w.newestDay
 	}
 	if w.file != nil && w.day == day {
 		return nil
@@ -208,7 +217,7 @@ func (w *Writer) rollLocked(now time.Time) error {
 			}
 		}
 	}
-	w.file, w.day = f, day
+	w.file, w.day, w.newestDay = f, day, day
 	return nil
 }
 

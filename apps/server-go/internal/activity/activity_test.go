@@ -216,3 +216,38 @@ func TestReadOpensOnlyFilesAfterSinceAndStopsAtLimit(t *testing.T) {
 		t.Fatalf("starting file read past the limit: %v of %d", n, size(days[2]))
 	}
 }
+
+func TestClockSteppingBackKeepsTheNewestFile(t *testing.T) {
+	dir := t.TempDir()
+	c := &clock{t: time.Date(2026, 11, 15, 0, 0, 1, 0, time.Local)}
+	w := open(t, dir, c)
+	for range 3 {
+		_ = w.AppendHook(Hook{Event: "E"})
+	}
+	c.t = c.t.Add(-2 * time.Second)
+	_ = w.AppendHook(Hook{Event: "E"})
+	_ = w.Close()
+
+	w2 := open(t, dir, c)
+	_ = w2.AppendHook(Hook{Event: "E"})
+
+	if days, _ := dayFiles(dir); len(days) != 1 || days[0] != "2026-11-15" {
+		t.Fatalf("days = %v", days)
+	}
+	got := seqsIn(t, dir)
+	for i, seq := range got {
+		if seq != int64(i+1) {
+			t.Fatalf("seqs = %v, want 1..5", got)
+		}
+	}
+	if len(got) != 5 {
+		t.Fatalf("seqs = %v, want 1..5", got)
+	}
+
+	// Once the clock's date is later, writes move to the new day.
+	c.t = time.Date(2026, 11, 16, 0, 0, 1, 0, time.Local)
+	_ = w2.AppendHook(Hook{Event: "E"})
+	if days, _ := dayFiles(dir); len(days) != 2 {
+		t.Fatalf("days = %v", days)
+	}
+}
