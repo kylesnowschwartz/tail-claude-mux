@@ -179,6 +179,11 @@ func (w *Writer) append(build func(seq, ms int64) any) error {
 	}
 	data = append(data, '\n')
 	if _, err := w.file.Write(data); err != nil {
+		// The write may have left a fragment. Closing the file makes the
+		// next append reopen it, and reopening a file that ends mid-line
+		// starts a new line.
+		_ = w.file.Close()
+		w.file = nil
 		return err
 	}
 	w.seq++

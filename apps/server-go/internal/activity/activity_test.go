@@ -251,3 +251,25 @@ func TestClockSteppingBackKeepsTheNewestFile(t *testing.T) {
 		t.Fatalf("days = %v", days)
 	}
 }
+
+func TestAppendAfterFailedWriteStartsOnNewLine(t *testing.T) {
+	dir, c := t.TempDir(), newClock()
+	w := open(t, dir, c)
+	_ = w.AppendHook(Hook{Event: "A"})
+	// A write cut short: a fragment is on disk and the writer's file fails.
+	path := filepath.Join(dir, c.t.Format(dayLayout)+fileExt)
+	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	_, _ = f.WriteString(`{"seq":2,"kind":"ho`)
+	_ = f.Close()
+	_ = w.file.Close()
+	if err := w.AppendHook(Hook{Event: "B"}); err == nil {
+		t.Fatal("append to a failed file succeeded")
+	}
+
+	if err := w.AppendHook(Hook{Event: "C"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := seqsIn(t, dir); len(got) != 2 || got[1] != 2 {
+		t.Fatalf("seqs = %v, want [1 2]", got)
+	}
+}
