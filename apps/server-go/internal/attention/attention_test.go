@@ -135,3 +135,22 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Fatal("Forget kept the reason")
 	}
 }
+
+func TestRestoreFromRebuiltStatus(t *testing.T) {
+	s := NewStore()
+	if !s.Restore("w", "waiting", 5) || s.Get("w") != (Reason{Permission, 5}) {
+		t.Fatalf("waiting: %+v", s.Get("w"))
+	}
+	if !s.Restore("e", "error", 6) || s.Get("e") != (Reason{Error, 6}) {
+		t.Fatalf("error: %+v", s.Get("e"))
+	}
+	for _, st := range []string{"done", "running", "idle", "interrupted"} {
+		if s.Restore("x", st, 7) {
+			t.Fatalf("%s restored a reason", st)
+		}
+	}
+	s.Apply("h", ev("Stop", "", ""), 1)
+	if s.Restore("h", "error", 9) || s.Get("h") != (Reason{Finished, 1}) {
+		t.Fatalf("held reason overwritten: %+v", s.Get("h"))
+	}
+}

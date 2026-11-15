@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
@@ -33,5 +34,38 @@ func TestExitedRowServesNoAttention(t *testing.T) {
 	s.mu.Unlock()
 	if ev := agentByThread(t, s, "a"); ev.Attention != "" || ev.AttentionSince != 0 {
 		t.Fatalf("exited row serves attention: %+v", ev)
+	}
+}
+
+func TestPaneScanRestoresPermissionFromOpenDialog(t *testing.T) {
+	s := newAttentionTestServer(t)
+	dialogAt := time.Now().UnixMilli() - 5000
+	reading := scanReading{
+		ev:    wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "a", PID: 42, PaneID: "%1", TS: time.Now().UnixMilli()},
+		state: tracker.ScanState{ThreadID: "a", WaitingSinceMS: dialogAt},
+	}
+	s.mu.Lock()
+	s.applyScanReadingLocked(reading)
+	s.mu.Unlock()
+	if ev := agentByThread(t, s, "a"); ev.Attention != "permission" || ev.AttentionSince != dialogAt {
+		t.Fatalf("restored = %q at %d, want permission at %d", ev.Attention, ev.AttentionSince, dialogAt)
+	}
+}
+
+func TestPaneScanRestoreKeepsHookReason(t *testing.T) {
+	s := newAttentionTestServer(t)
+	q := ccHook("PreToolUse", "a")
+	q.ToolName = "AskUserQuestion"
+	postHook(t, s, q)
+	held := s.Watcher.Attention.Get("a")
+	reading := scanReading{
+		ev:    wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "a", TS: time.Now().UnixMilli()},
+		state: tracker.ScanState{ThreadID: "a", WaitingSinceMS: time.Now().UnixMilli() + 1000},
+	}
+	s.mu.Lock()
+	s.applyScanReadingLocked(reading)
+	s.mu.Unlock()
+	if got := s.Watcher.Attention.Get("a"); got != held {
+		t.Fatalf("hook reason overwritten: %+v, held %+v", got, held)
 	}
 }

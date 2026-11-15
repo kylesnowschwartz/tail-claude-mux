@@ -806,6 +806,7 @@ func (a *Adapter) seedFromJSONL() {
 				ThreadName: threadName,
 				PID:        pid,
 			})
+			a.Attention.Restore(threadID, latestStatus, ts)
 		}
 	}
 }

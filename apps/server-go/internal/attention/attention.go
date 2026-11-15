@@ -130,3 +130,26 @@ func (s *Store) Forget(threadID string) bool {
 	delete(s.reasons, threadID)
 	return ok
 }
+
+// Restore rebuilds a reason from a status that state rebuilt from disk:
+// "waiting" becomes permission and "error" becomes error, each starting at
+// sinceMS. A thread that holds a reason keeps it. Reports whether it set one.
+func (s *Store) Restore(threadID, status string, sinceMS int64) bool {
+	if threadID == "" {
+		return false
+	}
+	if _, held := s.reasons[threadID]; held {
+		return false
+	}
+	var name string
+	switch status {
+	case "waiting":
+		name = Permission
+	case "error":
+		name = Error
+	default:
+		return false
+	}
+	s.reasons[threadID] = Reason{Name: name, SinceMS: sinceMS}
+	return true
+}

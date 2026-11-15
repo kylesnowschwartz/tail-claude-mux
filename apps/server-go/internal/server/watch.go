@@ -418,15 +418,9 @@ func (s *Server) paneScanLoop() {
 		}
 		changed := false
 		for _, reading := range readings {
-			previous := s.Tracker.GetEvent(reading.ev.Session, reading.ev.Agent, reading.ev.ThreadID, reading.ev.PaneID)
-			ev, ok := scanEventOver(previous, reading.ev, reading.state)
-			if !ok {
-				continue
-			}
-			if previous == nil || previous.Status != ev.Status {
+			if s.applyScanReadingLocked(reading) {
 				changed = true
 			}
-			s.Tracker.ApplyEvent(ev, false)
 		}
 		for _, r := range piActivity {
 			for _, ev := range s.PiWatcher.Resolve(r) {
@@ -453,6 +447,23 @@ func (s *Server) paneScanLoop() {
 		}
 		s.mu.Unlock()
 	}
+}
+
+// applyScanReadingLocked folds one pane's scan reading into the tracker
+// and reports whether the row's status changed. Runs with s.mu held.
+func (s *Server) applyScanReadingLocked(reading scanReading) bool {
+	previous := s.Tracker.GetEvent(reading.ev.Session, reading.ev.Agent, reading.ev.ThreadID, reading.ev.PaneID)
+	ev, ok := scanEventOver(previous, reading.ev, reading.state)
+	if !ok {
+		return false
+	}
+	s.Tracker.ApplyEvent(ev, false)
+	// A status rebuilt from the agent's own record, such as a dialog open
+	// before the server started, rebuilds its attention reason.
+	if ev.Agent == "claude-code" && s.Watcher != nil {
+		s.Watcher.Attention.Restore(ev.ThreadID, ev.Status, ev.TS)
+	}
+	return previous == nil || previous.Status != ev.Status
 }
 
 // livePiPids maps each Pi process id one pane scan found to its tmux
