@@ -51,6 +51,7 @@ export const BRANCH_GLYPH = "\u{F062C}";     // nf-md-source-branch
 
 // ── Liaison block ──
 export const LIAISON_GLYPH = "\u{F1308}";   // nf-md-account-tie-voice
+export const LIAISON_WORKER_GLYPH = "\u{F060D}"; // nf-md-subdirectory_arrow_right: a row an open liaison started
 
 // ── "Needs you" block ──
 export const NEEDS_GLYPH = "\u{F1295}";     // nf-md-tray-alert

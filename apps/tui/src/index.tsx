@@ -30,6 +30,7 @@ import {
   BRANCH_GLYPH,
   AGENT_GLYPHS,
   LIAISON_GLYPH,
+  LIAISON_WORKER_GLYPH,
   NEEDS_GLYPH,
   REASON_GLYPHS,
 } from "./vocab";
@@ -40,9 +41,12 @@ import {
   formatAge,
   fleetFits,
   formatFleet,
+  formatWorkers,
+  isLiaisonWorker,
   isLiveAgent,
   liaisonBlockRows,
   liaisonTitle,
+  liaisonWorkerCount,
   needsSummary,
   needsYou,
   statusLabel,
@@ -275,7 +279,8 @@ function App() {
   });
 
   const liaisonRows = createMemo(() =>
-    liaisons().reduce((rows, { session }, i) => rows + liaisonBlockRows(i, !!session.metadata?.status?.text), 0));
+    liaisons().reduce((rows, { session, agent }, i) =>
+      rows + liaisonBlockRows(i, !!session.metadata?.status?.text, liaisonWorkerCount(sessions, agent) > 0), 0));
 
   // The needs block takes up to half of what the header and liaison blocks
   // leave; past that it scrolls with its own ▲/▼ indicators.
@@ -922,6 +927,7 @@ function App() {
               palette={P}
               nowMs={nowMs}
               fleet={() => fleetCounts(sessions)}
+              workers={() => liaisonWorkerCount(sessions, ref.agent)}
               width={() => termDims().width}
               needs={() => needsSummary(needs(), nowMs())}
               needsCount={() => needs().length}
@@ -985,6 +991,7 @@ function App() {
                   panelFocus={panelFocus}
                   focusedAgentIdx={focusedAgentIdx}
                   focusedPaneId={focusedPaneId}
+                  liaisons={liaisons}
                   onAgentDismiss={(agent) => {
                     send({
                       type: "dismiss-agent",
@@ -1276,6 +1283,8 @@ interface AgentListItemProps {
   isSessionSelected: boolean;
   isKeyboardFocused: boolean;
   isPaneFocused: boolean;
+  /** An open liaison started this conversation; the row shows the worker mark before its name. */
+  isLiaisonWorker: boolean;
   onDismiss: () => void;
   onFocusPane: () => void;
 }
@@ -1379,8 +1388,11 @@ function AgentListItem(props: AgentListItemProps) {
             </Show>
             {/* Session name from the agent-ouija registry when known;
                 the 4-char uuid suffix is the fallback identity. */}
+            <Show when={props.isLiaisonWorker}>
+              <span style={{ fg: P().blue }}>{"  "}{LIAISON_WORKER_GLYPH}</span>
+            </Show>
             <Show when={props.agent.threadName || props.agent.threadId}>
-              <span style={focusTinted(supportingStyle())}>{"  "}{props.agent.threadName || shortThreadId(props.agent.threadId!)}</span>
+              <span style={focusTinted(supportingStyle())}>{props.isLiaisonWorker ? " " : "  "}{props.agent.threadName || shortThreadId(props.agent.threadId!)}</span>
             </Show>
           </text>
           <text flexShrink={0} style={{ fg: color() }}>
@@ -1399,6 +1411,8 @@ interface LiaisonBlockProps {
   palette: Accessor<ThemePalette>;
   nowMs: Accessor<number>;
   fleet: Accessor<{ label: StatusLabel; count: number }[]>;
+  /** Count of conversations this liaison started; the work row shows when it is above zero. */
+  workers: Accessor<number>;
   width: Accessor<number>;
   needs: Accessor<string>;
   needsCount: Accessor<number>;
@@ -1456,6 +1470,15 @@ function LiaisonBlock(props: LiaisonBlockProps) {
         {key("needs")}
         <span style={props.needsCount() > 0 ? { fg: P().peach } : tier("muted", P())}>{props.needs()}</span>
       </text>
+      </Show>
+      </box>
+      <box flexDirection="column">
+      <Show when={props.workers() > 0}>
+        <text wrapMode="none">
+          {key("work")}
+          <span style={{ fg: P().blue }}>{LIAISON_WORKER_GLYPH}{" "}</span>
+          <span style={{ fg: P().subtext0 }}>{formatWorkers(props.workers(), props.width() - BLOCK_PAD - KEY_WIDTH - 2)}</span>
+        </text>
       </Show>
       </box>
       <box flexDirection="column">
@@ -1554,6 +1577,8 @@ interface SessionCardProps {
   panelFocus: Accessor<"sessions" | "agents">;
   focusedAgentIdx: Accessor<number>;
   focusedPaneId: Accessor<string | null>;
+  /** Open liaisons; a row that one of them started shows the worker mark. */
+  liaisons: Accessor<SessionAgentRef[]>;
   onAgentDismiss: (agent: SessionData["agents"][number]) => void;
   onAgentFocus: (agent: SessionData["agents"][number]) => void;
 }
@@ -1643,6 +1668,7 @@ function SessionCard(props: SessionCardProps) {
               isSessionSelected={props.isSelected}
               isKeyboardFocused={props.isSelected && props.panelFocus() === "agents" && i() === props.focusedAgentIdx()}
               isPaneFocused={agent.paneId != null && agent.paneId === props.focusedPaneId()}
+              isLiaisonWorker={isLiaisonWorker(agent, props.liaisons())}
               onDismiss={() => props.onAgentDismiss(agent)}
               onFocusPane={() => props.onAgentFocus(agent)}
             />

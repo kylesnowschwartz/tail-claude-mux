@@ -21,9 +21,12 @@ While a Claude Code conversation named exactly `liaison`, or starting with `liai
 - Header: `LIAISON` plus the rest of the name, and the liaison's own status and how long it has been in that status
 - `fleet`: the number of conversations in each status across all sessions; on narrow sidebars, each status glyph with its count
 - `needs`: the number of conversations that need the engineer and the age of the oldest, or `none`
+- `work`: the count of conversations that this liaison started, such as `3 workers`, when it is above zero; a sidebar too narrow for the words shows the number only
 - `status`: the liaison's tmux session status text, when one is set through `POST /set-status`
 
-With two or more liaisons open, the `fleet` and `needs` rows appear once, in the first block; each further block shows its header and `status` rows only.
+With two or more liaisons open, the `fleet` and `needs` rows appear once, in the first block; each further block shows its header, `work`, and `status` rows only.
+
+A conversation that an open liaison started shows a blue arrow mark before its name in its session card. The row stays in its place in the card. The mark and the count come from the `liaisonParentThreadId` field in `GET /state`, an unverified claim for display; see [programmatic-api.md](./programmatic-api.md).
 
 ## Needs You Block
 

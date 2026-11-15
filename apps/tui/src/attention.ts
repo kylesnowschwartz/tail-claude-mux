@@ -82,6 +82,32 @@ export function findLiaisons(sessions: readonly SessionData[]): SessionAgentRef[
     .sort((a, b) => a.agent.threadName!.localeCompare(b.agent.threadName!));
 }
 
+/**
+ * Whether `agent` claims that the liaison `liaison` started it: its
+ * `liaisonParentThreadId` equals the liaison's thread ID. The server reads
+ * the claim from tmux pane options that any program can set, so it is for
+ * display only.
+ */
+function startedBy(agent: AttentionAgent, liaison: AttentionAgent): boolean {
+  return !!liaison.threadId && agent.liaisonParentThreadId === liaison.threadId && agent !== liaison;
+}
+
+/** Whether a row shows the worker mark: an open liaison started it. */
+export function isLiaisonWorker(agent: AttentionAgent, liaisons: readonly SessionAgentRef[]): boolean {
+  return liaisons.some((liaison) => startedBy(agent, liaison.agent));
+}
+
+/** Count of conversations, across every session, that the liaison started. */
+export function liaisonWorkerCount(sessions: readonly SessionData[], liaison: AttentionAgent): number {
+  return allAgents(sessions).filter(({ agent }) => startedBy(agent, liaison)).length;
+}
+
+/** The `work` row value: "3 workers", or the bare count when the words do not fit in `columns`. */
+export function formatWorkers(count: number, columns: number): string {
+  const words = `${count} ${count === 1 ? "worker" : "workers"}`;
+  return words.length <= columns ? words : String(count);
+}
+
 /** Count of conversations per status label across every session, in label order, zeros omitted. */
 export function fleetCounts(sessions: readonly SessionData[]): { label: StatusLabel; count: number }[] {
   const counts = new Map<StatusLabel, number>();
@@ -130,9 +156,11 @@ export function needsSummary(rows: readonly SessionAgentRef[], nowMs: number): s
 }
 
 /**
- * Rows one liaison block takes: its header and closing rule, the status-text
- * row when set, and the fleet and needs rows on the first block only.
+ * Rows one liaison block takes: its header and closing rule, the fleet and
+ * needs rows on the first block only, the work row when the liaison has
+ * workers, and the status-text row when set. Each row is one line at every
+ * width, because no row wraps.
  */
-export function liaisonBlockRows(index: number, hasStatusText: boolean): number {
-  return 2 + (index === 0 ? 2 : 0) + (hasStatusText ? 1 : 0);
+export function liaisonBlockRows(index: number, hasStatusText: boolean, hasWorkers: boolean): number {
+  return 2 + (index === 0 ? 2 : 0) + (hasWorkers ? 1 : 0) + (hasStatusText ? 1 : 0);
 }
