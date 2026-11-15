@@ -477,7 +477,10 @@ func (s *Server) handleFocus(w http.ResponseWriter, r *http.Request) {
 // hook): the body is the newly focused pane id ("%12"). Relayed verbatim
 // to every TUI client; each compares against its own pane id to decide
 // whether it holds keyboard focus (header chip, agent-row focus marker).
-// Not a state broadcast — lastState must stay a ServerState for replays.
+// The relay is not a state broadcast — lastState must stay a ServerState
+// for replays. Focus also ends the finished, input, and error attention
+// reasons of the Claude Code conversation in that pane, and a state
+// broadcast follows when it ends one.
 func (s *Server) handlePaneFocus(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
 	paneID := strings.TrimSpace(string(body))
@@ -490,6 +493,9 @@ func (s *Server) handlePaneFocus(w http.ResponseWriter, r *http.Request) {
 			}
 			for c := range s.clients {
 				_ = c.conn.WriteText(string(data))
+			}
+			if s.endAttentionOnFocusLocked(paneID) {
+				s.broadcastLocked()
 			}
 			s.mu.Unlock()
 		}

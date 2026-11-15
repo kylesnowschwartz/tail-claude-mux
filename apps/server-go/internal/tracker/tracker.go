@@ -474,6 +474,23 @@ func (t *Tracker) GetEvent(session, agent, threadID, paneID string) *wire.AgentE
 	return &out
 }
 
+// ThreadIDsInPane returns the thread IDs of the agent's instances bound to
+// the pane, across all sessions.
+func (t *Tracker) ThreadIDsInPane(agent, paneID string) []string {
+	var out []string
+	if paneID == "" {
+		return out
+	}
+	for _, si := range t.instances {
+		for _, ev := range si {
+			if ev.Agent == agent && ev.PaneID == paneID && ev.ThreadID != "" {
+				out = append(out, ev.ThreadID)
+			}
+		}
+	}
+	return out
+}
+
 // GetAgents returns all instances for a session, unseen-stamped, sorted
 // by window index, pane index, then firstSeenTs (unresolved sorts last).
 func (t *Tracker) GetAgents(session string) []wire.AgentEvent {
