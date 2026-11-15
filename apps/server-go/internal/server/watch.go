@@ -459,12 +459,15 @@ func (s *Server) applyScanReadingLocked(reading scanReading) bool {
 		return false
 	}
 	s.Tracker.ApplyEvent(ev, false)
-	// A status rebuilt from the agent's own record, such as a dialog open
-	// before the server started, rebuilds its attention reason.
-	if ev.Agent == "claude-code" && s.Watcher != nil {
+	changed := previous == nil || previous.Status != ev.Status
+	// A status the agent's own record moves the row into, such as a dialog
+	// open before the server started, rebuilds its attention reason. An
+	// unchanged status rebuilds nothing, so a reason the engineer ended
+	// stays ended.
+	if changed && ev.Agent == "claude-code" && s.Watcher != nil {
 		s.Watcher.Attention.Restore(ev.ThreadID, ev.Status, ev.TS)
 	}
-	return previous == nil || previous.Status != ev.Status
+	return changed
 }
 
 // livePiPids maps each Pi process id one pane scan found to its tmux

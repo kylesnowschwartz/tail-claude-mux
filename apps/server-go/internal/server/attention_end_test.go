@@ -69,3 +69,23 @@ func TestPaneScanRestoreKeepsHookReason(t *testing.T) {
 		t.Fatalf("hook reason overwritten: %+v, held %+v", got, held)
 	}
 }
+
+func TestPaneScanWithUnchangedStatusDoesNotRebuildEndedReason(t *testing.T) {
+	s := newAttentionTestServer(t)
+	postHook(t, s, ccHook("StopFailure", "a"))
+	bindPane(s, "a", "%1", wire.StatusError)
+	postPaneFocus(t, s, "%1")
+	if got := s.Watcher.Attention.Get("a"); got.Name != "" {
+		t.Fatalf("focus kept %+v", got)
+	}
+	reading := scanReading{
+		ev:    wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "a", PaneID: "%1", TS: time.Now().UnixMilli()},
+		state: tracker.ScanState{ThreadID: "a", Verdict: tracker.ProbeError},
+	}
+	s.mu.Lock()
+	s.applyScanReadingLocked(reading)
+	s.mu.Unlock()
+	if got := s.Watcher.Attention.Get("a"); got.Name != "" {
+		t.Fatalf("scan rebuilt an ended reason: %+v", got)
+	}
+}
