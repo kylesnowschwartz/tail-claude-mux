@@ -121,3 +121,14 @@ describe("fleetFits", () => {
     expect(fleetFits(counts, 18)).toBe(false);
   });
 });
+
+describe("needsYou liveness", () => {
+  test("leaves out conversations that have ended or are not alive", () => {
+    const sessions = [session("a", [
+      agent({ threadName: "live", attention: "finished", attentionSince: NOW - MIN, status: "done", liveness: "alive" }),
+      agent({ threadName: "gone", attention: "finished", attentionSince: NOW - 2 * MIN, status: "done", liveness: "exited" }),
+      agent({ threadName: "unknown", attention: "error", attentionSince: NOW - 3 * MIN, status: "error", liveness: undefined }),
+    ])];
+    expect(needsYou(sessions).map((r) => r.agent.threadName)).toEqual(["live"]);
+  });
+});

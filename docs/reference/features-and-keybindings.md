@@ -25,7 +25,7 @@ While a Claude Code conversation whose name starts with `liaison` is open, a blo
 
 ## Needs You Block
 
-Under the liaison block, and also with no liaison open, a block headed `NEEDS YOU (n)` lists every conversation with an attention reason, oldest first: reason glyph, conversation name, reason, and age. Reasons are `permission`, `question`, `input`, `error`, and `finished`; `permission` and `question` show the name in bold. Sidebars narrower than 25 columns leave out the reason word. No timer removes a row. When the rows need more than half of the free height, the block shows `▲ N more` / `▼ N more` rows; click one to scroll the block. Click a row to jump to that conversation.
+Under the liaison block, and also with no liaison open, a block headed `NEEDS YOU (n)` lists every live conversation with an attention reason, oldest first; a conversation that has ended or whose process is gone is left out, as it is from the liaison block's `needs` count: reason glyph, conversation name, reason, and age. Reasons are `permission`, `question`, `input`, `error`, and `finished`; `permission` and `question` show the name in bold. Sidebars narrower than 25 columns leave out the reason word. No timer removes a row. When the rows need more than half of the free height, the block shows `▲ N more` / `▼ N more` rows; click one to scroll the block. Click a row to jump to that conversation.
 
 ## Detail Panel
 

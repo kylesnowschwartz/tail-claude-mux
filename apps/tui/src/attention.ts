@@ -95,10 +95,10 @@ export function fleetFits(counts: readonly { label: StatusLabel; count: number }
   return formatFleet(counts).length <= columns;
 }
 
-/** Every conversation with an attention reason, oldest reason first. */
+/** Every live conversation with an attention reason, oldest reason first. */
 export function needsYou(sessions: readonly SessionData[]): SessionAgentRef[] {
   return allAgents(sessions)
-    .filter(({ agent }) => !!agent.attention)
+    .filter(({ agent }) => !!agent.attention && isLiveAgent(agent))
     .sort((a, b) => (a.agent.attentionSince ?? 0) - (b.agent.attentionSince ?? 0));
 }
 
