@@ -10,9 +10,11 @@
 package activity
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -264,33 +266,8 @@ func dayFiles(dir string) ([]string, error) {
 	return days, nil
 }
 
-// completeLines returns the sequence number and raw bytes of each complete,
-// parseable line in one day file. A last line with no newline is still
-// being written and is left out.
-func completeLines(path string) ([]int64, [][]byte, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, nil, err
-	}
-	if i := bytes.LastIndexByte(data, '\n'); i >= 0 {
-		data = data[:i]
-	} else {
-		return nil, nil, nil
-	}
-	var seqs []int64
-	var lines [][]byte
-	for _, line := range bytes.Split(data, []byte{'\n'}) {
-		var head struct {
-			Seq int64 `json:"seq"`
-		}
-		if len(line) == 0 || json.Unmarshal(line, &head) != nil || head.Seq <= 0 {
-			continue
-		}
-		seqs = append(seqs, head.Seq)
-		lines = append(lines, line)
-	}
-	return seqs, lines, nil
-}
+// openDayFile opens a day file for reading.
+var openDayFile = func(path string) (io.ReadCloser, error) { return os.Open(path) }
 
 // lastSeq is the newest committed sequence number in dir, searching back
 // past day files that hold no complete line. Zero when there is none.
@@ -300,12 +277,16 @@ func lastSeq(dir string) (int64, error) {
 		return 0, err
 	}
 	for i := len(days) - 1; i >= 0; i-- {
-		seqs, _, err := completeLines(filepath.Join(dir, days[i]+fileExt))
+		var last int64
+		err := scanLines(filepath.Join(dir, days[i]+fileExt), func(seq int64, _ []byte) bool {
+			last = seq
+			return true
+		})
 		if err != nil {
 			return 0, err
 		}
-		if len(seqs) > 0 {
-			return seqs[len(seqs)-1], nil
+		if last > 0 {
+			return last, nil
 		}
 	}
 	return 0, nil
@@ -321,8 +302,58 @@ type Page struct {
 	Events []json.RawMessage `json:"events"`
 }
 
+// lineSeq is the sequence number of one line; false when the line is not
+// a record line.
+func lineSeq(line []byte) (int64, bool) {
+	var head struct {
+		Seq int64 `json:"seq"`
+	}
+	if len(line) == 0 || json.Unmarshal(line, &head) != nil || head.Seq <= 0 {
+		return 0, false
+	}
+	return head.Seq, true
+}
+
+// scanLines calls fn with each complete, parseable line of a day file and
+// its sequence number, in file order, until fn returns false. A last line
+// with no newline is still being written and is left out.
+func scanLines(path string, fn func(seq int64, line []byte) bool) error {
+	f, err := openDayFile(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	r := bufio.NewReader(f)
+	for {
+		line, err := r.ReadBytes('\n')
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		line = line[:len(line)-1]
+		if seq, ok := lineSeq(line); ok && !fn(seq, line) {
+			return nil
+		}
+	}
+}
+
+// firstSeq is the sequence number of a day file's first record line;
+// false when it holds none.
+func firstSeq(path string) (int64, bool, error) {
+	var first int64
+	err := scanLines(path, func(seq int64, _ []byte) bool {
+		first = seq
+		return false
+	})
+	return first, first > 0, err
+}
+
 // Read returns up to limit complete lines with a sequence number above
-// since, oldest first, from the day files in dir.
+// since, oldest first, from the day files in dir. It reads only the first
+// line of each file to find the file holding since+1, then reads forward
+// from there until limit lines are collected.
 func Read(dir string, since int64, limit int) (Page, error) {
 	page := Page{Events: []json.RawMessage{}}
 	if limit <= 0 {
@@ -335,25 +366,38 @@ func Read(dir string, since int64, limit int) (Page, error) {
 		}
 		return page, err
 	}
-	for _, day := range days {
-		seqs, lines, err := completeLines(filepath.Join(dir, day+fileExt))
+	start := 0
+	for i, day := range days {
+		seq, ok, err := firstSeq(filepath.Join(dir, day+fileExt))
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue // deleted by retention between listing and reading
 			}
 			return page, err
 		}
-		if page.OldestSeq == 0 && len(seqs) > 0 {
-			page.OldestSeq = seqs[0]
+		if !ok {
+			continue
 		}
-		for i, seq := range seqs {
-			if seq <= since {
-				continue
+		if page.OldestSeq == 0 {
+			page.OldestSeq = seq
+		}
+		if seq > since+1 {
+			break
+		}
+		start = i
+	}
+	for _, day := range days[start:] {
+		err := scanLines(filepath.Join(dir, day+fileExt), func(seq int64, line []byte) bool {
+			if seq > since {
+				page.Events = append(page.Events, json.RawMessage(bytes.Clone(line)))
 			}
-			page.Events = append(page.Events, json.RawMessage(lines[i]))
-			if len(page.Events) >= limit {
-				return page, nil
-			}
+			return len(page.Events) < limit
+		})
+		if err != nil && !os.IsNotExist(err) {
+			return page, err
+		}
+		if len(page.Events) >= limit {
+			break
 		}
 	}
 	return page, nil

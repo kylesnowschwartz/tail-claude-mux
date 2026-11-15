@@ -2,6 +2,7 @@ package activity
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -158,5 +159,60 @@ func TestReadSkipsUnfinishedLastLineAndHonorsLimit(t *testing.T) {
 	}
 	if got := seqsIn(t, dir); len(got) != 3 {
 		t.Fatalf("seqs = %v, want 3 complete lines", got)
+	}
+}
+
+type countingReader struct {
+	io.ReadCloser
+	n *int
+}
+
+func (c countingReader) Read(p []byte) (int, error) {
+	n, err := c.ReadCloser.Read(p)
+	*c.n += n
+	return n, err
+}
+
+func TestReadOpensOnlyFilesAfterSinceAndStopsAtLimit(t *testing.T) {
+	dir, c := t.TempDir(), newClock()
+	w := open(t, dir, c)
+	for range 3 {
+		for range 200 {
+			_ = w.AppendHook(Hook{Event: "E", Cwd: "/some/long/working/directory/path"})
+		}
+		c.t = c.t.AddDate(0, 0, 1)
+	}
+	days, _ := dayFiles(dir)
+	read := map[string]*int{}
+	orig := openDayFile
+	t.Cleanup(func() { openDayFile = orig })
+	openDayFile = func(path string) (io.ReadCloser, error) {
+		f, err := orig(path)
+		if err != nil {
+			return nil, err
+		}
+		n := new(int)
+		read[filepath.Base(path)] = n
+		return countingReader{f, n}, nil
+	}
+
+	page, err := Read(dir, 450, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.OldestSeq != 1 || len(page.Events) != 5 {
+		t.Fatalf("page oldest=%d n=%d", page.OldestSeq, len(page.Events))
+	}
+	size := func(day string) int {
+		info, _ := os.Stat(filepath.Join(dir, day+fileExt))
+		return int(info.Size())
+	}
+	for _, day := range days[:2] {
+		if n := read[day+fileExt]; n != nil && *n >= size(day)/2 {
+			t.Fatalf("%s: read %d of %d bytes before the starting file", day, *n, size(day))
+		}
+	}
+	if n := read[days[2]+fileExt]; n == nil || *n >= size(days[2])/2 {
+		t.Fatalf("starting file read past the limit: %v of %d", n, size(days[2]))
 	}
 }
