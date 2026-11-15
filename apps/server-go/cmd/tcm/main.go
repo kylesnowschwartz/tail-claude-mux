@@ -17,7 +17,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/kylesnowschwartz/agent-ouija/pi/pidir"
 	"log"
 	"net"
 	"net/http"
@@ -27,6 +26,9 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/kylesnowschwartz/agent-ouija/pi/pidir"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/activity"
 
 	"github.com/kylesnowschwartz/agent-ouija/claude/claudedir"
 	"github.com/kylesnowschwartz/agent-ouija/claude/settings"
@@ -132,6 +134,11 @@ func runServer(args []string) {
 		srv.PiWatcher = piwatch.New(root.SessionsDir(), override)
 	} else {
 		log.Printf("pi root unavailable, pi watcher disabled: %v", err)
+	}
+	if rec, err := activity.Open(filepath.Join(home, ".local", "state", "tcm", "events"), nil); err == nil {
+		srv.Activity = rec
+	} else {
+		log.Printf("activity record unavailable: %v", err)
 	}
 	srv.BuildInfo = buildInfo()
 	srv.Restart = restartInPlace

@@ -29,6 +29,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/activity"
+
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/ccwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/codexwatch"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/config"
@@ -77,6 +79,10 @@ type Server struct {
 	// Theming (main wires; nil-safe). HeaderEnabled is the @tcm-header
 	// gate read once at boot — runtime toggling requires restart, same
 	// as the bun server.
+	// Activity is the activity record (main wires; nil disables it). Every
+	// parsed hook event and every derived status change is appended to it.
+	Activity *activity.Writer
+
 	Palette       *theming.PaletteWriter
 	Header        *theming.HeaderSync
 	HeaderEnabled bool
@@ -355,6 +361,7 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if p, ok := wire.ParseHookPayload(body); ok {
 		s.mu.Lock()
+		s.recordHookLocked(p)
 		if s.Watcher != nil {
 			s.Watcher.HandleHook(p)
 		}
@@ -371,6 +378,23 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 		log.Printf("hook: rejected-malformed")
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// recordHookLocked appends the hook event to the activity record before any
+// pane match, so an event for an unmatched pane is kept. Only named fields
+// are copied: the prompt and tool input never reach the record.
+func (s *Server) recordHookLocked(p wire.HookPayload) {
+	if s.Activity == nil {
+		return
+	}
+	err := s.Activity.AppendHook(activity.Hook{
+		Event: p.Event, SessionID: p.SessionID, Cwd: p.Cwd, ToolName: p.ToolName,
+		NotificationType: p.NotificationType, StopReason: p.StopReason,
+		PID: p.PID, TranscriptPath: p.TranscriptPath,
+	})
+	if err != nil {
+		log.Printf("activity: append hook: %v", err)
+	}
 }
 
 // handleFocus is the tmux focus hook: switching sessions outside the
