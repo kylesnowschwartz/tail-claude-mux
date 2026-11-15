@@ -100,6 +100,13 @@ type AgentEvent struct {
 	PaneTitle      string `json:"paneTitle,omitempty"`
 	Subagent       string `json:"subagent,omitempty"`
 	Ended          bool   `json:"ended,omitempty"`
+	// Attention is why the conversation needs the engineer: "permission",
+	// "question", "input", "error", or "finished"; absent when nothing
+	// needs them. AttentionSince is when that reason started, in epoch
+	// milliseconds. The server fills both for Claude Code conversations
+	// when it builds state; the tracker never stores them.
+	Attention      string `json:"attention,omitempty"`
+	AttentionSince int64  `json:"attentionSince,omitempty"`
 }
 
 // MetadataStatus is shared.ts MetadataStatus (programmatic API).

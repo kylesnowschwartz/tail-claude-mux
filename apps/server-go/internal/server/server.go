@@ -136,7 +136,7 @@ type client struct {
 // required; watchers and scanner may be nil (tests).
 func New(b *state.Builder, tr *tracker.Tracker, w *ccwatch.Adapter, codex *codexwatch.Adapter, sc *panescan.Scanner) *Server {
 	if tr != nil {
-		b.Agents = tr
+		b.Agents = withAttention{tracker: tr, watcher: w}
 	}
 	md := metadata.NewStore()
 	b.Metadata = md

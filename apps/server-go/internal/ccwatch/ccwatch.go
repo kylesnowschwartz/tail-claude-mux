@@ -31,6 +31,7 @@ import (
 	"github.com/kylesnowschwartz/agent-ouija/claude/registry"
 	"github.com/kylesnowschwartz/agent-ouija/claude/transcript"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/agentmatch"
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/attention"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/procwalk"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/textutil"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
@@ -96,6 +97,10 @@ type Context struct {
 	Emit func(ev wire.AgentEvent)
 	// Locked runs fn under the server's state lock (async re-entry).
 	Locked func(fn func())
+	// AttentionChanged reports that a hook changed a conversation's
+	// attention reason while emitting no event, so the server broadcasts
+	// state. Called with the server lock held; nil is allowed.
+	AttentionChanged func()
 }
 
 // threadState mirrors ThreadState in the TS adapter.
@@ -138,6 +143,10 @@ type Adapter struct {
 	ProjectsDir string
 	SessionsDir string
 
+	// Attention holds each conversation's attention reason, keyed by
+	// thread ID. HandleHook applies every routed hook to it.
+	Attention *attention.Store
+
 	ctx     *Context
 	threads map[string]*threadState
 	now     func() int64 // epoch ms, injectable for tests
@@ -158,6 +167,7 @@ func New(projectsDir, sessionsDir string) *Adapter {
 		ProjectsDir: projectsDir,
 		SessionsDir: sessionsDir,
 		threads:     map[string]*threadState{},
+		Attention:   attention.NewStore(),
 		now:         func() int64 { return time.Now().UnixMilli() },
 
 		withoutSessionFileSince: map[int]int64{},
@@ -378,6 +388,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		state.status = newStatus
 		state.lastToolDescription = ""
 		state.lastToolVerb = ""
+		a.Attention.Forget(threadID)
 		a.emit(threadID, state, session, emitEnded)
 		delete(a.threads, threadID)
 		return
@@ -399,6 +410,12 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	if newStatus != wire.StatusWaiting && waitOwnedEvents[payload.Event] && a.dialogOpen(threadID, state.pid) {
 		return
 	}
+
+	// The attention reason follows the same guard: a concurrent tool result
+	// cannot end a question the user has not answered.
+	attentionChanged := a.Attention.Apply(threadID, attention.Event{
+		Hook: payload.Event, ToolName: payload.ToolName, NotificationType: payload.NotificationType,
+	}, a.now())
 
 	hasToolContext := payload.Event == "PreToolUse" || payload.Event == "PermissionRequest"
 	// PreToolUse fires exactly once per tool call, BEFORE the permission
@@ -426,7 +443,13 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	// moves the row from the session file without this adapter (restoring
 	// and clearing waiting), so the cached status can match while the row
 	// does not; a turn start always reaches the row.
+	// A changed attention reason still reaches clients through
+	// AttentionChanged, without an event that would touch the activity
+	// record, the unseen flag, or the row's ts.
 	if state.status == newStatus && !isNewThread && !hasToolContext && payload.Event != "UserPromptSubmit" {
+		if attentionChanged && a.ctx.AttentionChanged != nil {
+			a.ctx.AttentionChanged()
+		}
 		return
 	}
 
