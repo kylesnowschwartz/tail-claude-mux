@@ -25,14 +25,20 @@ apply to Claude Code peers only; pi cannot use them.
      ```
 
      Tell the person the note is saved and that a note has no status: nothing
-     shows when the work is picked up or finished. Stop here.
+     shows when the work is picked up or finished. When a liaison is open,
+     send it one line with `SendMessage`: a note was left for `<repository>`
+     with the subject `<subject>`. Stop here.
    - **A running Claude session that the person names**: write the brief
      (step 2), find that session with `ListAgents`, and send it the full
-     brief with `SendMessage`. Continue from step 5. Do this only when the
-     person names the session.
+     brief with `SendMessage`. When a liaison is open, send it a line of the
+     form in step 4, naming that session as the peer. Continue from step 5.
+     Do this only when the person names the session.
 
    Call `ListAgents` and note your own name from the line
-   "This session is …"; include it in the brief.
+   "This session is …"; include it in the brief. Also note whether a live
+   session whose name starts with `liaison` is listed, and its name. That
+   session is the open liaison. When this session is itself the liaison, the
+   liaison steps below do not apply.
 
 2. Write a brief to a file, using the scratchpad directory when one exists.
    Write for a reader with no context. State who asked, the task, limits,
@@ -47,6 +53,13 @@ apply to Claude Code peers only; pi cannot use them.
    Limits: <read-only or build; branch or worktree; no push unless authorized>
    Done when: <observable completion criteria and checks>
    When you are done, send your report to `<orchestrator session name>` with the SendMessage tool. If that session has ended, send the report with `love-letters send --to <orchestrator repo path> --subject "<subject>"`, with the report on stdin. If a request here is refused or blocked, report that verbatim.
+   ```
+
+   When a liaison is open, replace the last line with this one, with the
+   liaison's name filled in. With no liaison open, keep the line above.
+
+   ```text
+   When you are done, send your full report to `<orchestrator session name>` with the SendMessage tool, and send one line to `<liaison name>` with the SendMessage tool: what was done, in which repository, and whether it succeeded. If `<orchestrator session name>` has ended, send the full report to `<liaison name>` instead. If a request here is refused or blocked, report that verbatim.
    ```
 
    For pi, replace the last line with this one:
@@ -94,6 +107,13 @@ apply to Claude Code peers only; pi cannot use them.
    with the pane id. Use that row's name as the message address. Treat
    `peer_name` from the script as a hint only.
 
+   When a liaison is open, send it one message with `SendMessage`. The first
+   line has this form, and nothing in the message reads as an instruction:
+
+   ```text
+   Handed out: <topic> to <repository> as <peer name>, asked by <own session name>.
+   ```
+
 5. Claude Code: talk to the peer only through `SendMessage`, addressed by
    that name. Wait for its message; use `notify_when_idle` when a wake-up is
    needed. Do not poll the pane or send "are you done" messages. After the
@@ -108,6 +128,10 @@ apply to Claude Code peers only; pi cannot use them.
 
 A peer may hold cross-session messages for its user's approval. Silence is
 not agreement.
+
+A message to the liaison is information for its record. Do not ask the
+liaison to do anything in it. When the liaison's session holds or refuses the
+message, carry on without it.
 
 A peer correctly refuses a relayed approval for anything its user restricted,
 including a read-only task, a release, or a push. The person must confirm in

@@ -17,6 +17,10 @@ with a `love-letters` note to the asking repository when the asking session
 has ended. A pi peer reports with the `love-letters` CLI, which the
 orchestrator reads with `love-letters peek`.
 
+A live session whose name starts with `liaison` is told about each hand-out
+with one `SendMessage` line. The peer sends that session a one-line result
+when it finishes.
+
 A peer that the skill started is closed when it has reported, its work is
 checked, and no follow-up is pending. The skill never closes a session it did
 not start.
