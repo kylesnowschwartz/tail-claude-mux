@@ -152,6 +152,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /state", s.handleState)
 	mux.HandleFunc("GET /explain", s.handleExplain)
 	mux.HandleFunc("POST /hook", s.handleHook)
+	mux.HandleFunc("GET /events", s.handleEvents)
 	mux.HandleFunc("POST /focus", s.handleFocus)
 	mux.HandleFunc("POST /set-status", s.handleSetStatus)
 	mux.HandleFunc("POST /set-progress", s.handleSetProgress)
@@ -378,6 +379,47 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 		log.Printf("hook: rejected-malformed")
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+const (
+	defaultEventsLimit = 100
+	maxEventsLimit     = 1000
+)
+
+// handleEvents is GET /events?since=<seq>&limit=<n>: activity-record lines
+// with a sequence number above since, oldest first. Reads the day files
+// without the state lock; a last line still being written is skipped.
+func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	if s.Activity == nil {
+		http.Error(w, "activity record unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	q := r.URL.Query()
+	var since int64
+	if v := q.Get("since"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 0 {
+			http.Error(w, "since must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		since = n
+	}
+	limit := defaultEventsLimit
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			http.Error(w, "limit must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		limit = min(n, maxEventsLimit)
+	}
+	page, err := activity.Read(s.Activity.Dir(), since, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(page)
 }
 
 // recordHookLocked appends the hook event to the activity record before any

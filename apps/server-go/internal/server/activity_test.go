@@ -134,3 +134,82 @@ func TestMatchedHookEventRecordsHookThenStatus(t *testing.T) {
 	}
 	t.Logf("record:\n%s", recordFileText(t, dir))
 }
+
+func getEvents(t *testing.T, s *Server, query string) activity.Page {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/events"+query, nil))
+	if rec.Code != 200 {
+		t.Fatalf("GET /events%s = %d %s", query, rec.Code, rec.Body)
+	}
+	t.Logf("GET /events%s -> %s", query, strings.TrimSpace(rec.Body.String()))
+	var page activity.Page
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	return page
+}
+
+func pageSeqs(t *testing.T, page activity.Page) []float64 {
+	t.Helper()
+	var out []float64
+	for _, raw := range page.Events {
+		var m map[string]any
+		_ = json.Unmarshal(raw, &m)
+		out = append(out, m["seq"].(float64))
+	}
+	return out
+}
+
+func TestEventsRouteReadsAcrossDaysAndRestart(t *testing.T) {
+	dir := t.TempDir()
+	clock := time.Date(2026, 11, 15, 23, 59, 0, 0, time.Local)
+	now := func() time.Time { return clock }
+	first, _ := activity.Open(dir, now)
+	s := &Server{Activity: first}
+	postHook(t, s, wire.HookPayload{Event: "A", SessionID: "s", Cwd: "/p"})
+	postHook(t, s, wire.HookPayload{Event: "B", SessionID: "s", Cwd: "/p"})
+	_ = first.Close()
+
+	// Restart on the next day.
+	clock = clock.Add(2 * time.Minute)
+	s = &Server{Activity: openActivity(t, dir, now)}
+	postHook(t, s, wire.HookPayload{Event: "C", SessionID: "s", Cwd: "/p"})
+	postHook(t, s, wire.HookPayload{Event: "D", SessionID: "s", Cwd: "/p"})
+	// A last line with no newline is still being written.
+	f, _ := os.OpenFile(filepath.Join(dir, "2026-11-16.jsonl"), os.O_APPEND|os.O_WRONLY, 0o600)
+	_, _ = f.WriteString(`{"seq":5,"kind":"hook","rece`)
+	_ = f.Close()
+
+	page := getEvents(t, s, "?since=0")
+	if got := pageSeqs(t, page); len(got) != 4 || got[3] != 4 || page.OldestSeq != 1 {
+		t.Fatalf("page = %v oldest=%d", got, page.OldestSeq)
+	}
+	page = getEvents(t, s, "?since=1&limit=2")
+	if got := pageSeqs(t, page); len(got) != 2 || got[0] != 2 || got[1] != 3 || page.OldestSeq != 1 {
+		t.Fatalf("limited page = %v oldest=%d", got, page.OldestSeq)
+	}
+}
+
+func TestEventsRouteSinceBeforeOldestStartsAtOldest(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, time.Now().Format("2006-01-02")+".jsonl"),
+		[]byte(`{"seq":41,"kind":"hook","received_ms":1,"event":"A"}`+"\n"+`{"seq":42,"kind":"status","received_ms":2,"status":"idle"}`+"\n"), 0o600)
+	s := &Server{Activity: openActivity(t, dir, nil)}
+
+	page := getEvents(t, s, "?since=3")
+	if got := pageSeqs(t, page); len(got) != 2 || got[0] != 41 || page.OldestSeq != 41 {
+		t.Fatalf("page = %v oldest=%d", got, page.OldestSeq)
+	}
+}
+
+func TestEventsRouteRejectsBadQuery(t *testing.T) {
+	s := &Server{Activity: openActivity(t, t.TempDir(), nil)}
+	for _, q := range []string{"?since=x", "?since=-1", "?limit=0", "?limit=abc"} {
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/events"+q, nil))
+		if rec.Code != 400 {
+			t.Fatalf("%s = %d", q, rec.Code)
+		}
+	}
+}
