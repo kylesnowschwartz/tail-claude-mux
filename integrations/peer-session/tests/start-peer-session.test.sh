@@ -264,6 +264,7 @@ rm "$FAKE_PANE.dead"
 printf 'Claude input\nDo you trust this folder? Yes / No\n' > "$FAKE_PANE"
 run "$tmp/prompt" --close-on-exit; close_check close-dialog
 printf 'Claude input\n' > "$FAKE_PANE"
+printf '%s\n' "$idle_state" > "$FAKE_STATE"
 export FAIL_CMD=paste-buffer
 run "$tmp/prompt" --close-on-exit
 FAIL_CMD=
