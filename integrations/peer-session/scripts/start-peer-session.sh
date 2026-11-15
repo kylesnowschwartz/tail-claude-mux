@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-usage='start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--agent claude|pi] [--window <name>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]'
-repo='' session='' prompt_file='' pane='' ready='' peer_name='' window='' permission_mode=''
+usage='start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--agent claude|pi] [--window <name>] [--name <name>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]'
+repo='' session='' prompt_file='' pane='' ready='' peer_name='' window='' permission_mode='' name=''
 agent=claude attach=0 ready_timeout=60 port=${TCM_PORT:-7391}
 result() {
     python3 - "$1" "$2" "$pane" "$session" "$ready" "$peer_name" "$agent" <<'PY'
@@ -33,12 +33,12 @@ unexpected() {
 trap unexpected ERR
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --repo|--session|--prompt-file|--agent|--window|--permission-mode|--ready-timeout|--port)
+        --repo|--session|--prompt-file|--agent|--window|--name|--permission-mode|--ready-timeout|--port)
             [[ $# -ge 2 ]] || fail "Missing value for $1. Usage: $usage"
             case "$1" in
                 --repo) repo=$2 ;; --session) session=$2 ;;
                 --prompt-file) prompt_file=$2 ;; --agent) agent=$2 ;;
-                --window) window=$2 ;;
+                --window) window=$2 ;; --name) name=$2 ;;
                 --permission-mode) permission_mode=$2 ;;
                 --ready-timeout) ready_timeout=$2 ;; --port) port=$2 ;;
             esac
@@ -51,9 +51,14 @@ case "$agent" in
     claude)
         window=${window:-claude}
         launch="claude --permission-mode ${permission_mode:=auto}"
+        if [[ -n "$name" ]]; then
+            [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$ ]] || fail "--name must match ^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}\$."
+            launch+=" -n $name"
+        fi
         tcm_agent=claude-code ;;
     pi)
         [[ -z "$permission_mode" ]] || fail "--permission-mode applies only to --agent claude."
+        [[ -z "$name" ]] || fail "--name applies only to --agent claude; pi has no session name option."
         window=${window:-pi} launch=pi tcm_agent=pi ;;
     *) fail "--agent must be claude or pi." ;;
 esac

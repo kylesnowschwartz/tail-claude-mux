@@ -61,13 +61,16 @@ events = (p / "calls").read_text().splitlines()
 calls = [json.loads(s) for s in events if s != "curl"]
 names = [c[0] for c in calls]
 pi = case.startswith("pi-")
-if case in ("existing", "attach-taken", "missing", "empty", "pi-mode", "bad-agent"):
+if case in ("existing", "attach-taken", "missing", "empty", "pi-mode", "bad-agent", "bad-name", "pi-name"):
     require(code != 0 and v["ok"] is False, "validation must fail")
     require("new-session" not in names, "validation created session")
     if case in ("existing", "attach-taken"):
         require(v == {"ok": False, "error": "tmux session 'peer' already exists."}, "existing session error")
     if case == "pi-mode":
         require("--permission-mode" in v["error"], "pi mode error")
+    if case in ("bad-name", "pi-name"):
+        require("--name" in v["error"], "name error")
+        require(not calls, "name validation made tmux calls: " + str(names))
     if case == "bad-agent":
         require("--agent" in v["error"], "agent error")
 else:
@@ -90,17 +93,19 @@ else:
                 "session arguments")
         require(v["session"] == "peer", "session field")
         launch = calls[2]
-    require(launch == ["send-keys", "-t", "%128",
-                       "pi" if pi else "claude --permission-mode auto", "Enter"],
+    expected = "pi" if pi else "claude --permission-mode auto"
+    if case == "name":
+        expected += " -n liaison/s4-agent-test"
+    require(launch == ["send-keys", "-t", "%128", expected, "Enter"],
             "launch command")
     require(v.get("agent") == ("pi" if pi else None), "agent field")
     for c in calls[2:]:
         if c[0] != "load-buffer":
             require("-t" in c and c[c.index("-t")+1] == "%128", "pane target: " + str(c))
-    if case in ("idle", "fallback", "delayed", "unnamed", "pi-idle", "attach-match", "attach-fallback", "attach-none"):
+    if case in ("idle", "name", "fallback", "delayed", "unnamed", "pi-idle", "attach-match", "attach-fallback", "attach-none"):
         require(code == 0 and v["ok"] and v["prompt_sent"], "success")
         require(v["ready"] == ("pane-stable" if case in ("fallback", "attach-fallback") else "idle"), "ready")
-        require(v["peer_name"] == ("other-project" if case in ("idle", "delayed", "pi-idle", "attach-match", "attach-none") else ""), "peer")
+        require(v["peer_name"] == ("other-project" if case in ("idle", "name", "delayed", "pi-idle", "attach-match", "attach-none") else ""), "peer")
         require(names[-3:] == ["load-buffer", "paste-buffer", "send-keys"], "prompt order")
         if case == "delayed":
             require(events.count("curl") == 3, "name poll count")
@@ -150,6 +155,11 @@ printf '%s\n' '{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","s
 run "$tmp/prompt" --agent pi; check pi-timeout
 run "$tmp/prompt" --agent pi --permission-mode auto; check pi-mode
 run "$tmp/prompt" --agent codex; check bad-agent
+printf 'Claude input\n' > "$FAKE_PANE"
+run "$tmp/prompt" --name liaison/s4-agent-test; check name
+run "$tmp/prompt" --name 'bad name; rm'; check bad-name
+run "$tmp/prompt" --name '-leading'; check bad-name
+run "$tmp/prompt" --agent pi --name liaison/x; check pi-name
 printf 'Claude input\n' > "$FAKE_PANE"
 agents='"agents":[{"agent":"claude-code","paneId":"%128","status":"idle","threadName":"other-project"}]'
 printf '{"sessions":[{"name":"work","dir":"%s/elsewhere",%s}]}\n' "$tmp" "$agents" > "$FAKE_STATE"
