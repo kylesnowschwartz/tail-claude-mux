@@ -17,6 +17,10 @@ with a `love-letters` note to the asking repository when the asking session
 has ended. A pi peer reports with the `love-letters` CLI, which the
 orchestrator reads with `love-letters peek`.
 
+A peer that the skill started is closed when it has reported, its work is
+checked, and no follow-up is pending. The skill never closes a session it did
+not start.
+
 ## Install
 
 ```text
@@ -32,7 +36,7 @@ waits for stable pane text.
 ## Script
 
 ```text
-start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--agent claude|pi] [--window <name>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]
+start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--agent claude|pi] [--window <name>] [--name <name>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]
 ```
 
 Run `scripts/start-peer-session.sh` from this plugin directory. Defaults are
@@ -46,6 +50,10 @@ opens a new window in the tmux session whose directory is `--repo` and leaves
 the current window selected. The directory of a tmux session is tmux's
 `#{session_path}`, the directory the session was created in. When no tmux
 session has that directory, the launcher creates the one named by `--session`.
+
+`--name <name>` sets a Claude Code peer's session name with `claude -n`. The
+name matches `^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$`, and `--agent pi` with
+`--name` is a validation error. The skill names peers `<workstream>/<topic>`.
 
 `--agent pi` runs `pi` in the pane and waits for the pi row in
 tcm state; `--permission-mode` with `--agent pi` is a validation error.

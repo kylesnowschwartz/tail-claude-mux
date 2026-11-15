@@ -58,8 +58,15 @@ apply to Claude Code peers only; pi cannot use them.
 3. Run the launcher:
 
    ```bash
-   "${CLAUDE_PLUGIN_ROOT}/scripts/start-peer-session.sh" --attach-existing --repo <directory> --session <name> --prompt-file <brief-file> [--agent pi]
+   "${CLAUDE_PLUGIN_ROOT}/scripts/start-peer-session.sh" --attach-existing --repo <directory> --session <name> --prompt-file <brief-file> --name <name> --window <name> [--agent pi]
    ```
+
+   The name is `<workstream>/<topic>`, lowercase with hyphens. The workstream
+   is the project or task you are working on, and the topic says what this
+   peer does, for example `liaison/s4-agent-test` or
+   `checkout/fix-tax-rounding`. Use the same name for `--window`. The name
+   shows in `ListAgents` and in session lists, so the person can tell what
+   each peer is for. `--name` is for Claude Code only.
 
    With `--attach-existing`, the launcher opens a new window in the tmux
    session that was created in the `--repo` directory. When no tmux session
@@ -109,8 +116,7 @@ that session.
 One session cannot restart another. Permissions are per session; never ask
 the peer to do what this session was denied.
 
-Clean up only when the person says the session is finished. Exit gracefully
-by pane id, with `/exit` for Claude Code or `/quit` for pi:
+Close a peer that you started when all of these are true: it has reported, you have checked its work, and no fix or follow-up is pending for it. Tell the person which peer you closed. Keep a peer open while a fix round is likely, and say so. Never close a session that you did not start. Exit gracefully by pane id, with `/exit` for Claude Code or `/quit` for pi:
 
 ```bash
 tmux send-keys -t <pane> '/exit' Enter
