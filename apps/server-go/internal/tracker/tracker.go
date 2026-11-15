@@ -173,6 +173,12 @@ type Tracker struct {
 	// recentlyEndedPanes: "session\x00agent\x00paneId" → suppression expiry.
 	recentlyEndedPanes map[string]int64
 
+	// OnInstanceRemoved, when set, receives a copy of every instance the
+	// tracker removes, whatever the reason: an end event, a prune, a
+	// dismiss, or a row retired by a newer one. Called from inside the
+	// tracker call that removed it.
+	OnInstanceRemoved func(ev wire.AgentEvent)
+
 	missThreshold int
 	isPidAlive    func(pid int) bool
 	now           func() int64 // epoch ms
@@ -238,7 +244,9 @@ func (t *Tracker) clearMissState(session, key string) {
 }
 
 func (t *Tracker) deleteInstance(session, key string) {
+	var removed *wire.AgentEvent
 	if si := t.instances[session]; si != nil {
+		removed = si[key]
 		delete(si, key)
 		if len(si) == 0 {
 			delete(t.instances, session)
@@ -246,6 +254,22 @@ func (t *Tracker) deleteInstance(session, key string) {
 	}
 	delete(t.unseen, unseenKey(session, key))
 	t.clearMissState(session, key)
+	if removed != nil && t.OnInstanceRemoved != nil {
+		t.OnInstanceRemoved(*removed)
+	}
+}
+
+// HasThread reports whether any session holds an instance of the agent
+// with the thread ID.
+func (t *Tracker) HasThread(agent, threadID string) bool {
+	for _, si := range t.instances {
+		for _, ev := range si {
+			if ev.Agent == agent && ev.ThreadID == threadID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ApplyEvent folds one watcher event in (tracker.ts applyEvent). seed=true

@@ -140,13 +140,17 @@ func New(b *state.Builder, tr *tracker.Tracker, w *ccwatch.Adapter, codex *codex
 	}
 	md := metadata.NewStore()
 	b.Metadata = md
-	return &Server{
+	s := &Server{
 		Builder: b, Tracker: tr, Watcher: w, CodexWatcher: codex, Scanner: sc, Metadata: md,
 		clients:           map[*client]bool{},
 		lastSeenByThread:  map[string]lastSeen{},
 		sweepDebounce:     defaultSweepDebounce,
 		sweepConfirmDelay: defaultSweepConfirmDelay,
 	}
+	if tr != nil && w != nil {
+		tr.OnInstanceRemoved = s.forgetAttentionLocked
+	}
+	return s
 }
 
 // Handler returns the HTTP handler with every route mounted.
