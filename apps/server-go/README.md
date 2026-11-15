@@ -19,8 +19,9 @@ cd apps/server-go && go test ./...
 ## Activity record
 
 The server appends one line for every hook event it receives (`POST /hook`),
-including events it cannot match to a tmux pane, and one line for every
-status change it derives. The lines are kept in
+including events it cannot match to a tmux pane, and one line each time the
+status it derives for a pane changes. The state the server rebuilds at start
+is not recorded; a pane's first status from a hook event after start is. The lines are kept in
 `~/.local/state/tcm/events/YYYY-MM-DD.jsonl`, one JSON Lines file per local
 day. The directory has mode 0700 and each file mode 0600. The server is the
 only writer.

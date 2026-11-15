@@ -110,6 +110,7 @@ func TestMatchedHookEventRecordsHookThenStatus(t *testing.T) {
 	dir := t.TempDir()
 	s := New(&state.Builder{Tmux: &tmux.Tmux{Run: func(...string) (string, error) { return "", nil }}}, tracker.New(), ccwatch.New(t.TempDir(), t.TempDir()), nil, nil)
 	s.Activity = openActivity(t, dir, nil)
+	s.watchersSeeded = true
 	// A pending broadcast timer keeps emitLocked from scheduling a real one.
 	s.broadcastTimer = time.NewTimer(time.Hour)
 	s.broadcastTimer.Stop()
@@ -211,5 +212,31 @@ func TestEventsRouteRejectsBadQuery(t *testing.T) {
 		if rec.Code != 400 {
 			t.Fatalf("%s = %d", q, rec.Code)
 		}
+	}
+}
+
+func TestStatusLinesOnlyOnChangeAndNotWhileSeeding(t *testing.T) {
+	dir := t.TempDir()
+	s := New(&state.Builder{Tmux: &tmux.Tmux{Run: func(...string) (string, error) { return "", nil }}}, tracker.New(), nil, nil, nil)
+	s.Activity = openActivity(t, dir, nil)
+	s.broadcastTimer = time.NewTimer(time.Hour)
+	s.broadcastTimer.Stop()
+	emit := func(status string) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.emitLocked(wire.AgentEvent{Agent: "claude-code", Session: "work", ThreadID: "t1", PaneID: "%3", Status: status})
+	}
+	emit(wire.StatusIdle) // start-up rebuild: not recorded
+	s.watchersSeeded = true
+	emit(wire.StatusRunning)
+	emit(wire.StatusRunning)
+	emit(wire.StatusIdle)
+
+	var got []any
+	for _, l := range readRecord(t, dir) {
+		got = append(got, l["status"])
+	}
+	if len(got) != 2 || got[0] != wire.StatusRunning || got[1] != wire.StatusIdle {
+		t.Fatalf("statuses = %v, want [running idle]", got)
 	}
 }

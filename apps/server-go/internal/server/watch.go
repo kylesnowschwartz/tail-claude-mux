@@ -233,12 +233,25 @@ func (s *Server) emitLocked(ev wire.AgentEvent) {
 	s.debouncedBroadcastLocked()
 }
 
-// recordStatusLocked appends the derived status change to the activity
-// record, including the ones a cold-start seed reconstructs.
+// recordStatusLocked appends a status line when the status for the event's
+// pane differs from the last one recorded for it. A pane is its pane ID, or
+// its tmux session and Claude session ID while the pane ID is unknown. The
+// cold-start seed's reconstructed events are not recorded.
 func (s *Server) recordStatusLocked(ev wire.AgentEvent) {
-	if s.Activity == nil {
+	if s.Activity == nil || !s.watchersSeeded {
 		return
 	}
+	key := ev.PaneID
+	if key == "" {
+		key = ev.Session + "\x00" + ev.ThreadID
+	}
+	if s.recordedStatus[key] == ev.Status {
+		return
+	}
+	if s.recordedStatus == nil {
+		s.recordedStatus = map[string]string{}
+	}
+	s.recordedStatus[key] = ev.Status
 	err := s.Activity.AppendStatus(activity.Status{
 		TmuxSession: ev.Session, PaneID: ev.PaneID, SessionID: ev.ThreadID,
 		Status: ev.Status, ToolVerb: ev.ToolVerb,

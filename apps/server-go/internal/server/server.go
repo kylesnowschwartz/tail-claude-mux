@@ -82,6 +82,9 @@ type Server struct {
 	// Activity is the activity record (main wires; nil disables it). Every
 	// parsed hook event and every derived status change is appended to it.
 	Activity *activity.Writer
+	// recordedStatus is the last status written to the activity record,
+	// per pane key (see recordStatusLocked).
+	recordedStatus map[string]string
 
 	Palette       *theming.PaletteWriter
 	Header        *theming.HeaderSync
