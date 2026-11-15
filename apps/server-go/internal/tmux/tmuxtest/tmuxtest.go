@@ -9,7 +9,10 @@
 // internal tests can use it without an import cycle.
 package tmuxtest
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // PaneSpec mirrors tmux.ListAllPanes' -F field order, one field each.
 // Zero-value fields render as empty columns (unset marker, unparseable
@@ -32,7 +35,13 @@ type PaneSpec struct {
 	Height       string
 	WindowHeight string
 	Ignored      string // "1" for the @tcm-ignore session option
-	Title        string // last on purpose: the only field that may contain the separator
+	// The three liaison option values. Row renders each one's byte length
+	// ahead of the values, the way #{n:...} does, so a value may hold a
+	// tab or a line break.
+	LiaisonWork   string // @liaison-work
+	LiaisonParent string // @liaison-parent
+	LiaisonWorker string // @liaison-worker
+	Title         string // last on purpose: it runs to the end of the line
 }
 
 // Row renders the spec as one tab-separated list-panes row.
@@ -41,7 +50,10 @@ func (s PaneSpec) Row() string {
 		s.Session, s.ID, s.PID, s.Dir, s.WindowActive, s.Sidebar,
 		s.Companion, s.WindowIndex, s.PaneIndex, s.WindowID, s.Left,
 		s.Right, s.Width, s.WindowWidth, s.Height, s.WindowHeight,
-		s.Ignored, s.Title,
+		s.Ignored,
+		strconv.Itoa(len(s.LiaisonWork)), strconv.Itoa(len(s.LiaisonParent)),
+		strconv.Itoa(len(s.LiaisonWorker)),
+		s.LiaisonWork, s.LiaisonParent, s.LiaisonWorker, s.Title,
 	}, "\t")
 }
 

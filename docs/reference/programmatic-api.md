@@ -120,6 +120,44 @@ curl -sS http://127.0.0.1:7391/state \
 
 The sidebar's "needs you" block lists the same conversations, oldest first. The liaison block's fourth row shows the liaison's tmux session status text set with `/set-status`.
 
+### `GET /state`: liaison link fields
+
+A liaison is a long-lived conversation that starts other conversations and gives each one a written task. The liaison's hand-out command sets three options on the tmux pane of a conversation it starts:
+
+| Pane option | Value |
+|-------------|-------|
+| `@liaison-work` | The work ID of the hand-out: `w` and 1 to 6 digits, such as `w12`. |
+| `@liaison-parent` | The conversation ID of the liaison. |
+| `@liaison-worker` | The conversation ID of the started conversation. |
+
+tcm reads the three options and writes none. Each conversation in `sessions[].agents[]` (and `sessions[].agentState`) carries these optional fields:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `liaisonWorkId` | string | The value of `@liaison-work`. |
+| `liaisonParentThreadId` | string | The value of `@liaison-parent`. It has the form of a `threadId`. |
+
+```json
+{ "threadId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "liaisonWorkId": "w12", "liaisonParentThreadId": "11111111-2222-4333-8444-555555555555" }
+```
+
+A field is absent unless all of these are true:
+
+- Its option has the valid form. A work ID is `w` and 1 to 6 digits. A conversation ID is a UUID: 8-4-4-4-12 hexadecimal digits. A value of any other form, or one that holds a tab or a line break, counts as unset.
+- The pane's `@liaison-worker` has the valid form and equals the conversation's own `threadId`.
+- The conversation's process is alive.
+
+A shell that stays in the pane after the conversation ends, and another conversation that starts in the same pane, get neither field.
+
+**The fields are an unverified claim, for display only.** Any program on this machine can set the three pane options, and tcm does not check them against the liaison's record of its work. No program may use the fields or the options to route work, to grant anything, or to change a record. The liaison's own work record is the only source for which work is open.
+
+The sidebar shows a mark before the name of each conversation whose `liaisonParentThreadId` equals the `threadId` of an open liaison, and that liaison's block shows the count of such conversations.
+
+```sh
+curl -sS http://127.0.0.1:7391/state \
+  | jq '[.sessions[].agents[] | select(.liaisonParentThreadId) | {threadName, liaisonWorkId, liaisonParentThreadId}]'
+```
+
 ## How It Renders
 
 **Session card** — A compact summary line showing status text + progress:

@@ -314,3 +314,34 @@ func TestScanPiMatchesOnlyExactExecutableName(t *testing.T) {
 		}
 	}
 }
+
+func TestScanCarriesLiaisonLink(t *testing.T) {
+	panes := []tmux.Pane{{
+		Session: "work", ID: "%7", PID: 100,
+		LiaisonWorkID: "w4", LiaisonParentThreadID: "parent-id", LiaisonWorkerThreadID: "worker-id",
+	}}
+	psComm := strings.Join([]string{
+		commLine(100, 1, "zsh"),
+		commLine(200, 100, "claude"),
+	}, "\n")
+
+	s := &Scanner{Run: fakeExec(t, psComm, "")}
+	got := onlyPresence(t, s.Scan(panes), "work")
+
+	if got.LiaisonWorkID != "w4" || got.LiaisonParentThreadID != "parent-id" || got.LiaisonWorkerThreadID != "worker-id" {
+		t.Errorf("link = %q %q %q, want w4 parent-id worker-id", got.LiaisonWorkID, got.LiaisonParentThreadID, got.LiaisonWorkerThreadID)
+	}
+}
+
+// A pane that holds only a shell yields no conversation, so its liaison
+// options reach no row.
+func TestScanShellPaneWithLiaisonLinkYieldsNoConversation(t *testing.T) {
+	panes := []tmux.Pane{{
+		Session: "work", ID: "%7", PID: 100,
+		LiaisonWorkID: "w4", LiaisonParentThreadID: "parent-id", LiaisonWorkerThreadID: "worker-id",
+	}}
+	s := &Scanner{Run: fakeExec(t, commLine(100, 1, "zsh"), "")}
+	if got := s.Scan(panes); len(got) != 0 {
+		t.Errorf("scan = %#v, want no conversation", got)
+	}
+}

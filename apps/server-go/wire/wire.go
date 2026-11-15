@@ -110,6 +110,15 @@ type AgentEvent struct {
 	StatusSince    int64  `json:"statusSince,omitempty"`
 	Attention      string `json:"attention,omitempty"`
 	AttentionSince int64  `json:"attentionSince,omitempty"`
+	// The liaison link, read from three options on the conversation's
+	// pane: the work ID of the hand-out that started the conversation, and
+	// the conversation ID of the liaison that started it. They are an
+	// unverified claim for display. The tracker serves both only for a
+	// live conversation whose own thread ID equals LiaisonWorkerThreadID,
+	// the conversation ID the pane names as the worker.
+	LiaisonWorkID         string `json:"liaisonWorkId,omitempty"`
+	LiaisonParentThreadID string `json:"liaisonParentThreadId,omitempty"`
+	LiaisonWorkerThreadID string `json:"-"`
 }
 
 // MetadataStatus is shared.ts MetadataStatus (programmatic API).
