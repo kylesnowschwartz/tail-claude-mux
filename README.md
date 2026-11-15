@@ -7,7 +7,7 @@ Shows the session list, agent state for Claude Code and Codex, and the git branc
 
 ## Install
 
-Requires `tmux`, `bun`, and [TPM](https://github.com/tmux-plugins/tpm).
+Requires `tmux` 3.2 or later, `bun`, and [TPM](https://github.com/tmux-plugins/tpm). The server lists panes with the `#{n:...}` length modifier, which tmux 3.2 added.
 
 ```tmux
 set -g @plugin 'kylesnowschwartz/tail-claude-mux'

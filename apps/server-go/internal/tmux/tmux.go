@@ -308,7 +308,8 @@ const paneHeadFields = 20
 // values can hold any byte. tmux prints a tab or a line break in an option
 // value as is, so each option's byte length (#{n:...}) goes ahead of the
 // values and the parser takes each value by length. Title is the last
-// field: it runs to the end of the line.
+// field: it runs to the end of the line. The n: modifier needs tmux 3.2 or
+// later.
 func (t *Tmux) ListAllPanes() []Pane {
 	out, err := t.Run("list-panes", "-a", "-F",
 		"#{session_name}"+sep+"#{pane_id}"+sep+"#{pane_pid}"+sep+
