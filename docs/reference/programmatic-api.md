@@ -95,6 +95,30 @@ curl -sS -X POST http://127.0.0.1:7391/notify \
   -d '{"session":"api","message":"Deploy complete","tone":"success","source":"cd"}'
 ```
 
+### `GET /state`: attention fields
+
+Each conversation in `sessions[].agents[]` (and `sessions[].agentState`) carries two optional fields when it needs the engineer:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `attention` | `"permission"`, `"question"`, `"input"`, `"error"`, or `"finished"` | Why the conversation needs the engineer. Absent when it does not. |
+| `attentionSince` | number, epoch milliseconds | When that reason started. |
+
+- `permission`: a permission question is open.
+- `question`: the question tool is open.
+- `input`: Claude Code reports the conversation has waited at its prompt.
+- `error`: the turn failed.
+- `finished`: a turn ended and the engineer has not yet focused the conversation or typed in it.
+
+A conversation has at most one reason; a new reason replaces the old one and restarts `attentionSince`.
+
+```sh
+curl -sS http://127.0.0.1:7391/state \
+  | jq '[.sessions[].agents[] | select(.attention) | {threadName, attention, attentionSince}] | sort_by(.attentionSince)'
+```
+
+The sidebar's "needs you" block lists the same conversations, oldest first. The liaison block's fourth row shows the liaison's tmux session status text set with `/set-status`.
+
 ## How It Renders
 
 **Session card** — A compact summary line showing status text + progress:

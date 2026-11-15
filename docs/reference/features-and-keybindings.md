@@ -14,6 +14,19 @@ Each session row can show:
 - Current client session emphasis
 - Unseen accent for `done`, `error`, or `interrupted` states
 
+## Liaison Block
+
+While a Claude Code conversation whose name starts with `liaison` is open, a block is pinned at the top of the sidebar, one per liaison (`liaison/work` and `liaison/personal` give two). With no liaison open, the block is absent. Its rows:
+
+- Header: `LIAISON` plus the rest of the name, and the liaison's own status and its age
+- `fleet`: the number of conversations in each status across all sessions; on narrow sidebars, each status glyph with its count
+- `needs`: the number of conversations that need the engineer and the age of the oldest, or `none`
+- `status`: the liaison's tmux session status text, when one is set through `POST /set-status`
+
+## Needs You Block
+
+Under the liaison block, and also with no liaison open, a block headed `NEEDS YOU (n)` lists every conversation with an attention reason, oldest first: reason glyph, conversation name, reason, and age. Reasons are `permission`, `question`, `input`, `error`, and `finished`; `permission` and `question` show the name in bold. Sidebars narrower than 25 columns leave out the reason word. No timer removes a row. When the rows need more than half of the free height, the block shows `▲ N more` / `▼ N more` rows; click one to scroll the block. Click a row to jump to that conversation.
+
 ## Detail Panel
 
 The focused session detail panel can show:
@@ -59,6 +72,7 @@ The focused session detail panel can show:
 | `Tab` | Cycle to next session |
 | `Shift+Tab` | Cycle to previous session |
 | `1`-`9` | Switch to session by visible index |
+| `a` | Jump to the oldest conversation in the "needs you" block: switch to its session and focus its pane; does nothing when the block is empty |
 | `Alt+Up` | Move focused session up in persisted order |
 | `Alt+Down` | Move focused session down in persisted order |
 | `n`, `c` | Create a new session |

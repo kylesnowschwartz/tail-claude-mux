@@ -30,6 +30,8 @@ import {
   BRANCH_GLYPH,
   AGENT_GLYPHS,
   LIAISON_GLYPH,
+  NEEDS_GLYPH,
+  REASON_GLYPHS,
 } from "./vocab";
 import { tier, type TierStyle } from "./tiers";
 import {
@@ -43,9 +45,11 @@ import {
   needsSummary,
   needsYou,
   statusLabel,
+  type AttentionReason,
   type SessionAgentRef,
   type StatusLabel,
 } from "./attention";
+import { conversationName, padAge, padReason, scrollWindow, showReasonWord } from "./needs-block";
 import { getScenario, listScenarios } from "./mocks/scenarios";
 
 // Detect which mux we're running inside
@@ -62,6 +66,9 @@ function detectMuxContext(): MuxContext {
 
 const muxCtx = detectMuxContext();
 
+/** Server port: `TCM_PORT` when set, as the repo's shell scripts honour it. */
+const PORT = Number(process.env.TCM_PORT) || SERVER_PORT;
+
 const SPINNERS = SEV_WORKING_SPINNER;
 const BOLD = TextAttributes.BOLD;
 const DIM = TextAttributes.DIM;
@@ -72,8 +79,10 @@ const BRANCH_ROWS = 1; // SessionCard adds exactly one row when session.branch i
 const HIDDEN_AGENTS_ROWS = 1; // SessionCard adds exactly one "+N more" row when agents are trimmed.
 const OVERFLOW_INDICATOR_ROWS = 1; // "▲ N more" / "▼ N more" line when the session stack scrolls.
 const LIAISON_BASE_ROWS = 4; // Liaison block: header, fleet and needs rows plus its closing rule; a status-text row adds one.
+const NEEDS_HEADER_ROWS = 2; // "NEEDS YOU (n)" heading above the needs rows plus the closing rule below them.
 const KEY_WIDTH = 7; // Label column of the liaison block's rows.
-const BLOCK_PAD = 2; // Left and right padding of the liaison block.
+const BLOCK_PAD = 2; // Left and right padding of the liaison and needs blocks.
+const NEEDS_MIN_ROWS = 3; // The needs block always gets at least this many rows of the pane.
 
 function statusColor(label: StatusLabel, p: ThemePalette): string {
   if (label === "working") return p.blue;
@@ -91,6 +100,19 @@ const STATUS_GLYPHS: Record<StatusLabel, string> = {
   stopped: SEV_STOPPED,
   error: SEV_ERROR,
 };
+
+/** Blocking reasons (an open question to the engineer) read as more urgent. */
+function isBlockingReason(reason: AttentionReason): boolean {
+  return reason === "permission" || reason === "question";
+}
+
+function reasonColor(reason: AttentionReason, p: ThemePalette): string {
+  if (reason === "permission") return p.peach;
+  if (reason === "question") return p.yellow;
+  if (reason === "input") return p.lavender;
+  if (reason === "error") return p.red;
+  return p.green;
+}
 
 function sanitizeThreadName(raw: string): string {
   // Belt-and-braces: watchers already sanitize at their boundary, but the
@@ -238,7 +260,7 @@ function App() {
     return sessions.findIndex(s => s.name === name);
   });
 
-  // Wall clock for the liaison block's ages; ticks only while a liaison or a need shows.
+  // Wall clock for the liaison and needs ages; ticks only while either block shows.
   const [nowMs, setNowMs] = createSignal(Date.now());
 
   const liaisons = createMemo(() => findLiaisons(sessions));
@@ -254,8 +276,37 @@ function App() {
   const liaisonRows = createMemo(() =>
     liaisons().reduce((rows, { session }) => rows + LIAISON_BASE_ROWS + (session.metadata?.status?.text ? 1 : 0), 0));
 
+  // The needs block takes up to half of what the header and liaison blocks
+  // leave; past that it scrolls with its own ▲/▼ indicators.
+  const [needsOffset, setNeedsOffset] = createSignal(0);
+  const needsMaxRows = createMemo(() => {
+    const free = termDims().height - HEADER_ROWS - liaisonRows() - NEEDS_HEADER_ROWS;
+    return Math.max(NEEDS_MIN_ROWS, Math.floor(free / 2));
+  });
+  const needsWindow = createMemo(() => scrollWindow(needs().length, needsMaxRows(), needsOffset()));
+  const needsBlockRows = createMemo(() => {
+    if (needs().length === 0) return 0;
+    const win = needsWindow();
+    return NEEDS_HEADER_ROWS + (win.end - win.start)
+      + (win.above > 0 ? OVERFLOW_INDICATOR_ROWS : 0) + (win.below > 0 ? OVERFLOW_INDICATOR_ROWS : 0);
+  });
+  type NeedsOverflow = { overflow: -1 | 1; count: number };
+  const needsItems = createMemo<(SessionAgentRef | NeedsOverflow)[]>(() => {
+    const win = needsWindow();
+    const items: (SessionAgentRef | NeedsOverflow)[] = [];
+    if (win.above > 0) items.push({ overflow: -1, count: win.above });
+    items.push(...needs().slice(win.start, win.end));
+    if (win.below > 0) items.push({ overflow: 1, count: win.below });
+    return items;
+  });
+  function scrollNeeds(delta: -1 | 1) {
+    const win = needsWindow();
+    const page = Math.max(1, win.end - win.start);
+    setNeedsOffset(Math.max(0, win.start + delta * page));
+  }
+
   const listBudgetRows = createMemo(() =>
-    Math.max(0, termDims().height - HEADER_ROWS - liaisonRows()));
+    Math.max(0, termDims().height - HEADER_ROWS - liaisonRows() - needsBlockRows()));
 
   // Cards show every agent row; the scrolling session window absorbs the
   // height. "+N more" survives only as a guard when a single card on its own
@@ -407,6 +458,24 @@ function App() {
     });
   }
 
+  function focusAgentPane(sessionName: string, agent: SessionAgent) {
+    send({
+      type: "focus-agent-pane",
+      session: sessionName,
+      agent: agent.agent,
+      threadId: agent.threadId,
+      threadName: agent.threadName,
+      paneId: agent.paneId,
+      clientTty: clientTty() || undefined,
+    });
+  }
+
+  /** Jump to the conversation that has needed the engineer longest. */
+  function jumpToOldestNeed() {
+    const oldest = needs()[0];
+    if (oldest) focusAgentPane(oldest.session.name, oldest.agent);
+  }
+
   function dismissFocusedAgent() {
     const data = focusedData();
     const agents = focusedVisibleAgents();
@@ -493,7 +562,7 @@ function App() {
     let resizeHandler: (() => void) | null = null;
 
     function connectWebSocket() {
-      const socket = new WebSocket(`ws://${SERVER_HOST}:${SERVER_PORT}`);
+      const socket = new WebSocket(`ws://${SERVER_HOST}:${PORT}`);
       ws = socket;
 
       socket.onopen = () => {
@@ -805,6 +874,9 @@ function App() {
       case "c":
         createNewSession();
         break;
+      case "a":
+        jumpToOldestNeed();
+        break;
       case "?":
         setModal("help");
         break;
@@ -854,6 +926,21 @@ function App() {
             />
           )}
         </For>
+      </box>
+
+      {/* "Needs you": every conversation with an attention reason, oldest first. */}
+      <box flexDirection="column" flexShrink={0}>
+        <Show when={needs().length > 0}>
+          <NeedsBlock
+            items={needsItems}
+            count={() => needs().length}
+            palette={P}
+            nowMs={nowMs}
+            width={() => termDims().width}
+            onScroll={scrollNeeds}
+            onActivate={(ref) => focusAgentPane(ref.session.name, ref.agent)}
+          />
+        </Show>
       </box>
 
       <box flexDirection="column" flexGrow={1} flexShrink={1} justifyContent="flex-end" gap={0}>
@@ -1016,6 +1103,7 @@ function App() {
               ["=", "reset width"],
               ["⌥↑↓", "reorder"],
               ["1-9", "jump to session"],
+              ["a", "jump to oldest need"],
               ["q", "quit"],
             ] as const).map(([k, v]) => (
               <text>
@@ -1373,6 +1461,65 @@ function LiaisonBlock(props: LiaisonBlockProps) {
   );
 }
 
+// --- Needs You Block ---
+
+interface NeedsBlockProps {
+  items: Accessor<(SessionAgentRef | { overflow: -1 | 1; count: number })[]>;
+  count: Accessor<number>;
+  palette: Accessor<ThemePalette>;
+  nowMs: Accessor<number>;
+  width: Accessor<number>;
+  onScroll: (delta: -1 | 1) => void;
+  onActivate: (ref: SessionAgentRef) => void;
+}
+
+function NeedsBlock(props: NeedsBlockProps) {
+  const P = () => props.palette();
+  return (
+    <box flexDirection="column" flexShrink={0}>
+    <box flexDirection="column" flexShrink={0} paddingLeft={1} paddingRight={1}>
+      <text wrapMode="none">
+        <span style={{ fg: P().peach }}>{NEEDS_GLYPH}{" "}</span>
+        <span style={{ fg: P().text, attributes: BOLD }}>{"NEEDS YOU ("}{props.count()}{")"}</span>
+      </text>
+      <For each={props.items()}>
+        {(item) => {
+          if ("overflow" in item) {
+            return (
+              <box paddingLeft={2} flexShrink={0} onMouseDown={() => props.onScroll(item.overflow)}>
+                <text wrapMode="none" style={tier("muted", P())}>
+                  {item.overflow < 0 ? "▲ " : "▼ "}{item.count}{" more"}
+                </text>
+              </box>
+            );
+          }
+          const reason = () => item.agent.attention!;
+          const fg = () => reasonColor(reason(), P());
+          const age = () => padAge(formatAge(item.agent.attentionSince, props.nowMs()));
+          return (
+            <box flexDirection="row" flexShrink={0} onMouseDown={() => props.onActivate(item)}>
+              <text flexGrow={1} wrapMode="none">
+                <span style={{ fg: fg() }}>{" "}{REASON_GLYPHS[reason()]}{" "}</span>
+                <span style={isBlockingReason(reason()) ? { fg: P().text, attributes: BOLD } : { fg: P().subtext1 }}>
+                  {conversationName(item.agent)}
+                </span>
+              </text>
+              <text flexShrink={0} wrapMode="none">
+                <Show when={showReasonWord(props.width())}>
+                  <span style={{ fg: fg() }}>{" "}{padReason(reason())}</span>
+                </Show>
+                <span style={tier("muted", P())}>{" "}{age()}</span>
+              </text>
+            </box>
+          );
+        }}
+      </For>
+    </box>
+    <BlockRule palette={P} />
+    </box>
+  );
+}
+
 /** Closing rule that sets a top block apart from what follows. */
 function BlockRule(props: { palette: Accessor<ThemePalette> }) {
   return (
@@ -1502,8 +1649,10 @@ function SessionCard(props: SessionCardProps) {
 
 async function main() {
   const mock = parseMockFlag();
+  // ensureServer only knows the default port; a sidebar pointed elsewhere
+  // connects to whatever server already listens there.
   if (!mock) {
-    await ensureServer();
+    if (PORT === SERVER_PORT) await ensureServer();
   } else {
     const scenario = getScenario(mock);
     if (!scenario) {

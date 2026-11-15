@@ -52,3 +52,12 @@ export const BRANCH_GLYPH = "\u{F062C}";     // nf-md-source-branch
 // ── Liaison block ──
 export const LIAISON_GLYPH = "\u{F1308}";   // nf-md-account-tie-voice
 
+// ── "Needs you" block ──
+export const NEEDS_GLYPH = "\u{F1295}";     // nf-md-tray-alert
+export const REASON_GLYPHS = {
+  permission: "\u{F099D}",                  // nf-md-shield-lock
+  question: "\u{F1738}",                    // nf-md-chat-question
+  input: "\u{F030C}",                       // nf-md-keyboard
+  error: SEV_ERROR,                         // nf-md-alert-circle
+  finished: SEV_READY,                      // nf-md-check-circle-outline
+} as const;
