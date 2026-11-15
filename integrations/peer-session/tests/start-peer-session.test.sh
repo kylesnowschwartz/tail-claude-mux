@@ -259,6 +259,21 @@ rm "$FAKE_STATE.1"
 printf '1\n' > "$FAKE_PANE.dead"
 run "$tmp/prompt" --close-on-exit; close_check close-dead
 rm "$FAKE_PANE.dead"
+printf 'say "hi" \\ back\tslash\nbefore \377 after\n' > "$FAKE_PANE"
+SERVER_DOWN=1
+run "$tmp/prompt" --close-on-exit
+SERVER_DOWN=0
+python3 - "$tmp/out" "$code" <<'PY'
+import json, sys
+lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+if len(lines) != 1 or sys.argv[2] == "0":
+    sys.exit("FAIL close-tail-bytes: one failing JSON line")
+tail = json.loads(lines[0]).get("pane_tail", "")
+for part in ('"hi"', "\\", "\t", "before ", " after"):
+    if part not in tail:
+        sys.exit("FAIL close-tail-bytes: tail lacks " + repr(part) + ": " + repr(tail))
+print("PASS close-tail-bytes")
+PY
 fi
 
 # Without --close-on-exit, the tmux and curl calls equal those recorded in

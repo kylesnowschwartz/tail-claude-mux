@@ -29,7 +29,8 @@ fail() { result false "$1"; exit 1; }
 fail_kept() {
     pane_tail=$(tmux capture-pane -p -t "$pane" 2>/dev/null | python3 -c '
 import sys
-print("\n".join([l for l in sys.stdin.read().splitlines() if l.strip()][-20:]))
+text = sys.stdin.buffer.read().decode("utf-8", "replace")
+print("\n".join([l for l in text.splitlines() if l.strip()][-20:]))
 ') || pane_tail=
     fail "$1"
 }
