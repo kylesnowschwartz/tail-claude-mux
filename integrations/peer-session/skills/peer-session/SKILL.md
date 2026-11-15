@@ -71,7 +71,7 @@ apply to Claude Code peers only; pi cannot use them.
 3. Run the launcher:
 
    ```bash
-   "${CLAUDE_PLUGIN_ROOT}/scripts/start-peer-session.sh" --attach-existing --repo <directory> --session <name> --prompt-file <brief-file> --name <name> --window <name> [--agent pi]
+   "${CLAUDE_PLUGIN_ROOT}/scripts/start-peer-session.sh" --attach-existing --repo <directory> --session <name> --prompt-file <brief-file> --name <name> --window <name> [--session-id <uuid>] [--agent pi]
    ```
 
    The name is `<workstream>/<topic>`, lowercase with hyphens. The workstream
@@ -79,7 +79,8 @@ apply to Claude Code peers only; pi cannot use them.
    peer does, for example `liaison/s4-agent-test` or
    `checkout/fix-tax-rounding`. Use the same name for `--window`. The name
    shows in `ListAgents` and in session lists, so the person can tell what
-   each peer is for. `--name` is for Claude Code only.
+   each peer is for. `--name` is for Claude Code only. `--session-id <uuid>`
+   starts Claude Code with that conversation ID; it is for Claude Code only.
 
    With `--attach-existing`, the launcher opens a new window in the tmux
    session that was created in the `--repo` directory. When no tmux session

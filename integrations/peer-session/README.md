@@ -40,7 +40,7 @@ waits for stable pane text.
 ## Script
 
 ```text
-start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--agent claude|pi] [--window <name>] [--name <name>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]
+start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--agent claude|pi] [--window <name>] [--name <name>] [--session-id <uuid>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]
 ```
 
 Run `scripts/start-peer-session.sh` from this plugin directory. Defaults are
@@ -58,6 +58,10 @@ session has that directory, the launcher creates the one named by `--session`.
 `--name <name>` sets a Claude Code peer's session name with `claude -n`. The
 name matches `^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$`, and `--agent pi` with
 `--name` is a validation error. The skill names peers `<workstream>/<topic>`.
+
+`--session-id <uuid>` starts a Claude Code peer with that conversation ID, using
+`claude --session-id`. The value is a UUID in 8-4-4-4-12 hexadecimal form, and
+`--agent pi` with `--session-id` is a validation error.
 
 `--agent pi` runs `pi` in the pane and waits for the pi row in
 tcm state; `--permission-mode` with `--agent pi` is a validation error.
