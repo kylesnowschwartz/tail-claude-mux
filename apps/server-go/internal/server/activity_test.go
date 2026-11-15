@@ -240,3 +240,37 @@ func TestStatusLinesOnlyOnChangeAndNotWhileSeeding(t *testing.T) {
 		t.Fatalf("statuses = %v, want [running idle]", got)
 	}
 }
+
+func TestClaudeStatusLineCarriesKnownPaneID(t *testing.T) {
+	dir := t.TempDir()
+	s := New(&state.Builder{Tmux: &tmux.Tmux{Run: func(...string) (string, error) { return "", nil }}}, tracker.New(), ccwatch.New(t.TempDir(), t.TempDir()), nil, nil)
+	s.Activity = openActivity(t, dir, nil)
+	s.watchersSeeded = true
+	s.broadcastTimer = time.NewTimer(time.Hour)
+	s.broadcastTimer.Stop()
+	locked := func(fn func()) { s.mu.Lock(); defer s.mu.Unlock(); fn() }
+	s.Watcher.Start(&ccwatch.Context{
+		ResolveSession:      func(string) string { return "work" },
+		ResolveSessionByPid: func(int) string { return "work" },
+		Emit:                s.emitLocked,
+		Locked:              locked,
+	})
+	postHook(t, s, wire.HookPayload{Event: "UserPromptSubmit", SessionID: "sess-1", Cwd: "/project"})
+	locked(func() {
+		s.Tracker.ApplyPanePresence("work", []tracker.PanePresence{{Agent: "claude-code", PaneID: "%9", ThreadID: "sess-1"}})
+	})
+	if ev := s.Tracker.GetEvent("work", "claude-code", "sess-1", ""); ev == nil || ev.PaneID != "%9" {
+		t.Fatalf("tracker row = %+v", ev)
+	}
+	postHook(t, s, wire.HookPayload{Event: "Stop", SessionID: "sess-1", Cwd: "/project"})
+
+	var statuses []map[string]any
+	for _, l := range readRecord(t, dir) {
+		if l["kind"] == "status" {
+			statuses = append(statuses, l)
+		}
+	}
+	if len(statuses) != 2 || statuses[1]["pane_id"] != "%9" || statuses[1]["status"] == statuses[0]["status"] {
+		t.Fatalf("status lines = %v", statuses)
+	}
+}

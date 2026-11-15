@@ -83,7 +83,7 @@ type Server struct {
 	// parsed hook event and every derived status change is appended to it.
 	Activity *activity.Writer
 	// recordedStatus is the last status written to the activity record,
-	// per pane key (see recordStatusLocked).
+	// per conversation key (see recordStatusLocked).
 	recordedStatus map[string]string
 
 	Palette       *theming.PaletteWriter
