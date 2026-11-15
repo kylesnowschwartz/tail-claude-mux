@@ -35,15 +35,47 @@ if [ ${#valid_dirs[@]} -eq 0 ]; then
   exit 1
 fi
 
+# Print each root, then its subdirectories and the .git entries among them.
 # Walk each root to completion before the next so SESSIONIZER_DIR order is the
 # list order; a single multi-root find interleaves depth levels across roots.
-list_dirs() {
+walk_roots() {
   local dir
   for dir in "${valid_dirs[@]}"; do
-    # Prune hidden dirs (.git, .bin, ...) and their subtrees; mindepth keeps
-    # the prune off the root, so a hidden root like ~/.config still descends.
-    find "$dir" -mindepth 1 -maxdepth 3 -name '.*' -prune -o -type d -print 2>/dev/null
+    printf '%s\n' "${dir%/}"
+    # Print .git entries so project_roots can tell which directories are
+    # repositories. Prune other hidden dirs (.bin, ...) and their subtrees;
+    # mindepth keeps the prune off the root, so a hidden root like ~/.config
+    # still descends.
+    find "${dir%/}" -mindepth 1 -maxdepth 3 \
+      -name .git -print -prune -o \
+      -name '.*' -prune -o \
+      -type d -print 2>/dev/null
   done
+}
+
+# Keep the places a session starts from: each root, each repository, and each
+# directory that is not inside a repository. Drop the directories inside a
+# repository and the .git entries themselves.
+project_roots() {
+  awk '
+    { paths[NR] = $0 }
+    /\/\.git$/ { is_repo[substr($0, 1, length($0) - 5)] = 1 }
+    END {
+      for (i = 1; i <= NR; i++) {
+        path = paths[i]
+        if (path ~ /\/\.git$/) continue
+        ancestor = path
+        inside_repo = 0
+        while (sub(/\/[^\/]*$/, "", ancestor) && ancestor != "") {
+          if (ancestor in is_repo) { inside_repo = 1; break }
+        }
+        if (!inside_repo) print path
+      }
+    }'
+}
+
+list_dirs() {
+  walk_roots | project_roots
 }
 
 selected=$(list_dirs | fzf \

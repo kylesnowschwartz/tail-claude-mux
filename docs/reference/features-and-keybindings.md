@@ -83,6 +83,7 @@ The focused session detail panel can show:
 - The server exposes `new-session` through the mux provider interface.
 - The TUI uses a tmux popup sessionizer when it is running inside tmux.
 - The bundled sessionizer searches directories listed in `SESSIONIZER_DIR` (colon-separated, e.g. `$HOME/Code:$HOME/.config`) or `$HOME/Documents` if unset. The variable is also read from the tmux global environment (`tmux set-environment -g`) as a fallback.
+- The list holds each listed directory, each Git repository below it, and each directory that is not inside a repository, to a depth of three. Directories inside a repository and hidden directories are left out.
 - If `fzf` is unavailable, the tmux sessionizer exits with a prompt explaining that dependency.
 
 ## Session Switching Behavior
