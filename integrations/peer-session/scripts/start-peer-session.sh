@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-usage='start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--agent claude|pi] [--window <name>] [--name <name>] [--session-id <uuid>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]'
-repo='' session='' prompt_file='' pane='' ready='' peer_name='' window='' permission_mode='' name='' session_id=''
-agent=claude attach=0 session_id_set=0 ready_timeout=60 port=${TCM_PORT:-7391}
+usage='start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--close-on-exit] [--agent claude|pi] [--window <name>] [--name <name>] [--session-id <uuid>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]'
+repo='' session='' prompt_file='' pane='' ready='' peer_name='' window='' permission_mode='' name='' session_id='' pane_tail=''
+agent=claude attach=0 close_on_exit=0 tcm_seen=0 session_id_set=0 ready_timeout=60 port=${TCM_PORT:-7391}
 result() {
-    python3 - "$1" "$2" "$pane" "$session" "$ready" "$peer_name" "$agent" <<'PY'
+    python3 - "$1" "$2" "$pane" "$session" "$ready" "$peer_name" "$agent" "$pane_tail" <<'PY'
 import json, sys
-ok, error, pane, session, ready, peer, agent = sys.argv[1:]
+ok, error, pane, session, ready, peer, agent, tail = sys.argv[1:]
 value = {"ok": ok == "true"}
 if pane:
     value.update(pane=pane, session=session, ready=ready,
@@ -18,14 +18,28 @@ if pane:
         value["agent"] = agent
 if error:
     value["error"] = error
+if tail:
+    value["pane_tail"] = tail
 print(json.dumps(value, separators=(",", ":")))
 PY
 }
 fail() { result false "$1"; exit 1; }
+# With --close-on-exit, a failure after the pane exists records the last
+# non-empty lines of the pane, which stays open because remain-on-exit is on.
+fail_kept() {
+    pane_tail=$(tmux capture-pane -p -t "$pane" 2>/dev/null | python3 -c '
+import sys
+print("\n".join([l for l in sys.stdin.read().splitlines() if l.strip()][-20:]))
+') || pane_tail=
+    fail "$1"
+}
 unexpected() {
     trap - ERR
     if [[ -n "$pane" ]]; then
         ready=${ready:-timeout}
+        if (( close_on_exit )); then
+            fail_kept "Command failed; the pane is kept for reading."
+        fi
         fail "Command failed; tmux session '$session' remains running."
     fi
     fail "Command failed before a pane id was returned."
@@ -45,6 +59,7 @@ while [[ $# -gt 0 ]]; do
             esac
             shift 2 ;;
         --attach-existing) attach=1; shift ;;
+        --close-on-exit) close_on_exit=1; shift ;;
         *) fail "Unknown argument: $1. Usage: $usage" ;;
     esac
 done
@@ -60,11 +75,14 @@ case "$agent" in
             [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$ ]] || fail "--name must match ^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}\$."
             launch+=" -n $name"
         fi
+        # exec replaces the shell, so the pane ends when Claude Code ends.
+        (( ! close_on_exit )) || launch="exec $launch"
         tcm_agent=claude-code ;;
     pi)
         [[ -z "$permission_mode" ]] || fail "--permission-mode applies only to --agent claude."
         [[ -z "$name" ]] || fail "--name applies only to --agent claude; pi has no session name option."
         (( ! session_id_set )) || fail "--session-id applies only to --agent claude."
+        (( ! close_on_exit )) || fail "--close-on-exit applies only to --agent claude."
         window=${window:-pi} launch=pi tcm_agent=pi ;;
     *) fail "--agent must be claude or pi." ;;
 esac
@@ -103,10 +121,17 @@ else
     fi
     pane=$(tmux new-session -d -P -F '#{pane_id}' -s "$session" -n "$window" -x 200 -y 50 -c "$repo")
 fi
+if (( close_on_exit )); then
+    tmux set-option -p -t "$pane" remain-on-exit on >&2
+fi
 tmux send-keys -t "$pane" "$launch" Enter >&2
 elapsed=0 stable=0 previous=
 name_wait_polls=5
 while (( elapsed < ready_timeout )); do
+    if (( close_on_exit )) && [[ $(tmux display-message -p -t "$pane" '#{pane_dead}') == 1 ]]; then
+        ready=exited
+        fail_kept "Claude Code ended before it was ready; the pane is kept for reading."
+    fi
     pane_text=$(tmux capture-pane -p -t "$pane")
     if printf '%s' "$pane_text" | python3 -c '
 import re, sys
@@ -116,10 +141,11 @@ choice = choice or re.search(r"\by\s*/\s*n\b", s)
 sys.exit(0 if "trust" in s and choice else 1)
 '; then
         ready=dialog
+        (( ! close_on_exit )) || fail_kept "Input is blocked by a trust dialog; the pane is kept for reading."
         fail "Input is blocked by a trust dialog; tmux session '$session' remains running."
     fi
     if state=$(curl --fail --silent --show-error --max-time 1 "http://127.0.0.1:$port/state" 2>/dev/null); then
-        stable=0
+        stable=0 tcm_seen=1
         if peer_name=$(printf '%s' "$state" | python3 -c '
 import json, sys
 try:
@@ -160,6 +186,9 @@ except (ValueError, TypeError, AttributeError):
             done
             break
         fi
+    elif (( close_on_exit )); then
+        # Unchanged pane text is not a sign of readiness with --close-on-exit.
+        tcm_seen=0
     else
         if [[ -n "$pane_text" && "$pane_text" == "$previous" ]]; then
             stable=$((stable + 1))
@@ -177,10 +206,41 @@ except (ValueError, TypeError, AttributeError):
 done
 if [[ -z "$ready" ]]; then
     ready=timeout
+    if (( close_on_exit )); then
+        if (( tcm_seen )); then
+            fail_kept "Readiness timed out: tcm listed no idle conversation in the pane; the pane is kept for reading."
+        fi
+        fail_kept "Readiness timed out: tcm gave no answer; the pane is kept for reading."
+    fi
     fail "Readiness timed out; tmux session '$session' remains running."
 fi
 buffer="peer-session-$$-$RANDOM"
 tmux load-buffer -b "$buffer" "$prompt_file" >&2
+if (( close_on_exit )); then
+    # Paste only when tcm still lists the pane's conversation as idle.
+    if ! state=$(curl --fail --silent --show-error --max-time 1 "http://127.0.0.1:$port/state" 2>/dev/null); then
+        tmux delete-buffer -b "$buffer" >&2
+        ready=unconfirmed
+        fail_kept "tcm gave no answer on the check before the paste; nothing was pasted and the pane is kept for reading."
+    fi
+    status=$(printf '%s' "$state" | python3 -c '
+import json, sys
+try:
+    for session in json.load(sys.stdin).get("sessions", []):
+        for agent in session.get("agents", []):
+            if agent.get("agent") == sys.argv[2] and agent.get("paneId") == sys.argv[1]:
+                print(agent.get("status") or "")
+                sys.exit(0)
+except (ValueError, TypeError, AttributeError):
+    pass
+' "$pane" "$tcm_agent")
+    if [[ "$status" != idle ]]; then
+        tmux delete-buffer -b "$buffer" >&2
+        ready=unconfirmed
+        fail_kept "The conversation status changed to '${status:-none}' before the paste; nothing was pasted and the pane is kept for reading."
+    fi
+    tmux set-option -p -t "$pane" remain-on-exit off >&2
+fi
 tmux paste-buffer -p -d -b "$buffer" -t "$pane" >&2
 sleep 0.5
 tmux send-keys -t "$pane" Enter >&2

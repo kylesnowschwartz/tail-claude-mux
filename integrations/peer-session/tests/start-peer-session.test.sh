@@ -18,6 +18,7 @@ case "$1" in
     new-session|new-window) printf '%%128\n' ;;
     list-sessions) cat "$FAKE_SESSIONS" ;;
     capture-pane) cat "$FAKE_PANE" ;;
+    display-message) if [[ -f "$FAKE_PANE.dead" ]]; then cat "$FAKE_PANE.dead"; else printf '0\n'; fi ;;
 esac
 FAKE
 cat > "$tmp/bin/curl" <<'FAKE'
@@ -29,6 +30,7 @@ printf 'curl\n' >> "$CALL_LOG"
 count=$(cat "$FAKE_COUNT")
 count=$((count + 1))
 printf '%s' "$count" > "$FAKE_COUNT"
+[[ "$count" != "${DOWN_AT:-}" ]] || exit 7
 if [[ -f "$FAKE_STATE.$count" ]]; then cat "$FAKE_STATE.$count"; else cat "$FAKE_STATE"; fi
 FAKE
 cat > "$tmp/bin/sleep" <<'FAKE'
@@ -37,6 +39,7 @@ printf 'sleep %s\n' "$*" >> "$CALL_LOG.extra"
 FAKE
 chmod +x "$tmp/bin/"*
 export PATH="$tmp/bin:$PATH"
+script="$root/scripts/start-peer-session.sh"
 printf 'Task line one\nTask line two\n' > "$tmp/prompt"
 run() {
     : > "$CALL_LOG"
@@ -45,7 +48,7 @@ run() {
     code=0
     local prompt=$1
     shift
-    bash "$root/scripts/start-peer-session.sh" --repo "$tmp" --session peer --prompt-file "$prompt" --ready-timeout 7 "$@" > "$tmp/out" || code=$?
+    bash "$script" --repo "$tmp" --session peer --prompt-file "$prompt" --ready-timeout 7 "$@" > "$tmp/out" || code=$?
 }
 check() {
     python3 - "$tmp" "$1" "$code" <<'PY'
@@ -187,3 +190,126 @@ EXISTING=0
 SERVER_DOWN=1
 printf '%s/elsewhere\tother\n%s\twork\n' "$tmp" "$tmp" > "$FAKE_SESSIONS"
 run "$tmp/prompt" --attach-existing; check attach-fallback
+
+# --close-on-exit cases.
+close_check() {
+    python3 - "$tmp" "$1" "$code" <<'PY'
+import json, pathlib, sys
+p, case, code = pathlib.Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+def require(ok, message):
+    if not ok:
+        sys.exit("FAIL " + case + ": " + message)
+lines = (p / "out").read_text().splitlines()
+require(len(lines) == 1, "stdout must contain one line")
+v = json.loads(lines[0])
+events = (p / "calls").read_text().splitlines()
+calls = [json.loads(s) for s in events if s != "curl"]
+names = [c[0] for c in calls]
+on = ["set-option", "-p", "-t", "%128", "remain-on-exit", "on"]
+off = ["set-option", "-p", "-t", "%128", "remain-on-exit", "off"]
+if case == "close-pi":
+    require(code != 0 and "--close-on-exit" in v["error"] and not calls, "pi refused before tmux")
+    print("PASS " + case)
+    sys.exit()
+launch = next(c for c in calls if c[0] == "send-keys")
+require(launch[3].startswith("exec claude --permission-mode auto"), "exec launch: " + str(launch))
+require(calls.index(on) < calls.index(launch), "remain-on-exit on before launch")
+if case == "close-idle":
+    require(code == 0 and v["ok"] and v["prompt_sent"] and v["ready"] == "idle", "success")
+    i_off, i_paste = calls.index(off), names.index("paste-buffer")
+    require(names.index("load-buffer") < i_off and i_paste == i_off + 1, "off right before paste")
+    require(events.count("curl") == 2, "two tcm checks")
+    require("pane_tail" not in v, "no tail on success")
+else:
+    require(code != 0 and not v["ok"] and not v["prompt_sent"], "failure")
+    require(off not in calls and "paste-buffer" not in names, "no paste, setting stays on")
+    require("Claude input" in v.get("pane_tail", ""), "pane tail")
+    require("remains running" not in v["error"], "no running claim")
+    expect = {"close-down": ("timeout", "tcm gave no answer"),
+              "close-busy": ("timeout", "no idle conversation"),
+              "close-changed": ("unconfirmed", "'running'"),
+              "close-gone": ("unconfirmed", "tcm gave no answer"),
+              "close-dead": ("exited", "kept for reading")}[case]
+    require(v["ready"] == expect[0] and expect[1] in v["error"], "details: " + str(v))
+    if v["ready"] == "unconfirmed":
+        load = calls[names.index("load-buffer")]
+        require(["delete-buffer", "-b", load[load.index("-b") + 1]] in calls, "buffer deleted")
+print("PASS " + case)
+PY
+}
+SERVER_DOWN=0
+idle_state='{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","status":"idle","threadName":"other-project"}]}]}'
+if [[ -z "${RECORD_GOLDEN_FROM:-}" ]]; then
+printf 'Claude input\n' > "$FAKE_PANE"
+idle_state='{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","status":"idle","threadName":"other-project"}]}]}'
+printf '%s\n' "$idle_state" > "$FAKE_STATE"
+run "$tmp/prompt" --close-on-exit; close_check close-idle
+run "$tmp/prompt" --close-on-exit --agent pi; close_check close-pi
+export DOWN_AT=2
+run "$tmp/prompt" --close-on-exit; close_check close-gone
+DOWN_AT=
+SERVER_DOWN=1
+run "$tmp/prompt" --close-on-exit; close_check close-down
+SERVER_DOWN=0
+printf '%s\n' "${idle_state/\"idle\"/\"running\"}" > "$FAKE_STATE"
+run "$tmp/prompt" --close-on-exit; close_check close-busy
+printf '%s\n' "$idle_state" > "$FAKE_STATE.1"
+run "$tmp/prompt" --close-on-exit; close_check close-changed
+rm "$FAKE_STATE.1"
+printf '1\n' > "$FAKE_PANE.dead"
+run "$tmp/prompt" --close-on-exit; close_check close-dead
+rm "$FAKE_PANE.dead"
+fi
+
+# Without --close-on-exit, the tmux and curl calls equal those recorded in
+# no-option-calls.golden. RECORD_GOLDEN_FROM=<script> records that file by
+# running the given script.
+golden_cases() {
+    local out=$1
+    : > "$out"
+    one() {
+        local label=$1
+        shift
+        run "$tmp/prompt" "$@"
+        printf '== %s %s\n' "$label" "$code" >> "$out"
+        sed -E -e "s#peer-session-[0-9]+-[0-9]+#peer-session-BUFFER#g" -e "s#$tmp#TMP#g" "$CALL_LOG" >> "$out"
+    }
+    printf 'Claude input\n' > "$FAKE_PANE"
+    printf '%s\n' "$idle_state" > "$FAKE_STATE"
+    one idle
+    printf '%s\n' "$idle_state" > "$FAKE_STATE.3"
+    printf '%s\n' "${idle_state/other-project/}" > "$FAKE_STATE"
+    one delayed
+    rm "$FAKE_STATE.3"
+    SERVER_DOWN=1
+    one fallback
+    SERVER_DOWN=0
+    printf '{"sessions":[]}\n' > "$FAKE_STATE"
+    printf 'Starting Claude\n' > "$FAKE_PANE"
+    one timeout
+    printf 'Do you trust this folder? Yes / No\n' > "$FAKE_PANE"
+    one dialog
+    printf 'pi input\n' > "$FAKE_PANE"
+    printf '%s\n' "${idle_state/claude-code/pi}" > "$FAKE_STATE"
+    one pi-idle --agent pi
+    printf 'Claude input\n' > "$FAKE_PANE"
+    printf '%s\n' "$idle_state" > "$FAKE_STATE"
+    printf '%s/elsewhere\tother\n%s\twork\n' "$tmp" "$tmp" > "$FAKE_SESSIONS"
+    one attach-match --attach-existing
+    one name-id --name liaison/x --session-id 123e4567-e89b-42d3-a456-426614174000
+}
+golden="$root/tests/no-option-calls.golden"
+if [[ -n "${RECORD_GOLDEN_FROM:-}" ]]; then
+    script=$RECORD_GOLDEN_FROM
+    golden_cases "$golden"
+    echo "recorded $golden"
+else
+    golden_cases "$tmp/golden"
+    if cmp -s "$golden" "$tmp/golden"; then
+        echo "PASS no-option-golden"
+    else
+        diff "$golden" "$tmp/golden" >&2 || true
+        echo "FAIL no-option-golden" >&2
+        exit 1
+    fi
+fi

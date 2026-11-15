@@ -1,0 +1,83 @@
+== idle 0
+["has-session", "-t", "=peer"]
+["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
+["send-keys", "-t", "%128", "claude --permission-mode auto", "Enter"]
+["capture-pane", "-p", "-t", "%128"]
+curl
+["load-buffer", "-b", "peer-session-BUFFER", "TMP/prompt"]
+["paste-buffer", "-p", "-d", "-b", "peer-session-BUFFER", "-t", "%128"]
+["send-keys", "-t", "%128", "Enter"]
+== delayed 0
+["has-session", "-t", "=peer"]
+["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
+["send-keys", "-t", "%128", "claude --permission-mode auto", "Enter"]
+["capture-pane", "-p", "-t", "%128"]
+curl
+curl
+curl
+["load-buffer", "-b", "peer-session-BUFFER", "TMP/prompt"]
+["paste-buffer", "-p", "-d", "-b", "peer-session-BUFFER", "-t", "%128"]
+["send-keys", "-t", "%128", "Enter"]
+== fallback 0
+["has-session", "-t", "=peer"]
+["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
+["send-keys", "-t", "%128", "claude --permission-mode auto", "Enter"]
+["capture-pane", "-p", "-t", "%128"]
+["capture-pane", "-p", "-t", "%128"]
+["capture-pane", "-p", "-t", "%128"]
+["capture-pane", "-p", "-t", "%128"]
+["capture-pane", "-p", "-t", "%128"]
+["capture-pane", "-p", "-t", "%128"]
+["load-buffer", "-b", "peer-session-BUFFER", "TMP/prompt"]
+["paste-buffer", "-p", "-d", "-b", "peer-session-BUFFER", "-t", "%128"]
+["send-keys", "-t", "%128", "Enter"]
+== timeout 1
+["has-session", "-t", "=peer"]
+["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
+["send-keys", "-t", "%128", "claude --permission-mode auto", "Enter"]
+["capture-pane", "-p", "-t", "%128"]
+curl
+["capture-pane", "-p", "-t", "%128"]
+curl
+["capture-pane", "-p", "-t", "%128"]
+curl
+["capture-pane", "-p", "-t", "%128"]
+curl
+["capture-pane", "-p", "-t", "%128"]
+curl
+["capture-pane", "-p", "-t", "%128"]
+curl
+["capture-pane", "-p", "-t", "%128"]
+curl
+== dialog 1
+["has-session", "-t", "=peer"]
+["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
+["send-keys", "-t", "%128", "claude --permission-mode auto", "Enter"]
+["capture-pane", "-p", "-t", "%128"]
+== pi-idle 0
+["has-session", "-t", "=peer"]
+["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "pi", "-x", "200", "-y", "50", "-c", "TMP"]
+["send-keys", "-t", "%128", "pi", "Enter"]
+["capture-pane", "-p", "-t", "%128"]
+curl
+["load-buffer", "-b", "peer-session-BUFFER", "TMP/prompt"]
+["paste-buffer", "-p", "-d", "-b", "peer-session-BUFFER", "-t", "%128"]
+["send-keys", "-t", "%128", "Enter"]
+== attach-match 0
+["list-sessions", "-F", "#{session_path}\t#{session_name}"]
+["new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=work:", "-n", "claude", "-c", "TMP"]
+["send-keys", "-t", "%128", "claude --permission-mode auto", "Enter"]
+["capture-pane", "-p", "-t", "%128"]
+curl
+["load-buffer", "-b", "peer-session-BUFFER", "TMP/prompt"]
+["paste-buffer", "-p", "-d", "-b", "peer-session-BUFFER", "-t", "%128"]
+["send-keys", "-t", "%128", "Enter"]
+== name-id 0
+["has-session", "-t", "=peer"]
+["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
+["send-keys", "-t", "%128", "claude --permission-mode auto --session-id 123e4567-e89b-42d3-a456-426614174000 -n liaison/x", "Enter"]
+["capture-pane", "-p", "-t", "%128"]
+curl
+["load-buffer", "-b", "peer-session-BUFFER", "TMP/prompt"]
+["paste-buffer", "-p", "-d", "-b", "peer-session-BUFFER", "-t", "%128"]
+["send-keys", "-t", "%128", "Enter"]
