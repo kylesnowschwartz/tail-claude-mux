@@ -94,9 +94,20 @@ apply to Claude Code peers only; pi cannot use them.
    failure. Validation failures have only `ok` and `error`.
    `--permission-mode` is for Claude Code only.
 
+   `--close-on-exit` (Claude Code only) starts Claude Code with `exec`, so
+   the pane closes when Claude Code exits. The pane has tmux's
+   `remain-on-exit` set `on` until tcm shows the conversation idle twice,
+   the second time just before the paste; then it is set `off`. Stable pane
+   text does not count as ready. On any failure the pane stays open and the
+   result adds `pane_tail`, the last lines of the pane. `ready` is `exited`
+   when Claude Code ended before it was ready, and `unconfirmed` when tcm
+   gave no answer or a status other than idle on the check before the paste;
+   nothing was pasted in either case.
+
    For `idle` or `pane-stable`, continue. For `dialog`, inspect once with
    `tmux capture-pane -p -t <pane>`, tell the person what it asks, and let
    them answer it. A folder-trust question is the person's decision.
+   For `exited` or `unconfirmed`, read `pane_tail` and report it.
    For `timeout`, inspect once with the same command and report what you see.
    Failures leave the pane running. Once the person has answered any
    dialog and Claude Code is at its prompt, find the peer with `ListAgents`
@@ -147,6 +158,9 @@ Close a peer that you started when all of these are true: it has reported, you h
 tmux send-keys -t <pane> '/exit' Enter
 tmux display-message -p -t <pane> '#{pane_current_command}'
 ```
+
+A peer started with `--close-on-exit` has no shell under it: its pane
+closes when `/exit` ends Claude Code, and the steps below do not apply.
 
 Wait until the command prints the shell name, for example `zsh`, which means
 the agent has exited. Only then close the shell:

@@ -40,7 +40,7 @@ waits for stable pane text.
 ## Script
 
 ```text
-start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--agent claude|pi] [--window <name>] [--name <name>] [--session-id <uuid>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]
+start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--close-on-exit] [--agent claude|pi] [--window <name>] [--name <name>] [--session-id <uuid>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]
 ```
 
 Run `scripts/start-peer-session.sh` from this plugin directory. Defaults are
@@ -63,9 +63,25 @@ name matches `^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$`, and `--agent pi` with
 `claude --session-id`. The value is a UUID in 8-4-4-4-12 lower-case hexadecimal form, and
 `--agent pi` with `--session-id` is a validation error.
 
+`--close-on-exit` makes the pane end when Claude Code ends:
+
+| Part | Behavior with `--close-on-exit` |
+| --- | --- |
+| Start command | `exec claude ...`, so Claude Code replaces the shell |
+| `remain-on-exit` | Set `on` for the pane before the start command; set `off` only after readiness is confirmed, immediately before the paste |
+| Readiness | tcm must list an idle Claude Code conversation in the pane; stable pane text does not count |
+| Check before the paste | After the buffer is loaded, tcm is asked again; when it gives no answer or the status is not idle, nothing is pasted, the buffer is deleted, and the result has `ready:"unconfirmed"` |
+| Failure after the pane exists | The pane stays open for reading and the result adds `pane_tail`, the last 20 non-empty lines of the pane |
+| Claude Code ends before it is ready | The launcher fails at once with `ready:"exited"` |
+
+- `--agent pi` with `--close-on-exit` is a validation error.
+- A timeout error says whether tcm gave no answer or listed no idle
+  conversation in the pane.
+
 `--agent pi` runs `pi` in the pane and waits for the pi row in
 tcm state; `--permission-mode` with `--agent pi` is a validation error.
-Both agents start in a shell pane, so the tmux session outlives the agent.
+Without `--close-on-exit`, both agents start in a shell pane, so the tmux
+session outlives the agent.
 Pi requires the `pi` and `love-letters` commands on PATH.
 
 Stdout contains one JSON line; diagnostics go to stderr. Success exits zero:
@@ -77,6 +93,8 @@ Stdout contains one JSON line; diagnostics go to stderr. Success exits zero:
 `pane` identifies the new pane and `session` names the tmux session that
 holds it, which with `--attach-existing` can differ from `--session`.
 `ready` is `idle` for tcm readiness or `pane-stable` for the fallback.
+With `--close-on-exit`, failures add `pane_tail` and `ready` can be
+`exited` or `unconfirmed`.
 `peer_name` is a hint; the skill resolves the address with `ListAgents`.
 A pi launch adds `"agent":"pi"`.
 
