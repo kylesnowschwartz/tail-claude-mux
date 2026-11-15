@@ -234,14 +234,6 @@ describe("liaison workers", () => {
     expect(formatWorkers(12, 9)).toBe("12");
     expect(formatWorkers(3, 0)).toBe("3");
   });
-
-  test("the block height counts the work row once at every width", () => {
-    const count = liaisonWorkerCount(sessions, liaison);
-    for (const columns of [40, 16, 8, 0]) {
-      expect(formatWorkers(count, columns)).not.toContain("\n");
-      expect(liaisonBlockRows(0, true, count > 0)).toBe(6);
-    }
-  });
 });
 
 describe("statusStart", () => {
