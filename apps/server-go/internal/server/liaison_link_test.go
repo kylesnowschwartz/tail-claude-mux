@@ -33,13 +33,19 @@ func TestStateServesLiaisonLinkFromPaneOptions(t *testing.T) {
 		work, parent, worker string
 		threadID             string // "" with shell: no conversation in the pane
 		shell                bool
-		wantLink             bool
+		wantWork, wantParent string // "" = the key is absent
 	}{
-		{session: "valid", work: "w7", parent: parent, worker: worker, threadID: worker, wantLink: true},
+		{session: "valid", work: "w7", parent: parent, worker: worker, threadID: worker, wantWork: "w7", wantParent: parent},
 		{session: "no-options", threadID: worker},
-		{session: "tab", work: "w\t7", parent: parent + "\t", worker: worker, threadID: worker},
-		{session: "line-break", work: "w7\n", parent: "\n" + parent, worker: worker, threadID: worker},
-		{session: "wrong-form", work: "work-7", parent: "liaison", worker: worker, threadID: worker},
+		// One bad value beside two valid ones. A bad worker hides both
+		// fields; a bad work ID or parent hides only its own field.
+		{session: "tab-in-worker", work: "w7", parent: parent, worker: worker[:8] + "\t" + worker[9:], threadID: worker},
+		{session: "line-break-in-worker", work: "w7", parent: parent, worker: worker + "\n", threadID: worker},
+		{session: "tab-in-work", work: "w\t7", parent: parent, worker: worker, threadID: worker, wantParent: parent},
+		{session: "line-break-in-parent", work: "w7", parent: parent + "\n", worker: worker, threadID: worker, wantWork: "w7"},
+		{session: "wrong-form-worker", work: "w7", parent: parent, worker: "worker", threadID: worker},
+		{session: "wrong-form-work", work: "work-7", parent: parent, worker: worker, threadID: worker, wantParent: parent},
+		{session: "wrong-form-parent", work: "w7", parent: "liaison", worker: worker, threadID: worker, wantWork: "w7"},
 		{session: "shell", work: "w7", parent: parent, worker: worker, shell: true},
 		{session: "other-conversation", work: "w7", parent: parent, worker: worker, threadID: other},
 	}
@@ -132,16 +138,14 @@ func TestStateServesLiaisonLinkFromPaneOptions(t *testing.T) {
 				t.Fatalf("want one conversation, got %+v", sess)
 			}
 			for where, row := range map[string]map[string]any{"agents[]": sess.agents[0], "agentState": sess.agentState} {
-				work, hasWork := row["liaisonWorkId"]
-				par, hasParent := row["liaisonParentThreadId"]
-				if tc.wantLink {
-					if work != "w7" || par != parent {
-						t.Errorf("%s link = %v %v, want w7 %s", where, work, par, parent)
+				for key, want := range map[string]string{"liaisonWorkId": tc.wantWork, "liaisonParentThreadId": tc.wantParent} {
+					got, has := row[key]
+					if want == "" && has {
+						t.Errorf("%s has %s = %v, want the key absent", where, key, got)
 					}
-					continue
-				}
-				if hasWork || hasParent {
-					t.Errorf("%s has link keys %v %v, want both absent", where, work, par)
+					if want != "" && got != want {
+						t.Errorf("%s %s = %v, want %s", where, key, got, want)
+					}
 				}
 			}
 		})
