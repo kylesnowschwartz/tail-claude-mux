@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { SessionData } from "@tcm/runtime";
 import {
   findLiaisons,
+  isLiaisonName,
   fleetFits,
   fleetCounts,
   formatAge,
@@ -58,7 +59,6 @@ describe("liaisonTitle", () => {
   test("shows the bare word or the word plus the rest of the name", () => {
     expect(liaisonTitle("liaison")).toBe("LIAISON");
     expect(liaisonTitle("liaison/work")).toBe("LIAISON work");
-    expect(liaisonTitle("liaison-personal")).toBe("LIAISON personal");
   });
 });
 
@@ -130,5 +130,15 @@ describe("needsYou liveness", () => {
       agent({ threadName: "unknown", attention: "error", attentionSince: NOW - 3 * MIN, status: "error", liveness: undefined }),
     ])];
     expect(needsYou(sessions).map((r) => r.agent.threadName)).toEqual(["live"]);
+  });
+});
+
+describe("isLiaisonName", () => {
+  test("matches the bare word or a liaison/ prefix only", () => {
+    expect(isLiaisonName("liaison")).toBe(true);
+    expect(isLiaisonName("liaison/work")).toBe(true);
+    expect(isLiaisonName("liaisons-notes")).toBe(false);
+    expect(isLiaisonName("liaison-old")).toBe(false);
+    expect(isLiaisonName(undefined)).toBe(false);
   });
 });

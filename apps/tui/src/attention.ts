@@ -57,13 +57,14 @@ function allAgents(sessions: readonly SessionData[]): SessionAgentRef[] {
 
 export const LIAISON_PREFIX = "liaison";
 
+/** A liaison is named exactly `liaison` or `liaison/<rest>`. */
 export function isLiaisonName(name: string | undefined): boolean {
-  return !!name && name.startsWith(LIAISON_PREFIX);
+  return name === LIAISON_PREFIX || (!!name && name.startsWith(`${LIAISON_PREFIX}/`));
 }
 
 /** Header title: "LIAISON", plus the rest of the name when there is more. */
 export function liaisonTitle(name: string): string {
-  const rest = name.slice(LIAISON_PREFIX.length).replace(/^[\s/:_\-.]+/, "");
+  const rest = name.slice(LIAISON_PREFIX.length + 1);
   return rest ? `LIAISON ${rest}` : "LIAISON";
 }
 

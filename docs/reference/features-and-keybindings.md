@@ -16,7 +16,7 @@ Each session row can show:
 
 ## Liaison Block
 
-While a Claude Code conversation whose name starts with `liaison` is open, a block is pinned at the top of the sidebar, one per liaison (`liaison/work` and `liaison/personal` give two). With no liaison open, the block is absent. Its rows:
+While a Claude Code conversation named exactly `liaison`, or starting with `liaison/`, is open, a block is pinned at the top of the sidebar, one per liaison (`liaison/work` and `liaison/personal` give two). With no liaison open, the block is absent. Its rows:
 
 - Header: `LIAISON` plus the rest of the name, and the liaison's own status and its age
 - `fleet`: the number of conversations in each status across all sessions; on narrow sidebars, each status glyph with its count
