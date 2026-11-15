@@ -3,6 +3,7 @@ import type { SessionData } from "@tcm/runtime";
 import {
   findLiaisons,
   isLiaisonName,
+  liaisonBlockRows,
   fleetFits,
   fleetCounts,
   formatAge,
@@ -140,5 +141,14 @@ describe("isLiaisonName", () => {
     expect(isLiaisonName("liaisons-notes")).toBe(false);
     expect(isLiaisonName("liaison-old")).toBe(false);
     expect(isLiaisonName(undefined)).toBe(false);
+  });
+});
+
+describe("liaisonBlockRows", () => {
+  test("only the first liaison block carries the fleet and needs rows", () => {
+    expect(liaisonBlockRows(0, false)).toBe(4);
+    expect(liaisonBlockRows(0, true)).toBe(5);
+    expect(liaisonBlockRows(1, false)).toBe(2);
+    expect(liaisonBlockRows(1, true)).toBe(3);
   });
 });

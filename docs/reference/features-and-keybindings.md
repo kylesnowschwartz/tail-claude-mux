@@ -23,6 +23,8 @@ While a Claude Code conversation named exactly `liaison`, or starting with `liai
 - `needs`: the number of conversations that need the engineer and the age of the oldest, or `none`
 - `status`: the liaison's tmux session status text, when one is set through `POST /set-status`
 
+With two or more liaisons open, the `fleet` and `needs` rows appear once, in the first block; each further block shows its header and `status` rows only.
+
 ## Needs You Block
 
 Under the liaison block, and also with no liaison open, a block headed `NEEDS YOU (n)` lists every live conversation with an attention reason, oldest first; a conversation that has ended or whose process is gone is left out, as it is from the liaison block's `needs` count: reason glyph, conversation name, reason, and age. Reasons are `permission`, `question`, `input`, `error`, and `finished`; `permission` and `question` show the name in bold. Sidebars narrower than 25 columns leave out the reason word. No timer removes a row. When the rows need more than half of the free height, the block shows `▲ N more` / `▼ N more` rows; click one to scroll the block. Click a row to jump to that conversation.

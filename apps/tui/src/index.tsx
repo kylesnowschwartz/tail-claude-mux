@@ -41,6 +41,7 @@ import {
   fleetFits,
   formatFleet,
   isLiveAgent,
+  liaisonBlockRows,
   liaisonTitle,
   needsSummary,
   needsYou,
@@ -78,7 +79,6 @@ const CARD_CHROME_ROWS = 3; // Session frame: rounded border top/bottom plus the
 const BRANCH_ROWS = 1; // SessionCard adds exactly one row when session.branch is present.
 const HIDDEN_AGENTS_ROWS = 1; // SessionCard adds exactly one "+N more" row when agents are trimmed.
 const OVERFLOW_INDICATOR_ROWS = 1; // "▲ N more" / "▼ N more" line when the session stack scrolls.
-const LIAISON_BASE_ROWS = 4; // Liaison block: header, fleet and needs rows plus its closing rule; a status-text row adds one.
 const NEEDS_HEADER_ROWS = 2; // "NEEDS YOU (n)" heading above the needs rows plus the closing rule below them.
 const KEY_WIDTH = 7; // Label column of the liaison block's rows.
 const BLOCK_PAD = 2; // Left and right padding of the liaison and needs blocks.
@@ -274,7 +274,7 @@ function App() {
   });
 
   const liaisonRows = createMemo(() =>
-    liaisons().reduce((rows, { session }) => rows + LIAISON_BASE_ROWS + (session.metadata?.status?.text ? 1 : 0), 0));
+    liaisons().reduce((rows, { session }, i) => rows + liaisonBlockRows(i, !!session.metadata?.status?.text), 0));
 
   // The needs block takes up to half of what the header and liaison blocks
   // leave; past that it scrolls with its own ▲/▼ indicators.
@@ -914,9 +914,10 @@ function App() {
       {/* Liaison blocks: one per open liaison, pinned above everything else. */}
       <box flexDirection="column" flexShrink={0}>
         <For each={liaisons()}>
-          {(ref) => (
+          {(ref, i) => (
             <LiaisonBlock
               liaison={ref}
+              showFleet={i() === 0}
               palette={P}
               nowMs={nowMs}
               fleet={() => fleetCounts(sessions)}
@@ -1400,6 +1401,8 @@ interface LiaisonBlockProps {
   width: Accessor<number>;
   needs: Accessor<string>;
   needsCount: Accessor<number>;
+  /** The fleet and needs rows appear once, on the first liaison block. */
+  showFleet: boolean;
 }
 
 /** Heads-up rows for one liaison: who it is, the fleet, and what waits. */
@@ -1431,6 +1434,9 @@ function LiaisonBlock(props: LiaisonBlockProps) {
           </Show>
         </text>
       </box>
+      {/* One dynamic child per box keeps the rows in source order. */}
+      <box flexDirection="column">
+      <Show when={props.showFleet}>
       <text wrapMode="none">
         {key("fleet")}
         <Show when={props.fleet().length > 0} fallback={<span style={tier("muted", P())}>none</span>}>
@@ -1449,12 +1455,16 @@ function LiaisonBlock(props: LiaisonBlockProps) {
         {key("needs")}
         <span style={props.needsCount() > 0 ? { fg: P().peach } : tier("muted", P())}>{props.needs()}</span>
       </text>
+      </Show>
+      </box>
+      <box flexDirection="column">
       <Show when={statusText()}>
         <text wrapMode="none">
           {key("status")}
           <span style={{ fg: P().subtext1 }}>{statusText()}</span>
         </text>
       </Show>
+      </box>
     </box>
     <BlockRule palette={P} />
     </box>

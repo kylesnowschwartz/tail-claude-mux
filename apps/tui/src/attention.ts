@@ -121,3 +121,11 @@ export function needsSummary(rows: readonly SessionAgentRef[], nowMs: number): s
   if (rows.length === 0) return "none";
   return `${rows.length} · oldest ${formatAge(rows[0]!.agent.attentionSince, nowMs)}`;
 }
+
+/**
+ * Rows one liaison block takes: its header and closing rule, the status-text
+ * row when set, and the fleet and needs rows on the first block only.
+ */
+export function liaisonBlockRows(index: number, hasStatusText: boolean): number {
+  return 2 + (index === 0 ? 2 : 0) + (hasStatusText ? 1 : 0);
+}
