@@ -31,8 +31,10 @@ func TestListAllPanes_LiaisonOptions(t *testing.T) {
 	}{
 		{name: "valid values", work: "w12", parent: testParentID, worker: testWorkerID,
 			wantWork: "w12", wantParent: testParentID, wantWorker: testWorkerID},
-		{name: "six digits and an upper-case ID", work: "w123456", parent: strings.ToUpper(testParentID), worker: testWorkerID,
-			wantWork: "w123456", wantParent: strings.ToUpper(testParentID), wantWorker: testWorkerID},
+		{name: "six digits", work: "w123456", parent: testParentID, worker: testWorkerID,
+			wantWork: "w123456", wantParent: testParentID, wantWorker: testWorkerID},
+		{name: "upper-case conversation IDs", work: "w1", parent: strings.ToUpper(testWorkerID), worker: strings.ToUpper(testWorkerID),
+			wantWork: "w1"},
 		{name: "no options"},
 		{name: "tab in the work ID", work: "w1\t2", parent: testParentID, worker: testWorkerID,
 			wantParent: testParentID, wantWorker: testWorkerID},

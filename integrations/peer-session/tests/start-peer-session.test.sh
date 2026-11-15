@@ -102,7 +102,7 @@ else:
     if case == "session-id":
         expected += " --session-id 123e4567-e89b-42d3-a456-426614174000"
     if case == "session-id-name":
-        expected += " --session-id 123E4567-E89B-42D3-A456-426614174000 -n liaison/x"
+        expected += " --session-id 123e4567-e89b-42d3-a456-426614174000 -n liaison/x"
     require(launch == ["send-keys", "-t", "%128", expected, "Enter"],
             "launch command")
     require(v.get("agent") == ("pi" if pi else None), "agent field")
@@ -168,8 +168,8 @@ run "$tmp/prompt" --name 'bad name; rm'; check bad-name
 run "$tmp/prompt" --name '-leading'; check bad-name
 run "$tmp/prompt" --agent pi --name liaison/x; check pi-name
 run "$tmp/prompt" --session-id 123e4567-e89b-42d3-a456-426614174000; check session-id
-run "$tmp/prompt" --session-id 123E4567-E89B-42D3-A456-426614174000 --name liaison/x; check session-id-name
-for bad_id in not-a-uuid 123e4567-e89b-42d3-a456-426614174000x 123e4567 '' ' 123e4567-e89b-42d3-a456-426614174000' '{123e4567-e89b-42d3-a456-426614174000}'; do
+run "$tmp/prompt" --session-id 123e4567-e89b-42d3-a456-426614174000 --name liaison/x; check session-id-name
+for bad_id in not-a-uuid 123E4567-E89B-42D3-A456-426614174000 123e4567-e89b-42d3-a456-42661417400A 123e4567-e89b-42d3-a456-426614174000x 123e4567 '' ' 123e4567-e89b-42d3-a456-426614174000' '{123e4567-e89b-42d3-a456-426614174000}'; do
     run "$tmp/prompt" --session-id "$bad_id"; check bad-id
 done
 run "$tmp/prompt" --agent pi --session-id 123e4567-e89b-42d3-a456-426614174000; check pi-id

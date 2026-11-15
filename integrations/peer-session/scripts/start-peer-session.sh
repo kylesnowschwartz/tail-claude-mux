@@ -53,7 +53,7 @@ case "$agent" in
         window=${window:-claude}
         launch="claude --permission-mode ${permission_mode:=auto}"
         if (( session_id_set )); then
-            [[ "$session_id" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] || fail "--session-id must be a UUID."
+            [[ "$session_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || fail "--session-id must be a UUID in lower case."
             launch+=" --session-id $session_id"
         fi
         if [[ -n "$name" ]]; then

@@ -13,8 +13,10 @@ const (
 var (
 	// liaisonWorkIDForm is a work ID: the letter w and 1 to 6 digits.
 	liaisonWorkIDForm = regexp.MustCompile(`\Aw[0-9]{1,6}\z`)
-	// conversationIDForm is a Claude Code conversation ID: a UUID.
-	conversationIDForm = regexp.MustCompile(`\A[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\z`)
+	// conversationIDForm is a Claude Code conversation ID: a UUID in lower
+	// case. A conversation's thread ID is compared with these values byte
+	// for byte, so an upper-case value could match none.
+	conversationIDForm = regexp.MustCompile(`\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z`)
 )
 
 // validOr returns value when it has the form, and "" otherwise.

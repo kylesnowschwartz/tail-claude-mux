@@ -143,7 +143,7 @@ tcm reads the three options and writes none. Each conversation in `sessions[].ag
 
 A field is absent unless all of these are true:
 
-- Its option has the valid form. A work ID is `w` and 1 to 6 digits. A conversation ID is a UUID: 8-4-4-4-12 hexadecimal digits. A value of any other form, or one that holds a tab or a line break, counts as unset.
+- Its option has the valid form. A work ID is `w` and 1 to 6 digits. A conversation ID is a UUID: 8-4-4-4-12 lower-case hexadecimal digits. A value of any other form, or one that holds a tab or a line break, counts as unset.
 - The pane's `@liaison-worker` has the valid form and equals the conversation's own `threadId`.
 - The conversation's process is alive.
 
