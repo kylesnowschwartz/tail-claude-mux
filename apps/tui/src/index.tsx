@@ -36,14 +36,12 @@ import {
 import { tier, type TierStyle } from "./tiers";
 import {
   findLiaisons,
-  fleetCounts,
   formatAge,
   isLiaisonWorker,
   isLiveAgent,
   liaisonBlockRows,
-  liaisonStatusText,
+  liaisonItems,
   liaisonWorkerCount,
-  needsSummary,
   needsYou,
   statusLabel,
   type AttentionReason,
@@ -256,8 +254,7 @@ function App() {
   });
 
   const liaisonRows = createMemo(() =>
-    liaisons().reduce((rows, { session, agent }, i) =>
-      rows + liaisonBlockRows(i, !!liaisonStatusText(session.metadata?.status?.text), liaisonWorkerCount(sessions, agent) > 0, needs().length > 0), 0));
+    liaisons().reduce((rows, ref) => rows + liaisonBlockRows(liaisonItems(ref).length), 0));
 
   // The needs block takes up to half of what the header and liaison blocks
   // leave; past that it scrolls with its own ▲/▼ indicators.
@@ -897,17 +894,13 @@ function App() {
       {/* Liaison blocks: one per open liaison, pinned above everything else. */}
       <box flexDirection="column" flexShrink={0}>
         <For each={liaisons()}>
-          {(ref, i) => (
+          {(ref) => (
             <LiaisonBlock
               liaison={ref}
-              showFleet={i() === 0}
               palette={P}
               nowMs={nowMs}
-              fleet={() => fleetCounts(sessions)}
+              items={() => liaisonItems(ref)}
               workers={() => liaisonWorkerCount(sessions, ref.agent)}
-              width={() => termDims().width}
-              needs={() => needsSummary(needs(), nowMs())}
-              needsCount={() => needs().length}
             />
           )}
         </For>

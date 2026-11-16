@@ -8,7 +8,7 @@
  * through a local intersection type.
  */
 
-import type { AgentEvent, SessionData } from "@tcm/runtime";
+import type { AgentEvent, LiaisonItem, LiaisonItemKind, SessionData } from "@tcm/runtime";
 
 export type AttentionReason = "permission" | "question" | "input" | "error" | "finished";
 
@@ -19,24 +19,8 @@ export type AttentionAgent = AgentEvent & {
   statusSince?: number;
 };
 
-/** When the conversation entered its current status; the last event time when the server does not say. */
-export function statusStart(agent: AttentionAgent): number {
-  return agent.statusSince ?? agent.ts;
-}
-
-/**
- * Whether the liaison header shows how long the liaison has held its status.
- * The age matters while the liaison works, waits on the engineer, or has
- * failed; at rest (ready or stopped) it carries no information.
- */
-export function showsStatusAge(label: StatusLabel): boolean {
-  return label === "working" || label === "waiting" || label === "error";
-}
-
 /** The sidebar's five row labels, derived from tracker status + liveness. */
 export type StatusLabel = "working" | "waiting" | "ready" | "stopped" | "error";
-
-export const STATUS_LABEL_ORDER: readonly StatusLabel[] = ["working", "waiting", "ready", "stopped", "error"];
 
 export function statusLabel(agent: Pick<AgentEvent, "status" | "liveness">): StatusLabel {
   const s = agent.status;
@@ -125,33 +109,6 @@ export function liaisonWorkerCount(sessions: readonly SessionData[], liaison: At
   return allAgents(sessions).filter(({ agent }) => startedBy(agent, liaison)).length;
 }
 
-/** The `work` row value: "3 workers", or the bare count when the words do not fit in `columns`. */
-export function formatWorkers(count: number, columns: number): string {
-  const words = `${count} ${count === 1 ? "worker" : "workers"}`;
-  return words.length <= columns ? words : String(count);
-}
-
-/** Count of conversations per status label across every session, in label order, zeros omitted. */
-export function fleetCounts(sessions: readonly SessionData[]): { label: StatusLabel; count: number }[] {
-  const counts = new Map<StatusLabel, number>();
-  for (const { agent } of allAgents(sessions)) {
-    const label = statusLabel(agent);
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  }
-  return STATUS_LABEL_ORDER
-    .filter((label) => (counts.get(label) ?? 0) > 0)
-    .map((label) => ({ label, count: counts.get(label)! }));
-}
-
-export function formatFleet(counts: readonly { label: StatusLabel; count: number }[]): string {
-  return counts.map(({ label, count }) => `${count} ${label}`).join(" · ");
-}
-
-/** Whether the worded fleet summary fits in `columns`. */
-export function fleetFits(counts: readonly { label: StatusLabel; count: number }[], columns: number): boolean {
-  return formatFleet(counts).length <= columns;
-}
-
 /** Every live conversation with an attention reason, oldest reason first. */
 export function needsYou(sessions: readonly SessionData[]): SessionAgentRef[] {
   return allAgents(sessions)
@@ -172,31 +129,41 @@ export function formatAge(sinceMs: number | undefined, nowMs: number): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-/** The `needs` row value: "3 · oldest 14m", or "" when nothing waits. */
-export function needsSummary(rows: readonly SessionAgentRef[], nowMs: number): string {
-  if (rows.length === 0) return "";
-  return `${rows.length} · oldest ${formatAge(rows[0]!.agent.attentionSince, nowMs)}`;
+/** Kinds of liaison item in priority order: 1 for the user's action now, 3 for a reminder. */
+export const LIAISON_ITEM_PRIORITY: Record<LiaisonItemKind, 1 | 2 | 3> = {
+  asks: 1, blocked: 1, no_report: 2, answer: 2, reminder: 3,
+};
+
+/** Item rows a liaison block shows at most; a `+K` on the last row counts the rest. */
+export const LIAISON_ITEM_ROWS = 3;
+
+/**
+ * The items one liaison block shows, in priority order and oldest first
+ * within a priority: an `asks` item when the liaison's own conversation waits
+ * on a permission or a question, then the items its session reports through
+ * `POST /set-liaison-items`.
+ */
+export function liaisonItems(ref: SessionAgentRef): LiaisonItem[] {
+  const items: LiaisonItem[] = [];
+  const reason = ref.agent.attention;
+  if (reason === "permission" || reason === "question") {
+    items.push({ kind: "asks", title: reason, since: ref.agent.attentionSince ?? ref.agent.ts });
+  }
+  items.push(...(ref.session.metadata?.liaisonItems ?? []));
+  return items
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) =>
+      LIAISON_ITEM_PRIORITY[a.item.kind] - LIAISON_ITEM_PRIORITY[b.item.kind]
+      || a.item.since - b.item.since
+      || a.i - b.i)
+    .map(({ item }) => item);
 }
 
 /**
- * The liaison block's `status` row text: the session status text set through
- * `POST /set-status`, or "" when it is empty or opens with a count of
- * conversations that need the engineer ("1 needs you: ..."), which the live
- * `needs` row already shows.
+ * Rows one liaison block takes: its title row, one row per shown item (at
+ * most LIAISON_ITEM_ROWS), and the closing rule. Each row is one line at
+ * every width, because no row wraps.
  */
-export function liaisonStatusText(text: string | undefined): string {
-  const trimmed = (text ?? "").trim();
-  return /^\d+ needs? you\b/i.test(trimmed) ? "" : trimmed;
-}
-
-/**
- * Rows one liaison block takes: its header and closing rule, the fleet row
- * on the first block only, the needs row on the first block while something
- * needs the engineer, the work row when the liaison has workers, and the
- * status-text row when shown. Each row is one line at every width, because
- * no row wraps.
- */
-export function liaisonBlockRows(index: number, hasStatusText: boolean, hasWorkers: boolean, hasNeeds: boolean): number {
-  const first = index === 0 ? 1 + (hasNeeds ? 1 : 0) : 0;
-  return 2 + first + (hasWorkers ? 1 : 0) + (hasStatusText ? 1 : 0);
+export function liaisonBlockRows(itemCount: number): number {
+  return 2 + Math.min(itemCount, LIAISON_ITEM_ROWS);
 }

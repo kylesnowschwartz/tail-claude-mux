@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/solid";
-import { BUILTIN_THEMES, type SessionData } from "@tcm/runtime";
-import { liaisonBlockRows, liaisonStatusText, type AttentionAgent } from "./attention";
+import { RGBA, TextAttributes, type CapturedFrame } from "@opentui/core";
+import { BUILTIN_THEMES, type LiaisonItem, type SessionData } from "@tcm/runtime";
+import { liaisonBlockRows, liaisonItems, type AttentionAgent } from "./attention";
 import { LiaisonBlock } from "./liaison-block";
+import { LIAISON_GLYPH, LIAISON_ITEM_GLYPHS, LIAISON_WORKERS_MARK } from "./vocab";
 
 const NOW = 1_700_000_000_000;
+const MIN = 60_000;
 const palette = Object.values(BUILTIN_THEMES)[0]!.palette;
 
 const liaison: AttentionAgent = {
@@ -12,66 +15,90 @@ const liaison: AttentionAgent = {
   ts: NOW, threadName: "liaison", threadId: "11111111-2222-4333-8444-555555555555",
 };
 
-function home(statusText: string): SessionData {
+/** Five reported items, one per kind and age, in no particular order. */
+const REPORTED: LiaisonItem[] = [
+  { kind: "reminder", title: "renew the staging certificate", since: NOW - 50 * MIN },
+  { kind: "answer", title: "worker fix-tax answered the schema question", since: NOW - 4 * MIN },
+  { kind: "blocked", title: "deploy waits on a production key", since: NOW - 12 * MIN },
+  { kind: "no_report", title: "check-dates has not reported", since: NOW - 30 * MIN },
+  { kind: "reminder", title: "read the release notes", since: NOW - 20 * MIN },
+];
+
+function home(items: LiaisonItem[], statusText = "reading every report"): SessionData {
   return {
     name: "home", createdAt: 0, dir: "/x", branch: "", dirty: false, isWorktree: false, unseen: false,
     panes: 1, windows: 1, uptime: "", agentState: liaison, agents: [liaison], eventTimestamps: [],
-    metadata: statusText ? { status: { text: statusText, ts: NOW }, progress: null, logs: [] } : undefined,
+    metadata: { status: { text: statusText, ts: NOW }, progress: null, logs: [], liaisonItems: items },
   } as SessionData;
 }
 
-/** The block's rendered lines at `width` columns, without the blank lines under it. */
-async function renderBlock(opts: { width: number; workers: number; showFleet: boolean; statusText: string; needsCount?: number; agent?: AttentionAgent }): Promise<string[]> {
-  const { renderOnce, captureCharFrame, renderer } = await testRender(() => (
+interface BlockOpts { width: number; items?: number; workers?: number; asks?: boolean; blocks?: number }
+
+function ref(opts: BlockOpts) {
+  const agent: AttentionAgent = opts.asks
+    ? { ...liaison, status: "waiting", attention: "permission", attentionSince: NOW - 2 * MIN }
+    : liaison;
+  return { session: home(REPORTED.slice(0, opts.items ?? 0)), agent };
+}
+
+/** The blocks' rendered frame at `width` columns, cut above the END marker. */
+async function renderBlocks(opts: BlockOpts): Promise<{ lines: string[]; frame: CapturedFrame }> {
+  const blocks = Array.from({ length: opts.blocks ?? 1 }, () => ref(opts));
+  const { renderOnce, captureCharFrame, captureSpans, renderer } = await testRender(() => (
     <box flexDirection="column">
-      <LiaisonBlock
-        liaison={{ session: home(opts.statusText), agent: opts.agent ?? liaison }}
-        showFleet={opts.showFleet}
-        palette={() => palette}
-        nowMs={() => NOW}
-        fleet={() => [{ label: "working", count: 4 }, { label: "ready", count: 2 }]}
-        workers={() => opts.workers}
-        width={() => opts.width}
-        needs={() => ((opts.needsCount ?? 2) > 0 ? `${opts.needsCount ?? 2} · oldest 14m` : "")}
-        needsCount={() => opts.needsCount ?? 2}
-      />
+      {blocks.map((r) => (
+        <LiaisonBlock
+          liaison={r}
+          palette={() => palette}
+          nowMs={() => NOW}
+          items={() => liaisonItems(r)}
+          workers={() => opts.workers ?? 0}
+        />
+      ))}
       <text>END</text>
     </box>
-  ), { width: opts.width, height: 20 });
+  ), { width: opts.width, height: 30 });
   await renderOnce();
   const lines = captureCharFrame().split("\n").map((line) => line.trimEnd());
+  const frame = captureSpans();
   renderer.destroy();
   const end = lines.findIndex((line) => line.startsWith("END"));
   expect(end).toBeGreaterThan(0);
-  return lines.slice(0, end);
+  return { lines: lines.slice(0, end), frame };
 }
 
+/** A palette colour as the renderer stores it. */
+function frameColor(color: string): RGBA {
+  return RGBA.fromHex(color);
+}
+
+function hex(c: RGBA): string {
+  return "#" + [c.r, c.g, c.b].map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("");
+}
+
+/** Foreground colour of the first span on `row` that contains `text`. */
+function fgOf(frame: CapturedFrame, row: number, text: string): { fg: string; dim: boolean } {
+  const span = frame.lines[row]!.spans.find((s) => s.text.includes(text));
+  expect(span).toBeDefined();
+  return { fg: hex(span!.fg), dim: (span!.attributes & TextAttributes.DIM) !== 0 };
+}
+
+const RULE = /^\s*─+$/;
+const NO_OLD_ROWS = /^\s*(fleet|needs|work|status)\b/;
+
 describe("LiaisonBlock", () => {
-  const STATUS = "reading the reports of every worker in this place";
-
-  test("shows the count of workers in words at a wide width", async () => {
-    const lines = await renderBlock({ width: 40, workers: 3, showFleet: true, statusText: STATUS });
-    expect(lines.filter((line) => line.includes("3 workers"))).toHaveLength(1);
-    expect(lines.find((line) => line.includes("3 workers"))!.trimStart().startsWith("work")).toBe(true);
-  });
-
-  test("shows no work row for a liaison with no workers", async () => {
-    const lines = await renderBlock({ width: 40, workers: 0, showFleet: true, statusText: STATUS });
-    expect(lines.some((line) => line.trimStart().startsWith("work "))).toBe(false);
-    expect(lines).toHaveLength(liaisonBlockRows(0, true, false, true));
-  });
-
-  test("takes the rows that liaisonBlockRows counts, at a wide and at a narrow width", async () => {
+  test("rendered rows equal liaisonBlockRows in every case", async () => {
     for (const width of [60, 40, 24, 16, 12]) {
-      for (const workers of [0, 1, 3, 12]) {
-        for (const showFleet of [true, false]) {
-          for (const statusText of [STATUS, "", "1 needs you: 1 input (liaison)"]) {
-            for (const needsCount of [0, 2]) {
-              const lines = await renderBlock({ width, workers, showFleet, statusText, needsCount });
-              expect({ width, workers, showFleet, statusText, needsCount, rows: lines.length }).toEqual({
-                width, workers, showFleet, statusText, needsCount,
-                rows: liaisonBlockRows(showFleet ? 0 : 1, !!liaisonStatusText(statusText), workers > 0, needsCount > 0),
-              });
+      for (const items of [0, 1, 3, 5]) {
+        for (const workers of [0, 2]) {
+          for (const asks of [false, true]) {
+            for (const blocks of [1, 2]) {
+              const opts = { width, items, workers, asks, blocks };
+              const { lines } = await renderBlocks(opts);
+              const expected = blocks * liaisonBlockRows(items + (asks ? 1 : 0));
+              expect({ ...opts, rows: lines.length }).toEqual({ ...opts, rows: expected });
+              expect(lines.filter((line) => NO_OLD_ROWS.test(line))).toEqual([]);
+              expect(lines.some((line) => line.includes("reading every report"))).toBe(false);
             }
           }
         }
@@ -79,51 +106,74 @@ describe("LiaisonBlock", () => {
     }
   });
 
-  test("shows no needs row when nothing needs the engineer", async () => {
-    const lines = await renderBlock({ width: 40, workers: 0, showFleet: true, statusText: "", needsCount: 0 });
-    expect(lines.some((line) => line.trimStart().startsWith("needs"))).toBe(false);
-    expect(lines).toHaveLength(3);
+  test("at rest the block is one dim title row and its rule", async () => {
+    const { lines, frame } = await renderBlocks({ width: 40 });
+    expect(lines).toHaveLength(2);
+    expect(lines[0]!.trim()).toBe(`${LIAISON_GLYPH} LIAISON`);
+    expect(lines[1]).toMatch(RULE);
+    expect(fgOf(frame, 0, "LIAISON")).toEqual({ fg: hex(frameColor(palette.text)), dim: true });
   });
 
-  test("shows the needs row when something needs the engineer", async () => {
-    const lines = await renderBlock({ width: 40, workers: 0, showFleet: true, statusText: "", needsCount: 2 });
-    expect(lines.filter((line) => line.trimStart().startsWith("needs") && line.includes("2 · oldest 14m"))).toHaveLength(1);
+  test("running workers add ↳N at the right of the title row", async () => {
+    const { lines, frame } = await renderBlocks({ width: 40, workers: 2 });
+    expect(lines).toHaveLength(2);
+    expect(lines[0]!.endsWith(`${LIAISON_WORKERS_MARK}2`)).toBe(true);
+    expect(fgOf(frame, 0, LIAISON_WORKERS_MARK).dim).toBe(true);
   });
 
-  test("the header shows the age while the liaison works, waits, or has failed, and none at rest", async () => {
-    const cases: [AttentionAgent["status"], boolean][] = [
-      ["running", true], ["waiting", true], ["error", true], ["idle", false], ["done", false],
-    ];
-    for (const [status, aged] of cases) {
-      const agent: AttentionAgent = { ...liaison, status, ts: NOW - 55_000 };
-      const header = (await renderBlock({ width: 40, workers: 0, showFleet: true, statusText: "", needsCount: 0, agent }))[0]!;
-      expect({ status, aged: header.endsWith("55s") }).toEqual({ status, aged });
+  test("the title takes the colour of the highest priority present", async () => {
+    const cases: [LiaisonItem["kind"], string][] = [["reminder", palette.blue], ["answer", palette.yellow], ["blocked", palette.red]];
+    for (const [kind, color] of cases) {
+      const r = { session: home([{ kind, title: "x", since: NOW }, { kind: "reminder", title: "y", since: NOW }]), agent: liaison };
+      const { renderOnce, captureSpans, renderer } = await testRender(() => (
+        <LiaisonBlock liaison={r} palette={() => palette} nowMs={() => NOW} items={() => liaisonItems(r)} workers={() => 0} />
+      ), { width: 40, height: 10 });
+      await renderOnce();
+      const frame = captureSpans();
+      renderer.destroy();
+      expect({ kind, fg: fgOf(frame, 0, "LIAISON").fg }).toEqual({ kind, fg: hex(frameColor(color)) });
     }
   });
 
-  test("a narrow header shows the status word when the liaison is at rest", async () => {
-    const agent: AttentionAgent = { ...liaison, status: "idle", ts: NOW - 55_000 };
-    const header = (await renderBlock({ width: 12, workers: 0, showFleet: true, statusText: "", needsCount: 0, agent }))[0]!;
-    expect(header.trimEnd().endsWith("ready")).toBe(true);
+  test("an asks item from the liaison's own conversation shows in red", async () => {
+    const { lines, frame } = await renderBlocks({ width: 40, asks: true });
+    expect(lines).toHaveLength(3);
+    expect(lines[1]!.trim()).toMatch(new RegExp(`^${LIAISON_ITEM_GLYPHS[1]} permission\\s+2m$`));
+    expect(fgOf(frame, 1, LIAISON_ITEM_GLYPHS[1]).fg).toBe(hex(frameColor(palette.red)));
+    expect(fgOf(frame, 0, "LIAISON")).toEqual({ fg: hex(frameColor(palette.red)), dim: false });
   });
 
-  test("shows no status row for text that restates the needs count", async () => {
-    const lines = await renderBlock({ width: 40, workers: 0, showFleet: true, statusText: "2 needs you: 2 input", needsCount: 2 });
-    expect(lines.some((line) => line.trimStart().startsWith("status"))).toBe(false);
-    expect(lines).toHaveLength(4);
+  test("items run by priority, then oldest first, with glyph and age", async () => {
+    const { lines } = await renderBlocks({ width: 60, items: 3 });
+    expect(lines.slice(1, 4).map((line) => line.trim())).toEqual([
+      expect.stringMatching(/^■ deploy waits on a production key\s+12m$/),
+      expect.stringMatching(/^▲ worker fix-tax answered the schema question\s+4m$/),
+      expect.stringMatching(/^● renew the staging certificate\s+50m$/),
+    ]);
   });
 
-  test("shows the status row for free text while nothing needs the engineer", async () => {
-    const lines = await renderBlock({ width: 60, workers: 0, showFleet: true, statusText: "reading reports", needsCount: 0 });
-    expect(lines.filter((line) => line.trimStart().startsWith("status") && line.includes("reading reports"))).toHaveLength(1);
-    expect(lines).toHaveLength(4);
+  test("more than three items end the last row with +K", async () => {
+    const { lines } = await renderBlocks({ width: 60, items: 5, asks: true });
+    expect(lines).toHaveLength(5);
+    expect(lines.slice(1, 4).map((line) => line.trim()[0])).toEqual(["■", "■", "▲"]);
+    expect(lines[3]!.endsWith("30m +3")).toBe(true);
+    expect(lines.filter((line) => /\+\d+$/.test(line))).toHaveLength(1);
   });
 
-  test("a sidebar too narrow for the words shows the number only", async () => {
-    const lines = await renderBlock({ width: 16, workers: 3, showFleet: true, statusText: "" });
-    const row = lines.find((line) => line.trimStart().startsWith("work"));
-    expect(row).toBeDefined();
-    expect(row!.includes("workers")).toBe(false);
-    expect(row!.trimEnd().endsWith("3")).toBe(true);
+  test("a narrow sidebar cuts the item title and keeps the age", async () => {
+    const { lines } = await renderBlocks({ width: 16, items: 1, workers: 2 });
+    expect(lines[1]!.trim()).toBe("● renew th 50m");
+    expect(lines[0]!.endsWith(`${LIAISON_WORKERS_MARK}2`)).toBe(true);
+  });
+
+  test("text renderings at width 36", async () => {
+    for (const [name, opts] of [
+      ["rest", { width: 36 }],
+      ["workers running", { width: 36, workers: 2 }],
+      ["items, more than 3", { width: 36, items: 5, workers: 2, asks: true }],
+    ] as const) {
+      const { lines } = await renderBlocks(opts);
+      console.log(`--- ${name}\n${lines.join("\n")}`);
+    }
   });
 });

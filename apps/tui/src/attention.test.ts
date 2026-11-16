@@ -1,22 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionData } from "@tcm/runtime";
+import type { LiaisonItem, SessionData } from "@tcm/runtime";
 import {
   findLiaisons,
   isLiaisonName,
   liaisonBlockRows,
-  liaisonStatusText,
-  fleetFits,
-  fleetCounts,
   formatAge,
-  formatFleet,
-  formatWorkers,
   isLiaisonWorker,
+  liaisonItems,
   liaisonTitle,
   liaisonWorkerCount,
-  needsSummary,
   needsYou,
   statusLabel,
-  statusStart,
   type AttentionAgent,
 } from "./attention";
 
@@ -73,23 +67,6 @@ describe("liaisonTitle", () => {
   });
 });
 
-describe("fleetCounts", () => {
-  test("counts every conversation per label in label order, zeros omitted", () => {
-    const sessions = [
-      session("a", [agent({}), agent({}), agent({ status: "waiting" })]),
-      session("b", [agent({ status: "done", liveness: "alive" }), agent({ status: "done", liveness: "exited" })]),
-    ];
-    const counts = fleetCounts(sessions);
-    expect(counts).toEqual([
-      { label: "working", count: 2 },
-      { label: "waiting", count: 1 },
-      { label: "ready", count: 1 },
-      { label: "stopped", count: 1 },
-    ]);
-    expect(formatFleet(counts)).toBe("2 working · 1 waiting · 1 ready · 1 stopped");
-  });
-});
-
 describe("needsYou", () => {
   test("lists only conversations with a reason, oldest first", () => {
     const sessions = [
@@ -105,11 +82,6 @@ describe("needsYou", () => {
     const rows = needsYou(sessions);
     expect(rows.map((r) => r.agent.threadName)).toEqual(["old", "liaison", "new"]);
     expect(rows[0]!.session.name).toBe("b");
-    expect(needsSummary(rows, NOW)).toBe("3 · oldest 14m");
-  });
-
-  test("summary has a calm empty form", () => {
-    expect(needsSummary([], NOW)).toBe("");
   });
 });
 
@@ -122,14 +94,6 @@ describe("formatAge", () => {
     expect(formatAge(NOW - 3 * 24 * 60 * MIN, NOW)).toBe("3d");
     expect(formatAge(undefined, NOW)).toBe("");
     expect(formatAge(NOW + 10_000, NOW)).toBe("now");
-  });
-});
-
-describe("fleetFits", () => {
-  test("compares the worded summary with the columns available", () => {
-    const counts = [{ label: "working" as const, count: 2 }, { label: "ready" as const, count: 1 }];
-    expect(fleetFits(counts, 19)).toBe(true);
-    expect(fleetFits(counts, 18)).toBe(false);
   });
 });
 
@@ -159,39 +123,46 @@ describe("isLiaisonName", () => {
   });
 });
 
-describe("liaisonStatusText", () => {
-  test("keeps free text", () => {
-    expect(liaisonStatusText("reading reports")).toBe("reading reports");
-  });
-
-  test("drops empty text and text that restates the needs count", () => {
-    expect(liaisonStatusText(undefined)).toBe("");
-    expect(liaisonStatusText("  ")).toBe("");
-    expect(liaisonStatusText("1 needs you: 1 input (liaison)")).toBe("");
-    expect(liaisonStatusText("3 Need You")).toBe("");
-    expect(liaisonStatusText("12 needs your review")).toBe("12 needs your review");
+describe("liaisonBlockRows", () => {
+  test("title row, closing rule, and at most three item rows", () => {
+    expect([0, 1, 2, 3, 4, 20].map(liaisonBlockRows)).toEqual([2, 3, 4, 5, 5, 5]);
   });
 });
 
-describe("liaisonBlockRows", () => {
-  test("only the first liaison block carries the fleet and needs rows", () => {
-    expect(liaisonBlockRows(0, false, false, true)).toBe(4);
-    expect(liaisonBlockRows(0, true, false, true)).toBe(5);
-    expect(liaisonBlockRows(1, false, false, true)).toBe(2);
-    expect(liaisonBlockRows(1, true, false, true)).toBe(3);
+describe("liaisonItems", () => {
+  const ref = (over: Partial<AttentionAgent>, items: LiaisonItem[] | undefined) => {
+    const a = agent({ threadName: "liaison", ...over });
+    const s = session("home", [a]);
+    s.metadata = { status: null, progress: null, logs: [], liaisonItems: items };
+    return { session: s, agent: a };
+  };
+
+  test("orders by priority, then oldest first", () => {
+    const items = liaisonItems(ref({}, [
+      { kind: "reminder", title: "r", since: NOW - 60 * MIN },
+      { kind: "answer", title: "a-new", since: NOW - 1 * MIN },
+      { kind: "blocked", title: "b", since: NOW - 2 * MIN },
+      { kind: "no_report", title: "n-old", since: NOW - 9 * MIN },
+    ]));
+    expect(items.map((i) => i.title)).toEqual(["b", "n-old", "a-new", "r"]);
   });
 
-  test("a liaison with workers takes one more row", () => {
-    expect(liaisonBlockRows(0, false, true, true)).toBe(5);
-    expect(liaisonBlockRows(0, true, true, true)).toBe(6);
-    expect(liaisonBlockRows(1, false, true, true)).toBe(3);
-    expect(liaisonBlockRows(1, true, true, true)).toBe(4);
+  test("adds an asks item when the liaison waits on a permission or a question", () => {
+    for (const reason of ["permission", "question"] as const) {
+      const items = liaisonItems(ref({ attention: reason, attentionSince: NOW - 3 * MIN }, [
+        { kind: "blocked", title: "b", since: NOW - 9 * MIN },
+      ]));
+      expect(items).toEqual([
+        { kind: "blocked", title: "b", since: NOW - 9 * MIN },
+        { kind: "asks", title: reason, since: NOW - 3 * MIN },
+      ]);
+    }
   });
 
-  test("the first block drops the needs row when nothing needs the engineer", () => {
-    expect(liaisonBlockRows(0, false, false, false)).toBe(3);
-    expect(liaisonBlockRows(0, true, true, false)).toBe(5);
-    expect(liaisonBlockRows(1, false, false, false)).toBe(2);
+  test("no asks item for other attention reasons", () => {
+    for (const reason of ["input", "error", "finished"] as const) {
+      expect(liaisonItems(ref({ attention: reason, attentionSince: NOW }, undefined))).toEqual([]);
+    }
   });
 });
 
@@ -256,20 +227,5 @@ describe("liaison workers", () => {
     liaisonWorkerCount(sessions, liaison);
     expect(sessions.map((s) => s.agents.map((a) => a.threadId))).toEqual(before);
   });
-
-  test("the count reads in words, and as a bare number when the words do not fit", () => {
-    expect(formatWorkers(3, 40)).toBe("3 workers");
-    expect(formatWorkers(1, 40)).toBe("1 worker");
-    expect(formatWorkers(3, 9)).toBe("3 workers");
-    expect(formatWorkers(3, 8)).toBe("3");
-    expect(formatWorkers(12, 9)).toBe("12");
-    expect(formatWorkers(3, 0)).toBe("3");
-  });
 });
 
-describe("statusStart", () => {
-  test("uses statusSince, falling back to ts", () => {
-    expect(statusStart(agent({ ts: NOW, statusSince: NOW - 5 * MIN }))).toBe(NOW - 5 * MIN);
-    expect(statusStart(agent({ ts: NOW }))).toBe(NOW);
-  });
-});
