@@ -31,6 +31,8 @@ export type {
   MetadataTone,
   MetadataVerb,
   MetadataStatus,
+  LiaisonItem,
+  LiaisonItemKind,
   MetadataProgress,
   MetadataLogEntry,
   SessionMetadata,
