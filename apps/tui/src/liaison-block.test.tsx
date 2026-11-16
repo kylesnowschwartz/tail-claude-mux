@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/solid";
 import { BUILTIN_THEMES, type SessionData } from "@tcm/runtime";
-import { liaisonBlockRows, type AttentionAgent } from "./attention";
+import { liaisonBlockRows, liaisonStatusText, type AttentionAgent } from "./attention";
 import { LiaisonBlock } from "./liaison-block";
 
 const NOW = 1_700_000_000_000;
@@ -65,12 +65,12 @@ describe("LiaisonBlock", () => {
     for (const width of [60, 40, 24, 16, 12]) {
       for (const workers of [0, 1, 3, 12]) {
         for (const showFleet of [true, false]) {
-          for (const statusText of [STATUS, ""]) {
+          for (const statusText of [STATUS, "", "1 needs you: 1 input (liaison)"]) {
             for (const needsCount of [0, 2]) {
               const lines = await renderBlock({ width, workers, showFleet, statusText, needsCount });
               expect({ width, workers, showFleet, statusText, needsCount, rows: lines.length }).toEqual({
                 width, workers, showFleet, statusText, needsCount,
-                rows: liaisonBlockRows(showFleet ? 0 : 1, !!statusText, workers > 0, needsCount > 0),
+                rows: liaisonBlockRows(showFleet ? 0 : 1, !!liaisonStatusText(statusText), workers > 0, needsCount > 0),
               });
             }
           }
@@ -105,6 +105,18 @@ describe("LiaisonBlock", () => {
     const agent: AttentionAgent = { ...liaison, status: "idle", ts: NOW - 55_000 };
     const header = (await renderBlock({ width: 12, workers: 0, showFleet: true, statusText: "", needsCount: 0, agent }))[0]!;
     expect(header.trimEnd().endsWith("ready")).toBe(true);
+  });
+
+  test("shows no status row for text that restates the needs count", async () => {
+    const lines = await renderBlock({ width: 40, workers: 0, showFleet: true, statusText: "2 needs you: 2 input", needsCount: 2 });
+    expect(lines.some((line) => line.trimStart().startsWith("status"))).toBe(false);
+    expect(lines).toHaveLength(4);
+  });
+
+  test("shows the status row for free text while nothing needs the engineer", async () => {
+    const lines = await renderBlock({ width: 60, workers: 0, showFleet: true, statusText: "reading reports", needsCount: 0 });
+    expect(lines.filter((line) => line.trimStart().startsWith("status") && line.includes("reading reports"))).toHaveLength(1);
+    expect(lines).toHaveLength(4);
   });
 
   test("a sidebar too narrow for the words shows the number only", async () => {

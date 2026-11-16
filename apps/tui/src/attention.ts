@@ -179,6 +179,17 @@ export function needsSummary(rows: readonly SessionAgentRef[], nowMs: number): s
 }
 
 /**
+ * The liaison block's `status` row text: the session status text set through
+ * `POST /set-status`, or "" when it is empty or opens with a count of
+ * conversations that need the engineer ("1 needs you: ..."), which the live
+ * `needs` row already shows.
+ */
+export function liaisonStatusText(text: string | undefined): string {
+  const trimmed = (text ?? "").trim();
+  return /^\d+ needs? you\b/i.test(trimmed) ? "" : trimmed;
+}
+
+/**
  * Rows one liaison block takes: its header and closing rule, the fleet row
  * on the first block only, the needs row on the first block while something
  * needs the engineer, the work row when the liaison has workers, and the

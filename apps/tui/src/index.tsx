@@ -41,6 +41,7 @@ import {
   isLiaisonWorker,
   isLiveAgent,
   liaisonBlockRows,
+  liaisonStatusText,
   liaisonWorkerCount,
   needsSummary,
   needsYou,
@@ -256,7 +257,7 @@ function App() {
 
   const liaisonRows = createMemo(() =>
     liaisons().reduce((rows, { session, agent }, i) =>
-      rows + liaisonBlockRows(i, !!session.metadata?.status?.text, liaisonWorkerCount(sessions, agent) > 0, needs().length > 0), 0));
+      rows + liaisonBlockRows(i, !!liaisonStatusText(session.metadata?.status?.text), liaisonWorkerCount(sessions, agent) > 0, needs().length > 0), 0));
 
   // The needs block takes up to half of what the header and liaison blocks
   // leave; past that it scrolls with its own ▲/▼ indicators.

@@ -22,7 +22,7 @@ While a Claude Code conversation named exactly `liaison`, or starting with `liai
 - `fleet`: the number of conversations in each status across all sessions; on narrow sidebars, each status glyph with its count
 - `needs`: the number of conversations that need the engineer and the age of the oldest; absent when nothing needs the engineer
 - `work`: the count of conversations that this liaison started, such as `3 workers`, when it is above zero; a sidebar too narrow for the words shows the number only
-- `status`: the liaison's tmux session status text, when one is set through `POST /set-status`
+- `status`: the liaison's tmux session status text, when one is set through `POST /set-status`; absent when the text is empty or opens with a count such as `1 needs you`, which the `needs` row already shows
 
 With two or more liaisons open, the `fleet` and `needs` rows appear at most once, in the first block; each further block shows its header, `work`, and `status` rows only.
 

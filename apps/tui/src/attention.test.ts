@@ -4,6 +4,7 @@ import {
   findLiaisons,
   isLiaisonName,
   liaisonBlockRows,
+  liaisonStatusText,
   fleetFits,
   fleetCounts,
   formatAge,
@@ -155,6 +156,20 @@ describe("isLiaisonName", () => {
     expect(isLiaisonName("my liaison \u00b7 main")).toBe(false);
     expect(isLiaisonName("liaison-project/s11")).toBe(false);
     expect(isLiaisonName(undefined)).toBe(false);
+  });
+});
+
+describe("liaisonStatusText", () => {
+  test("keeps free text", () => {
+    expect(liaisonStatusText("reading reports")).toBe("reading reports");
+  });
+
+  test("drops empty text and text that restates the needs count", () => {
+    expect(liaisonStatusText(undefined)).toBe("");
+    expect(liaisonStatusText("  ")).toBe("");
+    expect(liaisonStatusText("1 needs you: 1 input (liaison)")).toBe("");
+    expect(liaisonStatusText("3 Need You")).toBe("");
+    expect(liaisonStatusText("12 needs your review")).toBe("12 needs your review");
   });
 });
 

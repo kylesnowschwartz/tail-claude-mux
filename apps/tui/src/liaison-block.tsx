@@ -22,6 +22,7 @@ import {
   fleetFits,
   formatFleet,
   formatWorkers,
+  liaisonStatusText,
   liaisonTitle,
   showsStatusAge,
   statusLabel,
@@ -69,7 +70,7 @@ export interface LiaisonBlockProps {
 export function LiaisonBlock(props: LiaisonBlockProps) {
   const P = () => props.palette();
   const label = () => statusLabel(props.liaison.agent);
-  const statusText = () => props.liaison.session.metadata?.status?.text ?? "";
+  const statusText = () => liaisonStatusText(props.liaison.session.metadata?.status?.text);
   const title = () => liaisonTitle(props.liaison.agent.threadName ?? "");
   const age = () => showsStatusAge(label()) ? formatAge(statusStart(props.liaison.agent), props.nowMs()) : "";
   // Narrow sidebars keep the whole title and show only the age (or, with no age, the status word), in the status colour.

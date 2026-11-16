@@ -118,7 +118,7 @@ curl -sS http://127.0.0.1:7391/state \
   | jq '[.sessions[].agents[] | select(.attention) | {threadName, attention, attentionSince}] | sort_by(.attentionSince)'
 ```
 
-The sidebar's "needs you" block lists the same conversations, oldest first. The liaison block's `status` row shows the liaison's tmux session status text set with `/set-status`.
+The sidebar's "needs you" block lists the same conversations, oldest first. The liaison block's `status` row shows the liaison's tmux session status text set with `/set-status`, except text that opens with a count of conversations that need the engineer (such as `1 needs you`), which the `needs` row already shows. Clear the text with `{"session":"<liaison session>","text":null}`.
 
 ### `GET /state`: liaison link fields
 
