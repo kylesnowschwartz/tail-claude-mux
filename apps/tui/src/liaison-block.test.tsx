@@ -109,6 +109,29 @@ describe("LiaisonBlock", () => {
     }
   });
 
+  test("wide-character titles keep one row each at narrow widths", async () => {
+    const titles = ["部署需要生产密钥才能继续进行", "🚀🔥 deploy 🎉🎉🎉 waits on 🔑🔑"];
+    for (const width of [12, 16]) {
+      for (const title of titles) {
+        for (const count of [1, 4]) {
+          const items: LiaisonItem[] = Array.from({ length: count }, (_, i) => ({ kind: "blocked", title, since: NOW - (i + 1) * MIN }));
+          const r = { session: home(items), agent: liaison };
+          const { renderOnce, captureCharFrame, renderer } = await testRender(() => (
+            <box flexDirection="column">
+              <LiaisonBlock liaison={r} palette={() => palette} nowMs={() => NOW} items={() => liaisonItems(r)} workers={() => 2} />
+              <text>END</text>
+            </box>
+          ), { width, height: 20 });
+          await renderOnce();
+          const lines = captureCharFrame().split("\n");
+          renderer.destroy();
+          const end = lines.findIndex((line) => line.startsWith("END"));
+          expect({ width, title, count, rows: end }).toEqual({ width, title, count, rows: liaisonBlockRows(count) });
+        }
+      }
+    }
+  });
+
   test("at rest the block is one dim title row and its rule", async () => {
     const { lines, frame } = await renderBlocks({ width: 40 });
     expect(lines).toHaveLength(2);

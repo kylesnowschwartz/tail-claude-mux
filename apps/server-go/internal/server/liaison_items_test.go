@@ -195,3 +195,31 @@ func TestSetLiaisonItemsKeepsStatusBeside(t *testing.T) {
 		t.Fatalf("metadata = %+v", meta)
 	}
 }
+
+func TestSetLiaisonItemsWithoutItemsFieldClears(t *testing.T) {
+	s, _ := newLiaisonItemsServer(t)
+	postLiaisonItems(t, s, validLiaisonBody)
+	if rec := postLiaisonItems(t, s, `{"session":"work"}`); rec.Code != 204 {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if meta := workMetadata(t, s); meta != nil {
+		t.Fatalf("metadata after clear = %+v", meta)
+	}
+}
+
+func TestSetLiaisonItemsForUnknownSessionIsPruned(t *testing.T) {
+	s, _ := newLiaisonItemsServer(t)
+	body := `{"session":"ghost","items":[{"kind":"blocked","title":"x","since":"2026-11-16T08:00:00Z"}]}`
+	if rec := postLiaisonItems(t, s, body); rec.Code != 204 {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	getState(t, s)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if meta := s.Metadata.Get("ghost"); meta != nil {
+		t.Fatalf("set for unknown session survived a state build: %+v", meta)
+	}
+	if s.Metadata.Get("work") != nil {
+		t.Fatal("control: session work has metadata it was never sent")
+	}
+}
