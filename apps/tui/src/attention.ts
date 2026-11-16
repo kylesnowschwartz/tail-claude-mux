@@ -82,10 +82,15 @@ export function liaisonTitle(name: string): string {
   return rest ? `LIAISON ${rest}` : "LIAISON";
 }
 
+/** Whether a conversation is an open liaison: a liaison name and a live process. */
+export function isOpenLiaison(agent: AttentionAgent): boolean {
+  return isLiaisonName(agent.threadName) && isLiveAgent(agent);
+}
+
 /** Open liaison conversations, ordered by name so blocks keep their place. */
 export function findLiaisons(sessions: readonly SessionData[]): SessionAgentRef[] {
   return allAgents(sessions)
-    .filter(({ agent }) => isLiaisonName(agent.threadName) && isLiveAgent(agent))
+    .filter(({ agent }) => isOpenLiaison(agent))
     .sort((a, b) => a.agent.threadName!.localeCompare(b.agent.threadName!));
 }
 
@@ -124,7 +129,7 @@ export function liaisonWorkerCount(
  */
 export function needsYou(sessions: readonly SessionData[]): SessionAgentRef[] {
   return allAgents(sessions)
-    .filter(({ agent }) => !!agent.attention && isLiveAgent(agent) && !isLiaisonName(agent.threadName))
+    .filter(({ agent }) => !!agent.attention && isLiveAgent(agent) && !isOpenLiaison(agent))
     .sort((a, b) => (a.agent.attentionSince ?? 0) - (b.agent.attentionSince ?? 0));
 }
 
