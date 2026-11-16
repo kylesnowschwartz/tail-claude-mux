@@ -136,7 +136,7 @@ while (( elapsed < ready_timeout )); do
     pane_text=$(tmux capture-pane -p -t "$pane")
     if printf '%s' "$pane_text" | python3 -c '
 import re, sys
-s = sys.stdin.read().lower()
+s = sys.stdin.buffer.read().decode("utf-8", "replace").lower()
 choice = re.search(r"\byes\b", s) and re.search(r"\bno\b", s)
 choice = choice or re.search(r"\by\s*/\s*n\b", s)
 sys.exit(0 if "trust" in s and choice else 1)

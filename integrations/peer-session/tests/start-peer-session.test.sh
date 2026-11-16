@@ -153,6 +153,8 @@ run "$tmp/missing"; check missing
 run "$tmp/empty"; check empty
 printf 'Do you trust this folder? Yes / No\n' > "$FAKE_PANE"
 run "$tmp/prompt"; check dialog
+printf 'Claude input \377\nDo you trust this folder? Yes / No\n' > "$FAKE_PANE"
+run "$tmp/prompt"; check dialog
 printf 'Starting Claude\n' > "$FAKE_PANE"
 printf '{"sessions":[]}\n' > "$FAKE_STATE"
 run "$tmp/prompt"; check timeout
