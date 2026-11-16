@@ -140,13 +140,13 @@ export const LIAISON_ITEM_ROWS = 3;
 /**
  * The items one liaison block shows, in priority order and oldest first
  * within a priority: an `asks` item when the liaison's own conversation waits
- * on a permission or a question, then the items its session reports through
+ * on a permission or a question or has failed, then the items its session reports through
  * `POST /set-liaison-items`.
  */
 export function liaisonItems(ref: SessionAgentRef): LiaisonItem[] {
   const items: LiaisonItem[] = [];
   const reason = ref.agent.attention;
-  if (reason === "permission" || reason === "question") {
+  if (reason === "permission" || reason === "question" || reason === "error") {
     items.push({ kind: "asks", title: reason, since: ref.agent.attentionSince ?? ref.agent.ts });
   }
   items.push(...(ref.session.metadata?.liaisonItems ?? []));

@@ -33,10 +33,12 @@ function home(items: LiaisonItem[], statusText = "reading every report"): Sessio
   } as SessionData;
 }
 
-interface BlockOpts { width: number; items?: number; workers?: number; asks?: boolean; blocks?: number }
+interface BlockOpts { width: number; items?: number; workers?: number; asks?: boolean; failed?: boolean; blocks?: number }
 
 function ref(opts: BlockOpts) {
-  const agent: AttentionAgent = opts.asks
+  const agent: AttentionAgent = opts.failed
+    ? { ...liaison, status: "error", attention: "error", attentionSince: NOW - 7 * MIN }
+    : opts.asks
     ? { ...liaison, status: "waiting", attention: "permission", attentionSince: NOW - 2 * MIN }
     : liaison;
   return { session: home(REPORTED.slice(0, opts.items ?? 0)), agent };
@@ -92,11 +94,11 @@ describe("LiaisonBlock", () => {
     for (const width of [60, 40, 24, 16, 12]) {
       for (const items of [0, 1, 3, 5]) {
         for (const workers of [0, 2]) {
-          for (const asks of [false, true]) {
+          for (const [asks, failed] of [[false, false], [true, false], [false, true]] as const) {
             for (const blocks of [1, 2]) {
-              const opts = { width, items, workers, asks, blocks };
+              const opts = { width, items, workers, asks, failed, blocks };
               const { lines } = await renderBlocks(opts);
-              const expected = blocks * liaisonBlockRows(items + (asks ? 1 : 0));
+              const expected = blocks * liaisonBlockRows(items + (asks || failed ? 1 : 0));
               expect({ ...opts, rows: lines.length }).toEqual({ ...opts, rows: expected });
               expect(lines.filter((line) => NO_OLD_ROWS.test(line))).toEqual([]);
               expect(lines.some((line) => line.includes("reading every report"))).toBe(false);
@@ -140,6 +142,14 @@ describe("LiaisonBlock", () => {
     const { lines, frame } = await renderBlocks({ width: 40, asks: true });
     expect(lines).toHaveLength(3);
     expect(lines[1]!.trim()).toMatch(new RegExp(`^${LIAISON_ITEM_GLYPHS[1]} permission\\s+2m$`));
+    expect(fgOf(frame, 1, LIAISON_ITEM_GLYPHS[1]).fg).toBe(hex(frameColor(palette.red)));
+    expect(fgOf(frame, 0, "LIAISON")).toEqual({ fg: hex(frameColor(palette.red)), dim: false });
+  });
+
+  test("the liaison's own failure shows as a red error item", async () => {
+    const { lines, frame } = await renderBlocks({ width: 40, failed: true });
+    expect(lines).toHaveLength(liaisonBlockRows(1));
+    expect(lines[1]!.trim()).toMatch(new RegExp(`^${LIAISON_ITEM_GLYPHS[1]} error\\s+7m$`));
     expect(fgOf(frame, 1, LIAISON_ITEM_GLYPHS[1]).fg).toBe(hex(frameColor(palette.red)));
     expect(fgOf(frame, 0, "LIAISON")).toEqual({ fg: hex(frameColor(palette.red)), dim: false });
   });

@@ -27,7 +27,7 @@ While a Claude Code conversation named exactly `liaison`, or starting with `liai
 | 2 | `▲` | yellow | `no_report`, `answer` |
 | 3 | `●` | blue | `reminder` |
 
-The `asks` item comes from the liaison's own conversation: while it waits on a permission or a question, the block shows one `asks` item titled `permission` or `question`, aged from when that reason started. Every other item comes from `POST /set-liaison-items`; see [programmatic-api.md](./programmatic-api.md).
+The `asks` item comes from the liaison's own conversation: while it waits on a permission or a question, or its turn has failed, the block shows one `asks` item titled `permission`, `question`, or `error`, aged from when that reason started. Every other item comes from `POST /set-liaison-items`; see [programmatic-api.md](./programmatic-api.md).
 
 A conversation that an open liaison started shows a blue arrow mark before its name in its session card. The row stays in its place in the card. The mark and the count come from the `liaisonParentThreadId` field in `GET /state`, an unverified claim for display; see [programmatic-api.md](./programmatic-api.md). When the liaison reports that conversation as finished and still open, a grey check mark follows the arrow.
 
