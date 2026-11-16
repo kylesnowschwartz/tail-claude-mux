@@ -1,13 +1,13 @@
 == idle 0
 ["has-session", "-t", "=peer"]
 ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
-["send-keys", "-t", "%128", "claude --permission-mode auto -- \"$(cat -- 'TMP/prompt')\"", "Enter"]
+["send-keys", "-t", "%128", "peer_task=\"$(cat -- 'TMP/prompt')\" && [ -n \"$peer_task\" ] && claude --permission-mode auto -- \"$peer_task\"", "Enter"]
 ["capture-pane", "-p", "-t", "%128"]
 curl
 == delayed 0
 ["has-session", "-t", "=peer"]
 ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
-["send-keys", "-t", "%128", "claude --permission-mode auto -- \"$(cat -- 'TMP/prompt')\"", "Enter"]
+["send-keys", "-t", "%128", "peer_task=\"$(cat -- 'TMP/prompt')\" && [ -n \"$peer_task\" ] && claude --permission-mode auto -- \"$peer_task\"", "Enter"]
 ["capture-pane", "-p", "-t", "%128"]
 curl
 curl
@@ -15,17 +15,18 @@ curl
 == fallback 0
 ["has-session", "-t", "=peer"]
 ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
-["send-keys", "-t", "%128", "claude --permission-mode auto -- \"$(cat -- 'TMP/prompt')\"", "Enter"]
+["send-keys", "-t", "%128", "peer_task=\"$(cat -- 'TMP/prompt')\" && [ -n \"$peer_task\" ] && claude --permission-mode auto -- \"$peer_task\"", "Enter"]
 ["capture-pane", "-p", "-t", "%128"]
 ["capture-pane", "-p", "-t", "%128"]
 ["capture-pane", "-p", "-t", "%128"]
 ["capture-pane", "-p", "-t", "%128"]
 ["capture-pane", "-p", "-t", "%128"]
 ["capture-pane", "-p", "-t", "%128"]
+["display-message", "-p", "-t", "%128", "#{pane_current_command}"]
 == timeout 1
 ["has-session", "-t", "=peer"]
 ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
-["send-keys", "-t", "%128", "claude --permission-mode auto -- \"$(cat -- 'TMP/prompt')\"", "Enter"]
+["send-keys", "-t", "%128", "peer_task=\"$(cat -- 'TMP/prompt')\" && [ -n \"$peer_task\" ] && claude --permission-mode auto -- \"$peer_task\"", "Enter"]
 ["capture-pane", "-p", "-t", "%128"]
 curl
 ["capture-pane", "-p", "-t", "%128"]
@@ -43,7 +44,7 @@ curl
 == dialog 1
 ["has-session", "-t", "=peer"]
 ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
-["send-keys", "-t", "%128", "claude --permission-mode auto -- \"$(cat -- 'TMP/prompt')\"", "Enter"]
+["send-keys", "-t", "%128", "peer_task=\"$(cat -- 'TMP/prompt')\" && [ -n \"$peer_task\" ] && claude --permission-mode auto -- \"$peer_task\"", "Enter"]
 ["capture-pane", "-p", "-t", "%128"]
 == pi-idle 0
 ["has-session", "-t", "=peer"]
@@ -57,12 +58,12 @@ curl
 == attach-match 0
 ["list-sessions", "-F", "#{session_path}\t#{session_name}"]
 ["new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=work:", "-n", "claude", "-c", "TMP"]
-["send-keys", "-t", "%128", "claude --permission-mode auto -- \"$(cat -- 'TMP/prompt')\"", "Enter"]
+["send-keys", "-t", "%128", "peer_task=\"$(cat -- 'TMP/prompt')\" && [ -n \"$peer_task\" ] && claude --permission-mode auto -- \"$peer_task\"", "Enter"]
 ["capture-pane", "-p", "-t", "%128"]
 curl
 == name-id 0
 ["has-session", "-t", "=peer"]
 ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
-["send-keys", "-t", "%128", "claude --permission-mode auto --session-id 123e4567-e89b-42d3-a456-426614174000 -n liaison/x -- \"$(cat -- 'TMP/prompt')\"", "Enter"]
+["send-keys", "-t", "%128", "peer_task=\"$(cat -- 'TMP/prompt')\" && [ -n \"$peer_task\" ] && claude --permission-mode auto --session-id 123e4567-e89b-42d3-a456-426614174000 -n liaison/x -- \"$peer_task\"", "Enter"]
 ["capture-pane", "-p", "-t", "%128"]
 curl

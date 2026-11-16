@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage='start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--close-on-exit] [--agent claude|pi] [--window <name>] [--name <name>] [--session-id <uuid>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]'
 repo='' session='' prompt_file='' pane='' ready='' peer_name='' window='' permission_mode='' name='' session_id='' pane_tail=''
-agent=claude attach=0 close_on_exit=0 tcm_seen=0 remain_off=0 session_id_set=0 ready_timeout=60 port=${TCM_PORT:-7391}
+agent=claude attach=0 close_on_exit=0 tcm_seen=0 remain_off=0 session_id_set=0 ready_timeout=60 task_limit=262144 port=${TCM_PORT:-7391}
 result() {
     python3 - "$1" "$2" "$pane" "$session" "$ready" "$peer_name" "$agent" "$pane_tail" <<'PY'
 import json, sys
@@ -78,13 +78,9 @@ case "$agent" in
             [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$ ]] || fail "--name must match ^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}\$."
             launch+=" -n $name"
         fi
-        # The typed command reads the task from the prompt file, so the task
-        # text itself is never typed into the shell. PROMPT_PATH is replaced
-        # after the path is checked.
-        launch+=" -- \"\$(cat -- 'PROMPT_PATH')\""
         # exec replaces the shell, so the pane ends when Claude Code ends.
         (( ! close_on_exit )) || launch="exec $launch"
-        tcm_agent=claude-code tcm_ready=idle,running,working,waiting ;;
+        tcm_agent=claude-code tcm_ready=idle,running,working,waiting,done ;;
     pi)
         [[ -z "$permission_mode" ]] || fail "--permission-mode applies only to --agent claude."
         [[ -z "$name" ]] || fail "--name applies only to --agent claude; pi has no session name option."
@@ -96,9 +92,27 @@ esac
 command -v tmux >/dev/null 2>&1 || fail "tmux is required on PATH."
 [[ -d "$repo" ]] || fail "--repo must be an existing directory."
 [[ -f "$prompt_file" && -r "$prompt_file" && -s "$prompt_file" ]] || fail "--prompt-file must be a readable, non-empty file."
-[[ "$prompt_file" != *[\'\\]* && ! "$prompt_file" =~ [[:cntrl:]] ]] || fail "--prompt-file path must not hold a single quote, a backslash, or a control character."
-prompt_path=$(cd -- "$(dirname -- "$prompt_file")" && pwd -P)/$(basename -- "$prompt_file")
-launch=${launch/PROMPT_PATH/$prompt_path}
+if [[ "$agent" == claude ]]; then
+    # The typed command reads the task from the prompt file inside single
+    # quotes, so the task text itself is never typed into the shell, and the
+    # full path holds no character that ends or escapes the quotes.
+    prompt_path=$(cd -- "$(dirname -- "$prompt_file")" && pwd -P)/$(basename -- "$prompt_file")
+    [[ "$prompt_path" != *[\'\\]* && ! "$prompt_path" =~ [[:cntrl:]] ]] || fail "--prompt-file's full path must not hold a single quote, a backslash, or a control character."
+    task_problem=$(python3 - "$prompt_path" "$task_limit" <<'PY'
+import sys
+path, limit = sys.argv[1], int(sys.argv[2])
+data = open(path, "rb").read()
+if len(data) > limit:
+    print(f"--prompt-file holds {len(data)} bytes; the limit for Claude Code is {limit} bytes.")
+elif not data.strip():
+    print("--prompt-file holds only white space.")
+PY
+) || fail "--prompt-file must be readable."
+    [[ -z "$task_problem" ]] || fail "$task_problem"
+    # A failed or empty read stops the start, so Claude Code never starts
+    # without its task.
+    launch="peer_task=\"\$(cat -- '$prompt_path')\" && [ -n \"\$peer_task\" ] && $launch -- \"\$peer_task\""
+fi
 [[ -n "$session" &&"$session" != *[.:]* && "$session" != -* ]] || fail "--session must be a non-empty tmux session name without dots or colons."
 [[ "$ready_timeout" =~ ^[0-9]+$ && ${#ready_timeout} -le 6 ]] || fail "--ready-timeout must be an integer from 0 to 999999."
 ready_timeout=$((10#$ready_timeout))
@@ -137,11 +151,34 @@ fi
 tmux send-keys -t "$pane" "$launch" Enter >&2
 elapsed=0 stable=0 previous=
 name_wait_polls=5
+# Prints the status and thread name of the pane's conversation in tcm state on
+# stdin; fails when tcm lists no conversation in the pane.
+conversation() {
+    python3 -c '
+import json, sys
+try:
+    for session in json.load(sys.stdin).get("sessions", []):
+        for agent in session.get("agents", []):
+            if agent.get("agent") == sys.argv[2] and agent.get("paneId") == sys.argv[1]:
+                print(agent.get("status") or "")
+                print(agent.get("threadName") or "")
+                sys.exit(0)
+except (ValueError, TypeError, AttributeError):
+    pass
+sys.exit(1)
+' "$pane" "$tcm_agent"
+}
+accepted() { [[ -n "$1" && ",$tcm_ready," == *",$1,"* ]]; }
+pane_dead() { (( close_on_exit )) && [[ $(tmux display-message -p -t "$pane" '#{pane_dead}') == 1 ]]; }
+is_shell() {
+    case "${1#-}" in
+        sh|bash|zsh|fish|dash|ksh|tcsh|csh|"$(basename -- "${SHELL:-sh}")") return 0 ;;
+    esac
+    return 1
+}
 while (( elapsed < ready_timeout )); do
-    if (( close_on_exit )) && [[ $(tmux display-message -p -t "$pane" '#{pane_dead}') == 1 ]]; then
-        ready=exited
-        fail_kept "Claude Code ended before it was ready; the pane is kept for reading."
-    fi
+    dead=0
+    ! pane_dead || dead=1
     pane_text=$(tmux capture-pane -p -t "$pane")
     if printf '%s' "$pane_text" | python3 -c '
 import re, sys
@@ -156,25 +193,9 @@ sys.exit(0 if "trust" in s and choice else 1)
     fi
     if state=$(curl --fail --silent --show-error --max-time 1 "http://127.0.0.1:$port/state" 2>/dev/null); then
         stable=0 tcm_seen=1
-        if peer_name=$(printf '%s' "$state" | python3 -c '
-import json, sys
-try:
-    state = json.load(sys.stdin)
-    for session in state.get("sessions", []):
-        for agent in session.get("agents", []):
-            if (agent.get("agent") == sys.argv[2] and
-                agent.get("paneId") == sys.argv[1] and
-                agent.get("status") in sys.argv[3].split(",")):
-                print(agent.get("status"))
-                print(agent.get("threadName") or "")
-                sys.exit(0)
-except (ValueError, TypeError, AttributeError):
-    pass
-sys.exit(1)
-' "$pane" "$tcm_agent" "$tcm_ready"); then
-            # ready is idle, or working when the task is already running.
-            [[ "${peer_name%%$'\n'*}" == idle ]] && ready=idle || ready=working
-            [[ "$peer_name" == *$'\n'* ]] && peer_name=${peer_name#*$'\n'} || peer_name=
+        if listed=$(printf '%s' "$state" | conversation) && accepted "${listed%%$'\n'*}"; then
+            status=${listed%%$'\n'*}
+            [[ "$listed" == *$'\n'* ]] && peer_name=${listed#*$'\n'} || peer_name=
             for ((name_poll=0; name_poll<name_wait_polls && elapsed+1<ready_timeout; name_poll++)); do
                 [[ -z "$peer_name" ]] || break
                 sleep 1
@@ -182,22 +203,26 @@ sys.exit(1)
                 if ! state=$(curl --fail --silent --show-error --max-time 1 "http://127.0.0.1:$port/state" 2>/dev/null); then
                     break
                 fi
-                name_state=$(printf '%s' "$state" | python3 -c '
-import json, sys
-try:
-    for session in json.load(sys.stdin).get("sessions", []):
-        for agent in session.get("agents", []):
-            if agent.get("agent") == sys.argv[2] and agent.get("paneId") == sys.argv[1]:
-                print(agent.get("status") or "")
-                print(agent.get("threadName") or "")
-                sys.exit(0)
-except (ValueError, TypeError, AttributeError):
-    pass
-' "$pane" "$tcm_agent")
-                peer_name=${name_state#*$'\n'}
-                [[ "$name_state" == *$'\n'* ]] || peer_name=
-                [[ ",$tcm_ready," == *",${name_state%%$'\n'*},"* ]] || break
+                if ! listed=$(printf '%s' "$state" | conversation); then
+                    status=
+                    break
+                fi
+                status=${listed%%$'\n'*}
+                [[ "$listed" == *$'\n'* ]] && peer_name=${listed#*$'\n'} || peer_name=
+                accepted "$status" || break
             done
+            ! pane_dead || dead=1
+            if ! accepted "$status"; then
+                ready=lost
+                fail_kept "tcm stopped listing a ready or working conversation in the pane while waiting for its name."
+            fi
+            if (( dead )) && [[ "$status" != "done" ]]; then
+                ready=exited
+                fail_kept "Claude Code ended before it was ready; the pane is kept for reading."
+            fi
+            # ready is idle, done when the task has already finished, or
+            # working while it runs.
+            case "$status" in idle|done) ready=$status ;; *) ready=working ;; esac
             break
         fi
     elif (( close_on_exit )); then
@@ -211,8 +236,16 @@ except (ValueError, TypeError, AttributeError):
         fi
         if [[ -n "$pane_text" ]] && (( stable >= 3 && elapsed >= 5 )); then
             ready='pane-stable'
+            if [[ "$agent" == claude ]] && is_shell "$(tmux display-message -p -t "$pane" '#{pane_current_command}')"; then
+                ready=not-started
+                fail_kept "Claude Code is not running: the shell is the pane's current program; tmux session '$session' remains running."
+            fi
             break
         fi
+    fi
+    if (( dead )); then
+        ready=exited
+        fail_kept "Claude Code ended before it was ready; the pane is kept for reading."
     fi
     previous=$pane_text
     sleep 1
@@ -233,6 +266,11 @@ if [[ "$agent" == claude ]]; then
     if (( close_on_exit )); then
         remain_off=1
         tmux set-option -p -t "$pane" remain-on-exit off >&2
+        # A task that has already finished leaves a pane whose program has
+        # ended; the setting does not close such a pane, so it is closed here.
+        if [[ "$ready" == "done" ]] && pane_dead; then
+            tmux kill-pane -t "$pane" >&2
+        fi
     fi
     result true ""
     exit 0

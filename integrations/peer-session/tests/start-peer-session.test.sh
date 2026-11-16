@@ -20,7 +20,9 @@ case "$1" in
     new-session|new-window) printf '%%128\n' ;;
     list-sessions) cat "$FAKE_SESSIONS" ;;
     capture-pane) cat "$FAKE_PANE" ;;
-    display-message) if [[ -f "$FAKE_PANE.dead" ]]; then cat "$FAKE_PANE.dead"; else printf '0\n'; fi ;;
+    display-message)
+        if [[ "$*" == *pane_current_command* ]]; then printf '%s\n' "${FAKE_CMD:-claude}"
+        elif [[ -f "$FAKE_PANE.dead" ]]; then cat "$FAKE_PANE.dead"; else printf '0\n'; fi ;;
 esac
 FAKE
 cat > "$tmp/bin/curl" <<'FAKE'
@@ -56,7 +58,8 @@ check() {
     python3 - "$tmp" "$1" "$code" <<'PY'
 import json, os, pathlib, sys
 p, case, code = pathlib.Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
-task = " -- \"$(cat -- '" + os.path.realpath(p / "prompt") + "')\""
+read = "peer_task=\"$(cat -- '" + os.path.realpath(p / "prompt") + "')\" && [ -n \"$peer_task\" ] && "
+task = " -- \"$peer_task\""
 def require(ok, message):
     if not ok:
         sys.exit("FAIL " + case + ": " + message)
@@ -67,7 +70,7 @@ events = (p / "calls").read_text().splitlines()
 calls = [json.loads(s) for s in events if s != "curl"]
 names = [c[0] for c in calls]
 pi = case.startswith("pi-")
-if case in ("existing", "attach-taken", "missing", "empty", "quote-path", "pi-mode", "bad-agent", "bad-name", "pi-name", "bad-id", "pi-id"):
+if case in ("existing", "attach-taken", "missing", "empty", "quote-path", "quote-dir", "blank", "large", "pi-mode", "bad-agent", "bad-name", "pi-name", "bad-id", "pi-id"):
     require(code != 0 and v["ok"] is False, "validation must fail")
     require("new-session" not in names, "validation created session")
     if case in ("existing", "attach-taken"):
@@ -80,8 +83,12 @@ if case in ("existing", "attach-taken", "missing", "empty", "quote-path", "pi-mo
     if case in ("bad-id", "pi-id"):
         require("--session-id" in v["error"], "session id error")
         require(not calls, "session id validation made tmux calls: " + str(names))
-    if case == "quote-path":
+    if case in ("quote-path", "quote-dir"):
         require("single quote" in v["error"] and not calls, "quoted path refused")
+    if case == "blank":
+        require("white space" in v["error"] and not calls, "blank task refused")
+    if case == "large":
+        require("262144" in v["error"] and not calls, "large task refused")
     if case == "bad-agent":
         require("--agent" in v["error"], "agent error")
 else:
@@ -104,7 +111,7 @@ else:
                 "session arguments")
         require(v["session"] == "peer", "session field")
         launch = calls[2]
-    expected = "pi" if pi else "claude --permission-mode auto"
+    expected = "pi" if pi else read + "claude --permission-mode auto"
     if case == "name":
         expected += " -n liaison/s4-agent-test"
     if case == "session-id":
@@ -119,10 +126,10 @@ else:
     for c in calls[2:]:
         if c[0] != "load-buffer":
             require("-t" in c and c[c.index("-t")+1] == "%128", "pane target: " + str(c))
-    if case in ("idle", "working", "relative", "name", "session-id", "session-id-name", "fallback", "delayed", "unnamed", "pi-idle", "attach-match", "attach-fallback", "attach-none"):
+    if case in ("idle", "working", "relative", "pi-quote", "name", "session-id", "session-id-name", "fallback", "delayed", "unnamed", "pi-idle", "attach-match", "attach-fallback", "attach-none"):
         require(code == 0 and v["ok"] and v["prompt_sent"], "success")
         require(v["ready"] == ("pane-stable" if case in ("fallback", "attach-fallback") else case if case == "working" else "idle"), "ready")
-        require(v["peer_name"] == ("other-project" if case in ("idle", "working", "relative", "name", "session-id", "session-id-name", "delayed", "pi-idle", "attach-match", "attach-none") else ""), "peer")
+        require(v["peer_name"] == ("other-project" if case in ("idle", "working", "relative", "pi-quote", "name", "session-id", "session-id-name", "delayed", "pi-idle", "attach-match", "attach-none") else ""), "peer")
         if case == "delayed":
             require(events.count("curl") == 3, "name poll count")
         if case == "unnamed":
@@ -136,13 +143,15 @@ else:
         load, paste = calls[-3:-1]
         require("-p" in paste and "-d" in paste, "paste flags")
         require(load[load.index("-b")+1] == paste[paste.index("-b")+1], "named buffer")
-        require(load[-1] == str(p / "prompt"), "prompt file")
+        require(load[-1] == str(p / ("it's.txt" if case == "pi-quote" else "prompt")), "prompt file")
         require(calls[-1] == ["send-keys", "-t", "%128", "Enter"], "submit")
         require("sleep 0.5" in (p / "calls.extra").read_text(), "paste pause")
         require(all("-l" not in c for c in calls), "literal send-keys")
     else:
         require(code != 0 and not v["ok"] and not v["prompt_sent"], "failure")
         require(v["ready"] == case.removeprefix("pi-") and "remains running" in v["error"], "failure details")
+        if case == "not-started":
+            require("command not found" in v.get("pane_tail", ""), "pane tail")
         require("paste-buffer" not in names and "load-buffer" not in names, "unexpected prompt")
 print("PASS " + case)
 PY
@@ -156,6 +165,13 @@ printf '%s\n' '{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","s
 (cd "$tmp" && run prompt; check relative)
 cp "$tmp/prompt" "$tmp/it's"
 run "$tmp/it's"; check quote-path
+mkdir "$tmp/'\$(printf INJECTED)'"
+cp "$tmp/prompt" "$tmp/'\$(printf INJECTED)'/task"
+(cd "$tmp/'\$(printf INJECTED)'" && run task; check quote-dir)
+printf '\n\n \t\n' > "$tmp/blank"
+run "$tmp/blank"; check blank
+head -c 262145 /dev/zero | tr '\0' x > "$tmp/large"
+run "$tmp/large"; check large
 cp "$FAKE_STATE" "$FAKE_STATE.3"
 printf '%s\n' '{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","status":"idle","threadName":""}]}]}' > "$FAKE_STATE"
 run "$tmp/prompt"; check delayed
@@ -176,10 +192,14 @@ printf '{"sessions":[]}\n' > "$FAKE_STATE"
 run "$tmp/prompt"; check timeout
 SERVER_DOWN=1
 run "$tmp/prompt"; check fallback
+printf 'zsh: command not found: claude\n' > "$FAKE_PANE"
+FAKE_CMD=zsh run "$tmp/prompt"; check not-started
 SERVER_DOWN=0
 printf 'pi input\n' > "$FAKE_PANE"
 printf '%s\n' '{"sessions":[{"agents":[{"agent":"pi","paneId":"%128","status":"idle","threadName":"other-project"}]}]}' > "$FAKE_STATE"
 run "$tmp/prompt" --agent pi; check pi-idle
+cp "$tmp/prompt" "$tmp/it's.txt"
+run "$tmp/it's.txt" --agent pi; check pi-quote
 printf '%s\n' '{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","status":"idle","threadName":"other-project"}]}]}' > "$FAKE_STATE"
 run "$tmp/prompt" --agent pi; check pi-timeout
 run "$tmp/prompt" --agent pi --permission-mode auto; check pi-mode
@@ -215,7 +235,8 @@ close_check() {
     python3 - "$tmp" "$1" "$code" <<'PY'
 import json, os, pathlib, sys
 p, case, code = pathlib.Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
-task = " -- \"$(cat -- '" + os.path.realpath(p / "prompt") + "')\""
+read = "peer_task=\"$(cat -- '" + os.path.realpath(p / "prompt") + "')\" && [ -n \"$peer_task\" ] && "
+task = " -- \"$peer_task\""
 def require(ok, message):
     if not ok:
         sys.exit("FAIL " + case + ": " + message)
@@ -232,11 +253,12 @@ if case == "close-pi":
     print("PASS " + case)
     sys.exit()
 launch = next(c for c in calls if c[0] == "send-keys")
-require(launch[3] == "exec claude --permission-mode auto" + task, "exec launch: " + str(launch))
+require(launch[3] == read + "exec claude --permission-mode auto" + task, "exec launch: " + str(launch))
 require(calls.index(on) < calls.index(launch), "remain-on-exit on before launch")
-if case == "close-idle":
-    require(code == 0 and v["ok"] and v["prompt_sent"] and v["ready"] == "idle", "success")
-    require(calls[-1] == off and "paste-buffer" not in names, "off last, no paste")
+if case in ("close-idle", "close-done"):
+    require(code == 0 and v["ok"] and v["prompt_sent"] and v["ready"] == case[6:], "success")
+    end = [off, ["display-message", "-p", "-t", "%128", "#{pane_dead}"], ["kill-pane", "-t", "%128"]] if case == "close-done" else [off]
+    require(calls[-len(end):] == end and "paste-buffer" not in names, "off last, no paste")
     require(names.count("send-keys") == 1, "no Enter after start")
     require(events.count("curl") == 1, "one tcm check")
     require("pane_tail" not in v, "no tail on success")
@@ -248,6 +270,7 @@ else:
     expect = {"close-down": ("timeout", "tcm gave no answer"),
               "close-busy": ("timeout", "no ready or working conversation"),
               "close-dead": ("exited", "kept for reading"),
+              "close-lost": ("lost", "stopped listing"),
               "close-dialog": ("dialog", "trust dialog")}[case]
     require(v["ready"] == expect[0] and expect[1] in v["error"], "details: " + str(v))
 print("PASS " + case)
@@ -264,8 +287,16 @@ run "$tmp/prompt" --close-on-exit --agent pi; close_check close-pi
 SERVER_DOWN=1
 run "$tmp/prompt" --close-on-exit; close_check close-down
 SERVER_DOWN=0
-printf '%s\n' "${idle_state/\"idle\"/\"done\"}" > "$FAKE_STATE"
+printf '%s\n' "${idle_state/\"idle\"/\"error\"}" > "$FAKE_STATE"
 run "$tmp/prompt" --close-on-exit; close_check close-busy
+printf '%s\n' "${idle_state/\"idle\"/\"done\"}" > "$FAKE_STATE"
+printf '1\n' > "$FAKE_PANE.dead"
+run "$tmp/prompt" --close-on-exit; close_check close-done
+rm "$FAKE_PANE.dead"
+printf '%s\n' "${idle_state/other-project/}" > "$FAKE_STATE.1"
+printf '{"sessions":[]}\n' > "$FAKE_STATE"
+run "$tmp/prompt" --close-on-exit; close_check close-lost
+rm "$FAKE_STATE.1"
 printf '1\n' > "$FAKE_PANE.dead"
 run "$tmp/prompt" --close-on-exit; close_check close-dead
 rm "$FAKE_PANE.dead"
@@ -352,3 +383,4 @@ else
         exit 1
     fi
 fi
+
