@@ -42,6 +42,7 @@ cat > "$tmp/bin/sleep" <<'FAKE'
 printf 'sleep %s\n' "$*" >> "$CALL_LOG.extra"
 FAKE
 chmod +x "$tmp/bin/"*
+orig_path=$PATH
 export PATH="$tmp/bin:$PATH"
 script="$root/scripts/start-peer-session.sh"
 printf 'Task line one\nTask line two\n' > "$tmp/prompt"
@@ -384,3 +385,118 @@ else
     fi
 fi
 
+# Execution cases on a throwaway tmux server with a real zsh and a stand-in
+# claude that records its arguments. A stand-in curl answers for tcm and lists
+# a conversation in every pane of that server with the status in tcm-status
+# once the stand-in claude has started.
+if [[ -z "${RECORD_GOLDEN_FROM:-}" ]] && command -v tmux >/dev/null 2>&1 && command -v zsh >/dev/null 2>&1; then
+    real=$tmp/real server="peer-session-test-$$"
+    mkdir -p "$real/bin" "$real/zdot" "$real/repo"
+    trap '"$real/bin/tmux" kill-server 2>/dev/null || true; rm -rf "$tmp"' EXIT
+    real_tmux=$(PATH=$orig_path command -v tmux)
+    printf '#!/bin/sh\nexec %s -L %s -f /dev/null "$@"\n' "$real_tmux" "$server" > "$real/bin/tmux"
+    cat > "$real/bin/claude.stand-in" <<'FAKE'
+#!/usr/bin/env python3
+import json, os, sys, time
+real = os.environ["PEER_REAL"]
+open(os.path.join(real, "args"), "w").write(json.dumps(sys.argv[1:]))
+print("stand-in claude ready", flush=True)
+if open(os.path.join(real, "mode")).read().strip() != "quick":
+    time.sleep(60)
+FAKE
+    cat > "$real/bin/curl" <<'FAKE'
+#!/bin/sh
+[ -s "$PEER_REAL/tcm-status" ] || exit 7
+status=$(cat "$PEER_REAL/tcm-status")
+# A conversation exists only once the stand-in claude has started.
+[ -e "$PEER_REAL/args" ] || { echo '{"sessions":[]}'; exit 0; }
+tmux list-panes -a -F '#{pane_id}' | python3 -c '
+import json, sys
+agents = [{"agent": "claude-code", "paneId": p, "status": sys.argv[1], "threadName": "peer"}
+          for p in sys.stdin.read().split()]
+print(json.dumps({"sessions": [{"agents": agents}]}))
+' "$status"
+FAKE
+    # The stand-ins run with the python3 found now, because PATH for the
+    # cases can leave out its directory.
+    ln -s "$(command -v python3)" "$real/bin/python3"
+    chmod +x "$real/bin/"*
+    export PEER_REAL=$real
+    # PATH for the cases leaves out every directory that holds a real claude.
+    real_path=$real/bin
+    IFS=: read -r -a dirs <<< "$orig_path"
+    for dir in "${dirs[@]}"; do
+        [[ -n "$dir" && ! -e "$dir/claude" ]] && real_path+=":$dir"
+    done
+    # zsh reads no user startup files, so PATH in the pane is real_path.
+    PATH=$real_path ZDOTDIR=$real/zdot "$real/bin/tmux" new-session -d -s keep \; set -g default-shell "$(command -v zsh)"
+    task=$'First "double" and \'single\' quotes\n$HOME `whoami` $(printf INJECTED)\n-dash line'
+    real_run() {
+        local label=$1 prompt=$2
+        shift 2
+        rm -f "$real/args"
+        code=0
+        PATH=$real_path bash "$script" --repo "$real/repo" --session "$label" --prompt-file "$prompt" --ready-timeout 8 "$@" > "$tmp/out" || code=$?
+    }
+    real_check() {
+        python3 - "$1" "$code" "$tmp/out" "$real" "$2" <<'PY'
+import json, os, sys
+case, code, out, real, expect = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+v = json.loads(open(out).read())
+def require(ok, message):
+    if not ok:
+        sys.exit("FAIL " + case + ": " + message + ": " + str(v))
+args = os.path.join(real, "args")
+if expect == "task":
+    require(code == 0 and v["ok"] and v["prompt_sent"], "success")
+    got = json.load(open(args))
+    task = open(os.path.join(real, "task-file")).read().rstrip("\n")
+    require(got[-2:] == ["--", task], "task arrives as one argument")
+elif expect == "refused":
+    require(code != 0 and not v["ok"] and "pane" not in v and not os.path.exists(args), "refused before the pane")
+else:
+    require(code != 0 and not v["ok"] and not os.path.exists(args), "failure without a start")
+    require(expect in v.get("pane_tail", ""), "pane tail")
+print("PASS " + case)
+PY
+    }
+    printf '%s\n' "$task" > "$real/task-file"
+    printf stay > "$real/mode"
+    printf working > "$real/tcm-status"
+    cp "$real/bin/claude.stand-in" "$real/bin/claude"
+    injected="$real/\$(printf INJECTED)"
+    mkdir "$injected"
+    cp "$real/task-file" "$injected/task"
+    (cd "$injected" && real_run injection task --close-on-exit && real_check real-injection task) || exit 1
+    [[ ! -e "$real/repo/INJECTED" ]] || { echo "FAIL real-injection: command ran" >&2; exit 1; }
+    mkdir "$real/'\$(printf INJECTED)'"
+    cp "$real/task-file" "$real/'\$(printf INJECTED)'/task"
+    (cd "$real/'\$(printf INJECTED)'" && { real_run quoted task; real_check real-quoted-dir refused; }) || exit 1
+    rm "$real/bin/claude"
+    : > "$real/tcm-status"
+    real_run missing "$real/task-file"; real_check real-not-found "command not found"
+    cp "$real/bin/claude.stand-in" "$real/bin/claude"
+    cp "$real/task-file" "$real/locked"
+    chmod 000 "$real/locked"
+    real_run unreadable "$real/locked"; real_check real-unreadable refused
+    printf '\n\n\n' > "$real/newlines"
+    real_run newlines "$real/newlines"; real_check real-newlines refused
+    printf quick > "$real/mode"
+    printf "done" > "$real/tcm-status"
+    real_run quick "$real/task-file"; real_check real-quick task
+    real_run quick-close "$real/task-file" --close-on-exit; real_check real-quick-close task
+    pane=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pane"])' "$tmp/out")
+    polls=0
+    while "$real/bin/tmux" list-panes -a -F '#{pane_id}' | grep -qx -- "$pane" && (( polls < 20 )); do
+        "$(PATH=$orig_path command -v sleep)" 0.1
+        polls=$((polls + 1))
+    done
+    if "$real/bin/tmux" list-panes -a -F '#{pane_id}' | grep -qx -- "$pane"; then
+        echo "FAIL real-quick-close-pane-ends: pane stays after a finished task" >&2
+        exit 1
+    fi
+    echo "PASS real-quick-close-pane-ends"
+    "$real/bin/tmux" kill-server
+else
+    echo "SKIP real tmux cases: tmux and zsh are required"
+fi
