@@ -24,6 +24,15 @@ export function statusStart(agent: AttentionAgent): number {
   return agent.statusSince ?? agent.ts;
 }
 
+/**
+ * Whether the liaison header shows how long the liaison has held its status.
+ * The age matters while the liaison works, waits on the engineer, or has
+ * failed; at rest (ready or stopped) it carries no information.
+ */
+export function showsStatusAge(label: StatusLabel): boolean {
+  return label === "working" || label === "waiting" || label === "error";
+}
+
 /** The sidebar's five row labels, derived from tracker status + liveness. */
 export type StatusLabel = "working" | "waiting" | "ready" | "stopped" | "error";
 

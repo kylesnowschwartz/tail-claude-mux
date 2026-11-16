@@ -103,7 +103,7 @@ Each conversation in `sessions[].agents[]` (and `sessions[].agentState`) carries
 |-------|------|---------|
 | `attention` | `"permission"`, `"question"`, `"input"`, `"error"`, or `"finished"` | Why the conversation needs the engineer. Absent when it does not. |
 | `attentionSince` | number, epoch milliseconds | When that reason started. |
-| `statusSince` | number, epoch milliseconds | When the conversation's current `status` started. The sidebar's liaison header shows its age, using `ts` when it is absent. |
+| `statusSince` | number, epoch milliseconds | When the conversation's current `status` started. The sidebar's liaison header shows its age while the liaison is working, waiting, or in error, using `ts` when it is absent. |
 
 - `permission`: a permission question is open.
 - `question`: the question tool is open.

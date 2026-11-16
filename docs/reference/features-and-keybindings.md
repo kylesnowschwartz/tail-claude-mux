@@ -18,7 +18,7 @@ Each session row can show:
 
 While a Claude Code conversation named exactly `liaison`, or starting with `liaison/`, is open, a block is pinned at the top of the sidebar, one per liaison (`liaison/work` and `liaison/personal` give two). With no liaison open, the block is absent. Its rows:
 
-- Header: `LIAISON` plus the rest of the name, and the liaison's own status and how long it has been in that status
+- Header: `LIAISON` plus the rest of the name, and the liaison's own status; while that status is `working`, `waiting`, or `error`, also how long it has been in that status. At rest (`ready` or `stopped`) the header shows no age
 - `fleet`: the number of conversations in each status across all sessions; on narrow sidebars, each status glyph with its count
 - `needs`: the number of conversations that need the engineer and the age of the oldest; absent when nothing needs the engineer
 - `work`: the count of conversations that this liaison started, such as `3 workers`, when it is above zero; a sidebar too narrow for the words shows the number only

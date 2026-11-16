@@ -21,11 +21,11 @@ function home(statusText: string): SessionData {
 }
 
 /** The block's rendered lines at `width` columns, without the blank lines under it. */
-async function renderBlock(opts: { width: number; workers: number; showFleet: boolean; statusText: string; needsCount?: number }): Promise<string[]> {
+async function renderBlock(opts: { width: number; workers: number; showFleet: boolean; statusText: string; needsCount?: number; agent?: AttentionAgent }): Promise<string[]> {
   const { renderOnce, captureCharFrame, renderer } = await testRender(() => (
     <box flexDirection="column">
       <LiaisonBlock
-        liaison={{ session: home(opts.statusText), agent: liaison }}
+        liaison={{ session: home(opts.statusText), agent: opts.agent ?? liaison }}
         showFleet={opts.showFleet}
         palette={() => palette}
         nowMs={() => NOW}
@@ -88,6 +88,23 @@ describe("LiaisonBlock", () => {
   test("shows the needs row when something needs the engineer", async () => {
     const lines = await renderBlock({ width: 40, workers: 0, showFleet: true, statusText: "", needsCount: 2 });
     expect(lines.filter((line) => line.trimStart().startsWith("needs") && line.includes("2 · oldest 14m"))).toHaveLength(1);
+  });
+
+  test("the header shows the age while the liaison works, waits, or has failed, and none at rest", async () => {
+    const cases: [AttentionAgent["status"], boolean][] = [
+      ["running", true], ["waiting", true], ["error", true], ["idle", false], ["done", false],
+    ];
+    for (const [status, aged] of cases) {
+      const agent: AttentionAgent = { ...liaison, status, ts: NOW - 55_000 };
+      const header = (await renderBlock({ width: 40, workers: 0, showFleet: true, statusText: "", needsCount: 0, agent }))[0]!;
+      expect({ status, aged: header.endsWith("55s") }).toEqual({ status, aged });
+    }
+  });
+
+  test("a narrow header shows the status word when the liaison is at rest", async () => {
+    const agent: AttentionAgent = { ...liaison, status: "idle", ts: NOW - 55_000 };
+    const header = (await renderBlock({ width: 12, workers: 0, showFleet: true, statusText: "", needsCount: 0, agent }))[0]!;
+    expect(header.trimEnd().endsWith("ready")).toBe(true);
   });
 
   test("a sidebar too narrow for the words shows the number only", async () => {

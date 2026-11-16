@@ -23,6 +23,7 @@ import {
   formatFleet,
   formatWorkers,
   liaisonTitle,
+  showsStatusAge,
   statusLabel,
   statusStart,
   type SessionAgentRef,
@@ -70,9 +71,9 @@ export function LiaisonBlock(props: LiaisonBlockProps) {
   const label = () => statusLabel(props.liaison.agent);
   const statusText = () => props.liaison.session.metadata?.status?.text ?? "";
   const title = () => liaisonTitle(props.liaison.agent.threadName ?? "");
-  const age = () => formatAge(statusStart(props.liaison.agent), props.nowMs());
-  // Narrow sidebars keep the whole title and show only the age, in the status colour.
-  const headerFits = () => 2 + title().length + 1 + label().length + 1 + age().length <= props.width() - BLOCK_PAD;
+  const age = () => showsStatusAge(label()) ? formatAge(statusStart(props.liaison.agent), props.nowMs()) : "";
+  // Narrow sidebars keep the whole title and show only the age (or, with no age, the status word), in the status colour.
+  const headerFits = () => 2 + title().length + 1 + label().length + (age() ? 1 + age().length : 0) <= props.width() - BLOCK_PAD;
   const key = (k: string) => <span style={tier("muted", P())}>{k.padEnd(KEY_WIDTH)}</span>;
   // Status words when they fit the row, else each status glyph with its count.
   const fleetInWords = () => fleetFits(props.fleet(), props.width() - BLOCK_PAD - KEY_WIDTH);
@@ -86,10 +87,12 @@ export function LiaisonBlock(props: LiaisonBlockProps) {
         </text>
         <text flexShrink={0} wrapMode="none">
           <Show when={headerFits()} fallback={
-            <span style={{ fg: statusColor(label(), P()) }}>{" "}{age()}</span>
+            <span style={{ fg: statusColor(label(), P()) }}>{" "}{age() || label()}</span>
           }>
             <span style={{ fg: statusColor(label(), P()) }}>{" "}{label()}</span>
-            <span style={tier("muted", P())}>{" "}{age()}</span>
+            <Show when={age()}>
+              <span style={tier("muted", P())}>{" "}{age()}</span>
+            </Show>
           </Show>
         </text>
       </box>
