@@ -46,7 +46,20 @@ start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <
 Run `scripts/start-peer-session.sh` from this plugin directory. Defaults are
 agent `claude`, window named after the agent, permission mode `auto`, timeout
 60 seconds, and port `$TCM_PORT` or 7391. The prompt file must be readable
-and non-empty.
+and non-empty, and its path must not hold a single quote, a backslash, or a
+control character. The launcher does not delete the prompt file; it must stay
+readable until the agent has started.
+
+Claude Code gets the task as its start argument. The command typed into the
+pane reads the task from the prompt file, so the task text is never typed:
+
+```text
+claude --permission-mode auto [--session-id <uuid>] [-n <name>] -- "$(cat -- '<absolute prompt path>')"
+```
+
+Nothing is pasted into a Claude Code pane and no Enter follows the start
+command. pi gets the task pasted through a tmux buffer and submitted with
+Enter once tcm lists pi as idle.
 
 Without `--attach-existing`, the launcher creates the tmux session named by
 `--session` and fails when that session exists. With `--attach-existing`, it
@@ -68,17 +81,16 @@ name matches `^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$`, and `--agent pi` with
 | Part | Behavior with `--close-on-exit` |
 | --- | --- |
 | Start command | `exec claude ...`, so Claude Code replaces the shell |
-| `remain-on-exit` | Set `on` for the pane before the start command; set `off` only after readiness is confirmed, immediately before the paste |
-| Readiness | tcm must list an idle Claude Code conversation in the pane; stable pane text does not count |
-| Check before the paste | After the buffer is loaded, tcm is asked again; when it gives no answer or the status is not idle, nothing is pasted, the buffer is deleted, and the result has `ready:"unconfirmed"` |
+| `remain-on-exit` | Set `on` for the pane before the start command; set `off` once tcm lists the Claude Code conversation in the pane |
+| Readiness | tcm must list a Claude Code conversation in the pane with status idle, running, working, or waiting; stable pane text does not count |
 | Failure after the pane exists | The pane stays open for reading and the result adds `pane_tail`, the last 20 non-empty lines of the pane, when the pane's text could be read |
 | Claude Code ends before it is ready | The launcher fails at once with `ready:"exited"` |
 
 - `--agent pi` with `--close-on-exit` is a validation error.
 - `claude` must be an executable on PATH: `exec` does not use a shell alias
   or function named `claude`.
-- A timeout error says whether tcm gave no answer or listed no idle
-  conversation in the pane.
+- A timeout error says whether tcm gave no answer or listed no ready or
+  working conversation in the pane.
 
 `--agent pi` runs `pi` in the pane and waits for the pi row in
 tcm state; `--permission-mode` with `--agent pi` is a validation error.
@@ -94,9 +106,11 @@ Stdout contains one JSON line; diagnostics go to stderr. Success exits zero:
 
 `pane` identifies the new pane and `session` names the tmux session that
 holds it, which with `--attach-existing` can differ from `--session`.
-`ready` is `idle` for tcm readiness or `pane-stable` for the fallback.
-With `--close-on-exit`, failures add `pane_tail` and `ready` can be
-`exited` or `unconfirmed`.
+`ready` is `idle` or `working` for tcm readiness, or `pane-stable` for the
+fallback. `prompt_sent` is true when the task reached the agent: for Claude
+Code, the task was in the start command and Claude Code was seen ready or
+working; for pi, the task was pasted and submitted.
+With `--close-on-exit`, failures add `pane_tail` and `ready` can be `exited`.
 `peer_name` is a hint; the skill resolves the address with `ListAgents`.
 A pi launch adds `"agent":"pi"`.
 
@@ -107,11 +121,13 @@ a readiness timeout returns `ready:"timeout"`. Both include `pane`,
 After `ready:"exited"`, the program in the pane has ended.
 The launcher never kills a session, pane, or process.
 
-The launcher submits the initial brief through a tmux buffer. After a dialog
-or timeout, let the person answer any dialog and wait until Claude Code is at
-its prompt. Find the peer with `ListAgents` and send the full brief with
-`SendMessage`; do not rerun the launcher for that brief or paste into
-the pane. Reports and further messages use `SendMessage`.
+The launcher answers no dialog. After a dialog or timeout, let the person
+answer any dialog. A Claude Code peer holds the brief in its start command, so
+find the peer with `ListAgents` and check whether its conversation shows the
+brief before anything else is sent; send the full brief with `SendMessage`
+only when it does not. A pi peer has not received the brief; send it with
+`SendMessage`. Do not rerun the launcher for that brief or paste into the
+pane. Reports and further messages use `SendMessage`.
 
 ## Test
 

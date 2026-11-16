@@ -90,31 +90,36 @@ apply to Claude Code peers only; pi cannot use them.
    Read its one JSON line. `ok` indicates success; `pane` is the exact tmux
    pane id; `session` is the tmux session that holds the pane; `ready` is the readiness
    result; `peer_name` is a name hint from tcm; `prompt_sent` says whether
-   the brief was submitted; `agent` is `pi` for a pi peer; `error` explains
+   the brief reached the agent; `agent` is `pi` for a pi peer; `error` explains
    failure. Validation failures have only `ok` and `error`.
    `--permission-mode` is for Claude Code only.
 
+   Claude Code gets the brief as its start argument: the command typed into
+   the pane reads it from the prompt file, so nothing is pasted and no Enter
+   follows. Keep the prompt file until the peer has started, and give it a
+   path without a single quote, a backslash, or a control character. pi gets
+   the brief pasted and submitted once tcm shows pi idle.
+
    `--close-on-exit` (Claude Code only) starts Claude Code with `exec`, so
    the pane closes when Claude Code exits. The pane has tmux's
-   `remain-on-exit` set `on` until tcm shows the conversation idle twice,
-   the second time just before the paste; then it is set `off`. Stable pane
+   `remain-on-exit` set `on` until tcm lists the conversation in the pane;
+   then it is set `off`. Stable pane
    text does not count as ready. On any failure the pane stays open and the
    result adds `pane_tail`, the last lines of the pane, when the pane's text
    could be read. `claude` must be an executable on PATH, because `exec`
    does not use a shell alias or function. `ready` is `exited`
-   when Claude Code ended before it was ready, and `unconfirmed` when tcm
-   gave no answer or a status other than idle on the check before the paste;
-   nothing was pasted in either case.
+   when Claude Code ended before it was ready.
 
-   For `idle` or `pane-stable`, continue. For `dialog`, inspect once with
+   For `idle`, `working`, or `pane-stable`, continue. For `dialog`, inspect once with
    `tmux capture-pane -p -t <pane>`, tell the person what it asks, and let
    them answer it. A folder-trust question is the person's decision.
-   For `exited` or `unconfirmed`, read `pane_tail` and report it.
+   For `exited`, read `pane_tail` and report it.
    For `timeout`, inspect once with the same command and report what you see.
    Failures leave the pane open; for `exited`, the program in it has
    ended. Once the person has answered any
-   dialog and Claude Code is at its prompt, find the peer with `ListAgents`
-   (step 4) and send the full text of the brief with `SendMessage`.
+   dialog, find the peer with `ListAgents` (step 4). Claude Code holds the
+   brief in its start command: send the full text of the brief with
+   `SendMessage` only when the peer's conversation does not show it.
    For pi, tell the person and let them decide how to deliver the brief.
    Do not run the launcher again for the same brief or paste into the pane.
 
