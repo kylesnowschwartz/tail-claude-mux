@@ -29,7 +29,6 @@ import {
   BRAND_CLAWD,
   BRANCH_GLYPH,
   AGENT_GLYPHS,
-  LIAISON_WORKER_GLYPH,
   NEEDS_GLYPH,
   REASON_GLYPHS,
 } from "./vocab";
@@ -37,6 +36,7 @@ import { tier, type TierStyle } from "./tiers";
 import {
   findLiaisons,
   formatAge,
+  isLiaisonFinished,
   isLiaisonWorker,
   isLiveAgent,
   liaisonBlockRows,
@@ -48,7 +48,7 @@ import {
   type SessionAgentRef,
   type StatusLabel,
 } from "./attention";
-import { BlockRule, LiaisonBlock, statusColor } from "./liaison-block";
+import { BlockRule, LiaisonBlock, LiaisonWorkerMarks, statusColor } from "./liaison-block";
 import { conversationName, padAge, padReason, scrollWindow, showReasonWord } from "./needs-block";
 import { getScenario, listScenarios } from "./mocks/scenarios";
 
@@ -1255,6 +1255,8 @@ interface AgentListItemProps {
   isPaneFocused: boolean;
   /** An open liaison started this conversation; the row shows the worker mark before its name. */
   isLiaisonWorker: boolean;
+  /** The liaison that started this conversation reports it finished and still open; the row shows a grey mark after the worker mark. */
+  isLiaisonFinished?: boolean;
   onDismiss: () => void;
   onFocusPane: () => void;
 }
@@ -1359,7 +1361,7 @@ function AgentListItem(props: AgentListItemProps) {
             {/* Session name from the agent-ouija registry when known;
                 the 4-char uuid suffix is the fallback identity. */}
             <Show when={props.isLiaisonWorker}>
-              <span style={{ fg: P().blue }}>{"  "}{LIAISON_WORKER_GLYPH}</span>
+              <LiaisonWorkerMarks palette={P} finished={!!props.isLiaisonFinished} finishedStyle={focusTinted(tier("muted", P()))} />
             </Show>
             <Show when={props.agent.threadName || props.agent.threadId}>
               <span style={focusTinted(supportingStyle())}>{props.isLiaisonWorker ? " " : "  "}{props.agent.threadName || shortThreadId(props.agent.threadId!)}</span>
@@ -1539,6 +1541,7 @@ function SessionCard(props: SessionCardProps) {
               isKeyboardFocused={props.isSelected && props.panelFocus() === "agents" && i() === props.focusedAgentIdx()}
               isPaneFocused={agent.paneId != null && agent.paneId === props.focusedPaneId()}
               isLiaisonWorker={isLiaisonWorker(agent, props.liaisons())}
+              isLiaisonFinished={isLiaisonFinished(agent, props.liaisons())}
               onDismiss={() => props.onAgentDismiss(agent)}
               onFocusPane={() => props.onAgentFocus(agent)}
             />

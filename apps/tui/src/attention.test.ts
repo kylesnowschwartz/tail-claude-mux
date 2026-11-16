@@ -5,6 +5,7 @@ import {
   isLiaisonName,
   liaisonBlockRows,
   formatAge,
+  isLiaisonFinished,
   isLiaisonWorker,
   liaisonItems,
   liaisonTitle,
@@ -219,6 +220,16 @@ describe("liaison workers", () => {
     expect(liaisonWorkerCount(sessions, liaison)).toBe(3);
     expect(liaisonWorkerCount(sessions, closedLiaison)).toBe(1);
     expect(liaisonWorkerCount([session("x", [liaison, plain])], liaison)).toBe(0);
+  });
+
+  test("the finished mark needs the liaison's report and its own worker", () => {
+    const home = session("home", [liaison, workerA]);
+    home.metadata = { status: null, progress: null, logs: [], liaisonFinished: ["a", "f"] };
+    const refs = findLiaisons([home, ...sessions.slice(1)]);
+    expect(isLiaisonFinished(workerA, refs)).toBe(true);
+    expect(isLiaisonFinished(workerB, refs)).toBe(false);
+    expect(isLiaisonFinished(plain, refs)).toBe(false);
+    expect(isLiaisonFinished(workerA, open)).toBe(false);
   });
 
   test("the marks leave the rows of each session in their order", () => {

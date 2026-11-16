@@ -3,8 +3,9 @@ import { testRender } from "@opentui/solid";
 import { RGBA, TextAttributes, type CapturedFrame } from "@opentui/core";
 import { BUILTIN_THEMES, type LiaisonItem, type SessionData } from "@tcm/runtime";
 import { liaisonBlockRows, liaisonItems, type AttentionAgent } from "./attention";
-import { LiaisonBlock } from "./liaison-block";
-import { LIAISON_GLYPH, LIAISON_ITEM_GLYPHS, LIAISON_WORKERS_MARK } from "./vocab";
+import { LiaisonBlock, LiaisonWorkerMarks } from "./liaison-block";
+import { tier } from "./tiers";
+import { LIAISON_FINISHED_GLYPH, LIAISON_GLYPH, LIAISON_ITEM_GLYPHS, LIAISON_WORKER_GLYPH, LIAISON_WORKERS_MARK } from "./vocab";
 
 const NOW = 1_700_000_000_000;
 const MIN = 60_000;
@@ -174,6 +175,28 @@ describe("LiaisonBlock", () => {
     ] as const) {
       const { lines } = await renderBlocks(opts);
       console.log(`--- ${name}\n${lines.join("\n")}`);
+    }
+  });
+
+  test("a finished worker row shows a grey mark after the worker mark", async () => {
+    for (const finished of [false, true]) {
+      const { renderOnce, captureCharFrame, captureSpans, renderer } = await testRender(() => (
+        <text wrapMode="none">
+          <span>c</span>
+          <LiaisonWorkerMarks palette={() => palette} finished={finished} finishedStyle={tier("muted", palette)} />
+          <span>{" fix-tax"}</span>
+        </text>
+      ), { width: 30, height: 2 });
+      await renderOnce();
+      const line = captureCharFrame().split("\n")[0]!.trimEnd();
+      const frame = captureSpans();
+      renderer.destroy();
+      if (!finished) {
+        expect(line).toBe(`c  ${LIAISON_WORKER_GLYPH} fix-tax`);
+        continue;
+      }
+      expect(line).toBe(`c  ${LIAISON_WORKER_GLYPH} ${LIAISON_FINISHED_GLYPH} fix-tax`);
+      expect(fgOf(frame, 0, LIAISON_FINISHED_GLYPH).fg).toBe(hex(frameColor(palette.overlay0)));
     }
   });
 });

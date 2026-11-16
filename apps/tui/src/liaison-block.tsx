@@ -9,8 +9,8 @@
 
 import { For, Show, type Accessor } from "solid-js";
 import type { LiaisonItem, ThemePalette } from "@tcm/runtime";
-import { LIAISON_GLYPH, LIAISON_ITEM_GLYPHS, LIAISON_WORKERS_MARK } from "./vocab";
-import { tier } from "./tiers";
+import { LIAISON_FINISHED_GLYPH, LIAISON_GLYPH, LIAISON_ITEM_GLYPHS, LIAISON_WORKER_GLYPH, LIAISON_WORKERS_MARK } from "./vocab";
+import { tier, type TierStyle } from "./tiers";
 import {
   formatAge,
   LIAISON_ITEM_PRIORITY,
@@ -83,6 +83,21 @@ export function LiaisonBlock(props: LiaisonBlockProps) {
     </box>
     <BlockRule palette={P} />
     </box>
+  );
+}
+
+/**
+ * The marks inside a worker row's text: the worker mark, then a grey finished
+ * mark when the liaison reports the conversation finished and still open.
+ */
+export function LiaisonWorkerMarks(props: { palette: Accessor<ThemePalette>; finished: boolean; finishedStyle: TierStyle }) {
+  return (
+    <>
+      <span style={{ fg: props.palette().blue }}>{"  "}{LIAISON_WORKER_GLYPH}</span>
+      <Show when={props.finished}>
+        <span style={props.finishedStyle}>{" "}{LIAISON_FINISHED_GLYPH}</span>
+      </Show>
+    </>
   );
 }
 

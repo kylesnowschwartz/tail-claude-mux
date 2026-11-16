@@ -160,6 +160,15 @@ export function liaisonItems(ref: SessionAgentRef): LiaisonItem[] {
 }
 
 /**
+ * Whether a row shows the finished mark: an open liaison started it and
+ * reports its conversation as finished and still open.
+ */
+export function isLiaisonFinished(agent: AttentionAgent, liaisons: readonly SessionAgentRef[]): boolean {
+  return !!agent.threadId && liaisons.some((liaison) =>
+    startedBy(agent, liaison.agent) && (liaison.session.metadata?.liaisonFinished ?? []).includes(agent.threadId!));
+}
+
+/**
  * Rows one liaison block takes: its title row, one row per shown item (at
  * most LIAISON_ITEM_ROWS), and the closing rule. Each row is one line at
  * every width, because no row wraps.
