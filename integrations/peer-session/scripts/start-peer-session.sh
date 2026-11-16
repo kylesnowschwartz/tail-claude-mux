@@ -10,6 +10,8 @@ import json, sys
 ok, error, pane, session, ready, peer, agent, tail = sys.argv[1:]
 value = {"ok": ok == "true"}
 if pane:
+    # Claude Code gets the task in its start command, and prompt_sent is true
+    # once it is seen ready or working; pi gets the task pasted.
     value.update(pane=pane, session=session, ready=ready,
                  prompt_sent=ok == "true")
     if ok == "true":
@@ -76,21 +78,28 @@ case "$agent" in
             [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$ ]] || fail "--name must match ^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}\$."
             launch+=" -n $name"
         fi
+        # The typed command reads the task from the prompt file, so the task
+        # text itself is never typed into the shell. PROMPT_PATH is replaced
+        # after the path is checked.
+        launch+=" -- \"\$(cat -- 'PROMPT_PATH')\""
         # exec replaces the shell, so the pane ends when Claude Code ends.
         (( ! close_on_exit )) || launch="exec $launch"
-        tcm_agent=claude-code ;;
+        tcm_agent=claude-code tcm_ready=idle,running,working,waiting ;;
     pi)
         [[ -z "$permission_mode" ]] || fail "--permission-mode applies only to --agent claude."
         [[ -z "$name" ]] || fail "--name applies only to --agent claude; pi has no session name option."
         (( ! session_id_set )) || fail "--session-id applies only to --agent claude."
         (( ! close_on_exit )) || fail "--close-on-exit applies only to --agent claude."
-        window=${window:-pi} launch=pi tcm_agent=pi ;;
+        window=${window:-pi} launch=pi tcm_agent=pi tcm_ready=idle ;;
     *) fail "--agent must be claude or pi." ;;
 esac
 command -v tmux >/dev/null 2>&1 || fail "tmux is required on PATH."
 [[ -d "$repo" ]] || fail "--repo must be an existing directory."
 [[ -f "$prompt_file" && -r "$prompt_file" && -s "$prompt_file" ]] || fail "--prompt-file must be a readable, non-empty file."
-[[ -n "$session" && "$session" != *[.:]* && "$session" != -* ]] || fail "--session must be a non-empty tmux session name without dots or colons."
+[[ "$prompt_file" != *[\'\\]* && ! "$prompt_file" =~ [[:cntrl:]] ]] || fail "--prompt-file path must not hold a single quote, a backslash, or a control character."
+prompt_path=$(cd -- "$(dirname -- "$prompt_file")" && pwd -P)/$(basename -- "$prompt_file")
+launch=${launch/PROMPT_PATH/$prompt_path}
+[[ -n "$session" &&"$session" != *[.:]* && "$session" != -* ]] || fail "--session must be a non-empty tmux session name without dots or colons."
 [[ "$ready_timeout" =~ ^[0-9]+$ && ${#ready_timeout} -le 6 ]] || fail "--ready-timeout must be an integer from 0 to 999999."
 ready_timeout=$((10#$ready_timeout))
 [[ "$port" =~ ^[0-9]+$ && ${#port} -le 5 ]] || fail "--port must be an integer from 1 to 65535."
@@ -154,14 +163,18 @@ try:
     for session in state.get("sessions", []):
         for agent in session.get("agents", []):
             if (agent.get("agent") == sys.argv[2] and
-                agent.get("paneId") == sys.argv[1] and agent.get("status") == "idle"):
+                agent.get("paneId") == sys.argv[1] and
+                agent.get("status") in sys.argv[3].split(",")):
+                print(agent.get("status"))
                 print(agent.get("threadName") or "")
                 sys.exit(0)
 except (ValueError, TypeError, AttributeError):
     pass
 sys.exit(1)
-' "$pane" "$tcm_agent"); then
-            ready=idle
+' "$pane" "$tcm_agent" "$tcm_ready"); then
+            # ready is idle, or working when the task is already running.
+            [[ "${peer_name%%$'\n'*}" == idle ]] && ready=idle || ready=working
+            [[ "$peer_name" == *$'\n'* ]] && peer_name=${peer_name#*$'\n'} || peer_name=
             for ((name_poll=0; name_poll<name_wait_polls && elapsed+1<ready_timeout; name_poll++)); do
                 [[ -z "$peer_name" ]] || break
                 sleep 1
@@ -183,7 +196,7 @@ except (ValueError, TypeError, AttributeError):
 ' "$pane" "$tcm_agent")
                 peer_name=${name_state#*$'\n'}
                 [[ "$name_state" == *$'\n'* ]] || peer_name=
-                [[ "${name_state%%$'\n'*}" == idle ]] || break
+                [[ ",$tcm_ready," == *",${name_state%%$'\n'*},"* ]] || break
             done
             break
         fi
@@ -209,40 +222,23 @@ if [[ -z "$ready" ]]; then
     ready=timeout
     if (( close_on_exit )); then
         if (( tcm_seen )); then
-            fail_kept "Readiness timed out: tcm listed no idle conversation in the pane; the pane is kept for reading."
+            fail_kept "Readiness timed out: tcm listed no ready or working conversation in the pane; the pane is kept for reading."
         fi
         fail_kept "Readiness timed out: tcm gave no answer; the pane is kept for reading."
     fi
     fail "Readiness timed out; tmux session '$session' remains running."
 fi
+if [[ "$agent" == claude ]]; then
+    # The task is part of the start command, so nothing is pasted.
+    if (( close_on_exit )); then
+        remain_off=1
+        tmux set-option -p -t "$pane" remain-on-exit off >&2
+    fi
+    result true ""
+    exit 0
+fi
 buffer="peer-session-$$-$RANDOM"
 tmux load-buffer -b "$buffer" "$prompt_file" >&2
-if (( close_on_exit )); then
-    # Paste only when tcm still lists the pane's conversation as idle.
-    if ! state=$(curl --fail --silent --show-error --max-time 1 "http://127.0.0.1:$port/state" 2>/dev/null); then
-        tmux delete-buffer -b "$buffer" >&2
-        ready=unconfirmed
-        fail_kept "tcm gave no answer on the check before the paste; nothing was pasted and the pane is kept for reading."
-    fi
-    status=$(printf '%s' "$state" | python3 -c '
-import json, sys
-try:
-    for session in json.load(sys.stdin).get("sessions", []):
-        for agent in session.get("agents", []):
-            if agent.get("agent") == sys.argv[2] and agent.get("paneId") == sys.argv[1]:
-                print(agent.get("status") or "")
-                sys.exit(0)
-except (ValueError, TypeError, AttributeError):
-    pass
-' "$pane" "$tcm_agent")
-    if [[ "$status" != idle ]]; then
-        tmux delete-buffer -b "$buffer" >&2
-        ready=unconfirmed
-        fail_kept "The conversation status changed to '${status:-none}' before the paste; nothing was pasted and the pane is kept for reading."
-    fi
-    remain_off=1
-    tmux set-option -p -t "$pane" remain-on-exit off >&2
-fi
 tmux paste-buffer -p -d -b "$buffer" -t "$pane" >&2
 sleep 0.5
 tmux send-keys -t "$pane" Enter >&2
