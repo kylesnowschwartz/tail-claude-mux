@@ -96,24 +96,27 @@ apply to Claude Code peers only; pi cannot use them.
 
    Claude Code gets the brief as its start argument: the command typed into
    the pane reads it from the prompt file, so nothing is pasted and no Enter
-   follows. Keep the prompt file until the peer has started, and give it a
-   path without a single quote, a backslash, or a control character. pi gets
+   follows. Keep the prompt file until the peer has started. Its full path
+   must not hold a single quote, a backslash, or a control character, and
+   the brief must hold text and be at most 256 KB. pi gets
    the brief pasted and submitted once tcm shows pi idle.
 
    `--close-on-exit` (Claude Code only) starts Claude Code with `exec`, so
    the pane closes when Claude Code exits. The pane has tmux's
-   `remain-on-exit` set `on` until tcm lists the conversation in the pane;
-   then it is set `off`. Stable pane
+   `remain-on-exit` set `on` until tcm lists the conversation in the pane
+   and the pane is checked again; then it is set `off`. Stable pane
    text does not count as ready. On any failure the pane stays open and the
    result adds `pane_tail`, the last lines of the pane, when the pane's text
    could be read. `claude` must be an executable on PATH, because `exec`
    does not use a shell alias or function. `ready` is `exited`
-   when Claude Code ended before it was ready.
+   when Claude Code ended before it was ready, and `lost` when tcm stopped
+   listing the conversation during the wait for its name. Without tcm,
+   `not-started` means the shell is still the pane's program.
 
-   For `idle`, `working`, or `pane-stable`, continue. For `dialog`, inspect once with
+   For `idle`, `working`, `done`, or `pane-stable`, continue. For `dialog`, inspect once with
    `tmux capture-pane -p -t <pane>`, tell the person what it asks, and let
    them answer it. A folder-trust question is the person's decision.
-   For `exited`, read `pane_tail` and report it.
+   For `exited`, `lost`, or `not-started`, read `pane_tail` and report it.
    For `timeout`, inspect once with the same command and report what you see.
    Failures leave the pane open; for `exited`, the program in it has
    ended. Once the person has answered any
