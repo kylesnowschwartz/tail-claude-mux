@@ -156,7 +156,8 @@ var liaisonCallerKinds = map[string]bool{"blocked": true, "no_report": true, "an
 var lowerUUID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 // cleanLiaisonTitle folds a title to one line: line breaks and tabs become
-// spaces, other control characters are removed, runs of spaces collapse,
+// spaces, other control and format characters (such as direction
+// overrides and zero-width characters) are removed, runs of spaces collapse,
 // and the result is cut to maxLiaisonTitleRunes.
 func cleanLiaisonTitle(title string) string {
 	var b strings.Builder
@@ -164,7 +165,7 @@ func cleanLiaisonTitle(title string) string {
 		switch {
 		case r == '\n' || r == '\r' || r == '\t':
 			b.WriteRune(' ')
-		case unicode.IsControl(r):
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
 		default:
 			b.WriteRune(r)
 		}

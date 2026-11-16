@@ -90,6 +90,17 @@ func TestSetLiaisonItemsCutsLongTitles(t *testing.T) {
 	}
 }
 
+func TestSetLiaisonItemsRemovesFormatCharacters(t *testing.T) {
+	s, _ := newLiaisonItemsServer(t)
+	body := `{"session":"work","items":[{"kind":"answer","title":"\u202epay\u200b now\ufeff","since":"2026-11-16T08:00:00Z"}]}`
+	if rec := postLiaisonItems(t, s, body); rec.Code != 204 {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if title := workMetadata(t, s).LiaisonItems[0].Title; title != "pay now" {
+		t.Fatalf("title = %q", title)
+	}
+}
+
 func TestSetLiaisonItemsRefusals(t *testing.T) {
 	item := func(kind, title, since string) string {
 		return `{"kind":"` + kind + `","title":"` + title + `","since":"` + since + `"}`

@@ -104,7 +104,7 @@ Replace the items and finished conversations that the liaison block shows for a 
 | `session` | string | Required, not empty. |
 | `items` | array, at most 20 | Each item has `kind`, `title`, and `since`. |
 | `items[].kind` | string | One of `blocked`, `no_report`, `answer`, `reminder`. The kind `asks` is refused: the sidebar makes it from the liaison's own conversation. |
-| `items[].title` | string | Folded to one line: line breaks and tabs become spaces, other control characters are removed, and the title is cut to 80 characters. A title that is empty after this is refused. |
+| `items[].title` | string | Folded to one line: line breaks and tabs become spaces, other control characters and format characters (such as direction overrides and zero-width characters) are removed, and the title is cut to 80 characters. A title that is empty after this is refused. |
 | `items[].since` | string, RFC 3339 time | When the item started. Refused when more than one minute ahead of the server clock. |
 | `finished` | array of strings, at most 20 | Conversation IDs, each a lower-case UUID, of conversations the liaison started that have finished and are still open. |
 
