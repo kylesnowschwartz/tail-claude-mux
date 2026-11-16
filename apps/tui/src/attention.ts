@@ -104,9 +104,16 @@ export function isLiaisonWorker(agent: AttentionAgent, liaisons: readonly Sessio
   return liaisons.some((liaison) => startedBy(agent, liaison.agent));
 }
 
-/** Count of conversations, across every session, that the liaison started. */
-export function liaisonWorkerCount(sessions: readonly SessionData[], liaison: AttentionAgent): number {
-  return allAgents(sessions).filter(({ agent }) => startedBy(agent, liaison)).length;
+/**
+ * Count of conversations, across every session, that the liaison started and
+ * that are not in `finished` (the liaison's `liaisonFinished` report).
+ */
+export function liaisonWorkerCount(
+  sessions: readonly SessionData[], liaison: AttentionAgent, finished: readonly string[] = [],
+): number {
+  return allAgents(sessions)
+    .filter(({ agent }) => startedBy(agent, liaison) && !(agent.threadId && finished.includes(agent.threadId)))
+    .length;
 }
 
 /**

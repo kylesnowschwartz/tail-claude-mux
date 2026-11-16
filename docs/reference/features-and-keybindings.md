@@ -18,7 +18,7 @@ Each session row can show:
 
 While a Claude Code conversation named exactly `liaison`, or starting with `liaison/`, is open, a block is pinned at the top of the sidebar, one per liaison (`liaison/work` and `liaison/personal` give two). With no liaison open, the block is absent. The block stays grey and still while all is normal, and takes colour only for an item that needs the engineer.
 
-- Title row: the liaison glyph and `LIAISON` plus the rest of the name, both dim. While conversations that this liaison started are open, `↳N` at the right gives their count. With items present, the title takes the colour of the highest priority among them.
+- Title row: the liaison glyph and `LIAISON` plus the rest of the name, both dim. While conversations that this liaison started are open and not reported finished in its `liaisonFinished` list, `↳N` at the right gives their count; at zero it shows nothing. A finished worker keeps its finished mark on its own row. With items present, the title takes the colour of the highest priority among them.
 - Item rows: one row per item, at most three: a glyph in a fixed column, the item's title cut to the width, and its age at the right, such as `12m`. When more items exist, the last row ends with `+K`, the count of items not shown. Items run by priority, then oldest first.
 
 | Priority | Glyph | Colour | Kinds |

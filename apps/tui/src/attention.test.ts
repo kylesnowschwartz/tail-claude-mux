@@ -243,6 +243,17 @@ describe("liaison workers", () => {
     expect(liaisonWorkerCount([session("x", [liaison, plain])], liaison)).toBe(0);
   });
 
+  test("the count leaves out workers the liaison reports finished", () => {
+    expect(liaisonWorkerCount(sessions, liaison, ["a"])).toBe(2);
+    expect(liaisonWorkerCount(sessions, liaison, ["a", "b", "c"])).toBe(0);
+    expect(liaisonWorkerCount(sessions, liaison, ["f", "d"])).toBe(3);
+    const only = [session("home", [liaison, workerA])];
+    expect(liaisonWorkerCount(only, liaison, ["a"])).toBe(0);
+    const home = session("home", [liaison, workerA]);
+    home.metadata = { status: null, progress: null, logs: [], liaisonFinished: ["a"] };
+    expect(isLiaisonFinished(workerA, findLiaisons([home]))).toBe(true);
+  });
+
   test("the finished mark needs the liaison's report and its own worker", () => {
     const home = session("home", [liaison, workerA]);
     home.metadata = { status: null, progress: null, logs: [], liaisonFinished: ["a", "f"] };

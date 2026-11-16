@@ -147,6 +147,12 @@ describe("LiaisonBlock", () => {
     expect(fgOf(frame, 0, LIAISON_WORKERS_MARK).dim).toBe(true);
   });
 
+  test("no running workers shows no ↳ mark", async () => {
+    const { lines } = await renderBlocks({ width: 40, workers: 0 });
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).not.toContain(LIAISON_WORKERS_MARK);
+  });
+
   test("the title takes the colour of the highest priority present", async () => {
     const cases: [LiaisonItem["kind"], string][] = [["reminder", palette.blue], ["answer", palette.yellow], ["blocked", palette.red]];
     for (const [kind, color] of cases) {

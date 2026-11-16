@@ -894,7 +894,7 @@ function App() {
               palette={P}
               nowMs={nowMs}
               items={() => liaisonItems(ref)}
-              workers={() => liaisonWorkerCount(sessions, ref.agent)}
+              workers={() => liaisonWorkerCount(sessions, ref.agent, ref.session.metadata?.liaisonFinished ?? [])}
             />
           )}
         </For>
