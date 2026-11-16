@@ -95,6 +95,39 @@ curl -sS -X POST http://127.0.0.1:7391/notify \
   -d '{"session":"api","message":"Deploy complete","tone":"success","source":"cd"}'
 ```
 
+### `POST /set-liaison-items`
+
+Replace the items and finished conversations that the liaison block shows for a tmux session. Send the liaison's tmux session name.
+
+| Field | Type | Rule |
+|-------|------|------|
+| `session` | string | Required, not empty. |
+| `items` | array, at most 20 | Each item has `kind`, `title`, and `since`. |
+| `items[].kind` | string | One of `blocked`, `no_report`, `answer`, `reminder`. The kind `asks` is refused: the sidebar makes it from the liaison's own conversation. |
+| `items[].title` | string | Folded to one line: line breaks and tabs become spaces, other control characters are removed, and the title is cut to 80 characters. A title that is empty after this is refused. |
+| `items[].since` | string, RFC 3339 time | When the item started. Refused when more than one minute ahead of the server clock. |
+| `finished` | array of strings, at most 20 | Conversation IDs, each a lower-case UUID, of conversations the liaison started that have finished and are still open. |
+
+A request with any bad field is refused whole with `400`; on success the server answers `204`. Empty `items` and `finished` lists clear the set. The server keeps the set in memory with the time it arrived and drops it 10 minutes later, so a liaison that stops sending shows nothing stale; send the set again to keep it.
+
+```sh
+curl -sS -X POST http://127.0.0.1:7391/set-liaison-items \
+  -H 'content-type: application/json' \
+  -d '{"session":"home","items":[{"kind":"blocked","title":"deploy waits on a production key","since":"2026-11-16T08:50:00Z"}],"finished":["0f8fad5b-d9cb-469f-a165-70867728950e"]}'
+```
+
+`GET /state` and the websocket push carry the set in the session's `metadata`, as `liaisonItems` (with `since` in epoch milliseconds) and `liaisonFinished`. Each field is absent when empty or expired:
+
+```json
+"metadata": {
+  "status": null, "progress": null, "logs": [],
+  "liaisonItems": [{ "kind": "blocked", "title": "deploy waits on a production key", "since": 1794819000000 }],
+  "liaisonFinished": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+}
+```
+
+**These values are display only.** Any program on this machine can set them, and tcm does not check them. No program may route work, grant anything, or change a record by them.
+
 ### `GET /state`: attention fields
 
 Each conversation in `sessions[].agents[]` (and `sessions[].agentState`) carries these optional fields; `attention` and `attentionSince` appear only when it needs the engineer:
@@ -103,7 +136,7 @@ Each conversation in `sessions[].agents[]` (and `sessions[].agentState`) carries
 |-------|------|---------|
 | `attention` | `"permission"`, `"question"`, `"input"`, `"error"`, or `"finished"` | Why the conversation needs the engineer. Absent when it does not. |
 | `attentionSince` | number, epoch milliseconds | When that reason started. |
-| `statusSince` | number, epoch milliseconds | When the conversation's current `status` started. The sidebar's liaison header shows its age while the liaison is working, waiting, or in error, using `ts` when it is absent. |
+| `statusSince` | number, epoch milliseconds | When the conversation's current `status` started. |
 
 - `permission`: a permission question is open.
 - `question`: the question tool is open.
@@ -118,7 +151,7 @@ curl -sS http://127.0.0.1:7391/state \
   | jq '[.sessions[].agents[] | select(.attention) | {threadName, attention, attentionSince}] | sort_by(.attentionSince)'
 ```
 
-The sidebar's "needs you" block lists the same conversations, oldest first. The liaison block's `status` row shows the liaison's tmux session status text set with `/set-status`, except text that opens with a count of conversations that need the engineer (such as `1 needs you`), which the `needs` row already shows. Clear the text with `{"session":"<liaison session>","text":null}`.
+The sidebar's "needs you" block lists the same conversations, oldest first. The liaison block shows an `asks` item while the liaison's own conversation has the reason `permission` or `question`.
 
 ### `GET /state`: liaison link fields
 
@@ -186,7 +219,8 @@ curl -sS http://127.0.0.1:7391/state \
 
 ## Retention
 
-- Status and progress are in-memory only — cleared on server restart.
+- Status, progress, and liaison items are in-memory only — cleared on server restart.
+- Liaison items and finished IDs are dropped 10 minutes after they arrive.
 - Logs are capped at 50 entries per session (oldest are dropped).
 - Metadata for deleted sessions is auto-pruned.
 - Messages are truncated: status at 100 chars, logs at 500 chars.

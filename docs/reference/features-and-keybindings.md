@@ -16,21 +16,24 @@ Each session row can show:
 
 ## Liaison Block
 
-While a Claude Code conversation named exactly `liaison`, or starting with `liaison/`, is open, a block is pinned at the top of the sidebar, one per liaison (`liaison/work` and `liaison/personal` give two). With no liaison open, the block is absent. Its rows:
+While a Claude Code conversation named exactly `liaison`, or starting with `liaison/`, is open, a block is pinned at the top of the sidebar, one per liaison (`liaison/work` and `liaison/personal` give two). With no liaison open, the block is absent. The block stays grey and still while all is normal, and takes colour only for an item that needs the engineer.
 
-- Header: `LIAISON` plus the rest of the name, and the liaison's own status; while that status is `working`, `waiting`, or `error`, also how long it has been in that status. At rest (`ready` or `stopped`) the header shows no age
-- `fleet`: the number of conversations in each status across all sessions; on narrow sidebars, each status glyph with its count
-- `needs`: the number of conversations that need the engineer and the age of the oldest; absent when nothing needs the engineer
-- `work`: the count of conversations that this liaison started, such as `3 workers`, when it is above zero; a sidebar too narrow for the words shows the number only
-- `status`: the liaison's tmux session status text, when one is set through `POST /set-status`; absent when the text is empty or opens with a count such as `1 needs you`, which the `needs` row already shows
+- Title row: the liaison glyph and `LIAISON` plus the rest of the name, both dim. While conversations that this liaison started are open, `↳N` at the right gives their count. With items present, the title takes the colour of the highest priority among them.
+- Item rows: one row per item, at most three: a glyph in a fixed column, the item's title cut to the width, and its age at the right, such as `12m`. When more items exist, the last row ends with `+K`, the count of items not shown. Items run by priority, then oldest first.
 
-With two or more liaisons open, the `fleet` and `needs` rows appear at most once, in the first block; each further block shows its header, `work`, and `status` rows only.
+| Priority | Glyph | Colour | Kinds |
+|----------|-------|--------|-------|
+| 1 | `■` | red | `asks`, `blocked` |
+| 2 | `▲` | yellow | `no_report`, `answer` |
+| 3 | `●` | blue | `reminder` |
 
-A conversation that an open liaison started shows a blue arrow mark before its name in its session card. The row stays in its place in the card. The mark and the count come from the `liaisonParentThreadId` field in `GET /state`, an unverified claim for display; see [programmatic-api.md](./programmatic-api.md).
+The `asks` item comes from the liaison's own conversation: while it waits on a permission or a question, the block shows one `asks` item titled `permission` or `question`, aged from when that reason started. Every other item comes from `POST /set-liaison-items`; see [programmatic-api.md](./programmatic-api.md).
+
+A conversation that an open liaison started shows a blue arrow mark before its name in its session card. The row stays in its place in the card. The mark and the count come from the `liaisonParentThreadId` field in `GET /state`, an unverified claim for display; see [programmatic-api.md](./programmatic-api.md). When the liaison reports that conversation as finished and still open, a grey check mark follows the arrow.
 
 ## Needs You Block
 
-Under the liaison block, and also with no liaison open, a block headed `NEEDS YOU (n)` lists every live conversation with an attention reason, oldest first; a conversation that has ended or whose process is gone is left out, as it is from the liaison block's `needs` count: reason glyph, conversation name, reason, and age. Reasons are `permission`, `question`, `input`, `error`, and `finished`; `permission` and `question` show the name in bold. Sidebars narrower than 25 columns leave out the reason word. No timer removes a row. When the rows need more than half of the free height, the block shows `▲ N more` / `▼ N more` rows; click one to scroll the block. Click a row to jump to that conversation.
+Under the liaison block, and also with no liaison open, a block headed `NEEDS YOU (n)` lists every live conversation with an attention reason, oldest first; a conversation that has ended or whose process is gone is left out, as it is from the liaison block: reason glyph, conversation name, reason, and age. Reasons are `permission`, `question`, `input`, `error`, and `finished`; `permission` and `question` show the name in bold. Sidebars narrower than 25 columns leave out the reason word. No timer removes a row. When the rows need more than half of the free height, the block shows `▲ N more` / `▼ N more` rows; click one to scroll the block. Click a row to jump to that conversation.
 
 ## Detail Panel
 
