@@ -111,13 +111,15 @@ export function isLiaisonWorker(agent: AttentionAgent, liaisons: readonly Sessio
 
 /**
  * Count of conversations, across every session, that the liaison started and
- * that are not in `finished` (the liaison's `liaisonFinished` report).
+ * that are not in `finished` (the liaison's `liaisonFinished` report),
+ * comparing IDs in lower case.
  */
 export function liaisonWorkerCount(
   sessions: readonly SessionData[], liaison: AttentionAgent, finished: readonly string[] = [],
 ): number {
+  const done = new Set(finished.map((id) => id.toLowerCase()));
   return allAgents(sessions)
-    .filter(({ agent }) => startedBy(agent, liaison) && !(agent.threadId && finished.includes(agent.threadId)))
+    .filter(({ agent }) => startedBy(agent, liaison) && !(agent.threadId && done.has(agent.threadId.toLowerCase())))
     .length;
 }
 

@@ -250,6 +250,16 @@ describe("liaison workers", () => {
     expect(liaisonWorkerCount(sessions, liaison, ["f", "d"])).toBe(3);
     const only = [session("home", [liaison, workerA])];
     expect(liaisonWorkerCount(only, liaison, ["a"])).toBe(0);
+  });
+
+  test("finished IDs match whatever their case", () => {
+    const upper = agent({ threadName: "upper", threadId: "ABC-1", liaisonParentThreadId: LIAISON });
+    const s = [session("home", [liaison, upper, workerA])];
+    expect(liaisonWorkerCount(s, liaison, ["abc-1"])).toBe(1);
+    expect(liaisonWorkerCount(s, liaison, ["ABC-1", "A"])).toBe(0);
+  });
+
+  test("a finished worker keeps its finished mark", () => {
     const home = session("home", [liaison, workerA]);
     home.metadata = { status: null, progress: null, logs: [], liaisonFinished: ["a"] };
     expect(isLiaisonFinished(workerA, findLiaisons([home]))).toBe(true);
