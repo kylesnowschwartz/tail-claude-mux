@@ -60,7 +60,7 @@ export interface LiaisonBlockProps {
   width: Accessor<number>;
   needs: Accessor<string>;
   needsCount: Accessor<number>;
-  /** The fleet and needs rows appear once, on the first liaison block. */
+  /** The fleet and needs rows appear once, on the first liaison block; the needs row only while something needs the engineer. */
   showFleet: boolean;
 }
 
@@ -110,10 +110,14 @@ export function LiaisonBlock(props: LiaisonBlockProps) {
           </Show>
         </Show>
       </text>
-      <text wrapMode="none">
-        {key("needs")}
-        <span style={props.needsCount() > 0 ? { fg: P().peach } : tier("muted", P())}>{props.needs()}</span>
-      </text>
+      </Show>
+      </box>
+      <box flexDirection="column">
+      <Show when={props.showFleet && props.needsCount() > 0}>
+        <text wrapMode="none">
+          {key("needs")}
+          <span style={{ fg: P().peach }}>{props.needs()}</span>
+        </text>
       </Show>
       </box>
       <box flexDirection="column">

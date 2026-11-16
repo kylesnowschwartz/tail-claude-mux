@@ -108,7 +108,7 @@ describe("needsYou", () => {
   });
 
   test("summary has a calm empty form", () => {
-    expect(needsSummary([], NOW)).toBe("none");
+    expect(needsSummary([], NOW)).toBe("");
   });
 });
 
@@ -160,17 +160,23 @@ describe("isLiaisonName", () => {
 
 describe("liaisonBlockRows", () => {
   test("only the first liaison block carries the fleet and needs rows", () => {
-    expect(liaisonBlockRows(0, false, false)).toBe(4);
-    expect(liaisonBlockRows(0, true, false)).toBe(5);
-    expect(liaisonBlockRows(1, false, false)).toBe(2);
-    expect(liaisonBlockRows(1, true, false)).toBe(3);
+    expect(liaisonBlockRows(0, false, false, true)).toBe(4);
+    expect(liaisonBlockRows(0, true, false, true)).toBe(5);
+    expect(liaisonBlockRows(1, false, false, true)).toBe(2);
+    expect(liaisonBlockRows(1, true, false, true)).toBe(3);
   });
 
   test("a liaison with workers takes one more row", () => {
-    expect(liaisonBlockRows(0, false, true)).toBe(5);
-    expect(liaisonBlockRows(0, true, true)).toBe(6);
-    expect(liaisonBlockRows(1, false, true)).toBe(3);
-    expect(liaisonBlockRows(1, true, true)).toBe(4);
+    expect(liaisonBlockRows(0, false, true, true)).toBe(5);
+    expect(liaisonBlockRows(0, true, true, true)).toBe(6);
+    expect(liaisonBlockRows(1, false, true, true)).toBe(3);
+    expect(liaisonBlockRows(1, true, true, true)).toBe(4);
+  });
+
+  test("the first block drops the needs row when nothing needs the engineer", () => {
+    expect(liaisonBlockRows(0, false, false, false)).toBe(3);
+    expect(liaisonBlockRows(0, true, true, false)).toBe(5);
+    expect(liaisonBlockRows(1, false, false, false)).toBe(2);
   });
 });
 

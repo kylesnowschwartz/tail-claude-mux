@@ -163,18 +163,20 @@ export function formatAge(sinceMs: number | undefined, nowMs: number): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-/** The `needs` row value: "3 · oldest 14m", or "none" when nothing waits. */
+/** The `needs` row value: "3 · oldest 14m", or "" when nothing waits. */
 export function needsSummary(rows: readonly SessionAgentRef[], nowMs: number): string {
-  if (rows.length === 0) return "none";
+  if (rows.length === 0) return "";
   return `${rows.length} · oldest ${formatAge(rows[0]!.agent.attentionSince, nowMs)}`;
 }
 
 /**
- * Rows one liaison block takes: its header and closing rule, the fleet and
- * needs rows on the first block only, the work row when the liaison has
- * workers, and the status-text row when set. Each row is one line at every
- * width, because no row wraps.
+ * Rows one liaison block takes: its header and closing rule, the fleet row
+ * on the first block only, the needs row on the first block while something
+ * needs the engineer, the work row when the liaison has workers, and the
+ * status-text row when shown. Each row is one line at every width, because
+ * no row wraps.
  */
-export function liaisonBlockRows(index: number, hasStatusText: boolean, hasWorkers: boolean): number {
-  return 2 + (index === 0 ? 2 : 0) + (hasWorkers ? 1 : 0) + (hasStatusText ? 1 : 0);
+export function liaisonBlockRows(index: number, hasStatusText: boolean, hasWorkers: boolean, hasNeeds: boolean): number {
+  const first = index === 0 ? 1 + (hasNeeds ? 1 : 0) : 0;
+  return 2 + first + (hasWorkers ? 1 : 0) + (hasStatusText ? 1 : 0);
 }
