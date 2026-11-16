@@ -133,6 +133,21 @@ export function needsYou(sessions: readonly SessionData[]): SessionAgentRef[] {
     .sort((a, b) => (a.agent.attentionSince ?? 0) - (b.agent.attentionSince ?? 0));
 }
 
+/** Reasons on a liaison's own conversation that show as its `asks` item. */
+function isAsksReason(reason: AttentionReason | undefined): boolean {
+  return reason === "permission" || reason === "question" || reason === "error";
+}
+
+/**
+ * Conversations the jump key visits, oldest reason first: the "needs you"
+ * rows plus each open liaison whose own conversation has an `asks` item.
+ */
+export function jumpTargets(sessions: readonly SessionData[]): SessionAgentRef[] {
+  const asking = allAgents(sessions).filter(({ agent }) => isOpenLiaison(agent) && isAsksReason(agent.attention));
+  return [...needsYou(sessions), ...asking]
+    .sort((a, b) => (a.agent.attentionSince ?? 0) - (b.agent.attentionSince ?? 0));
+}
+
 /** Compact age: "now", "45s", "14m", "3h", "2d". */
 export function formatAge(sinceMs: number | undefined, nowMs: number): string {
   if (sinceMs == null || !Number.isFinite(sinceMs)) return "";
@@ -163,8 +178,8 @@ export const LIAISON_ITEM_ROWS = 3;
 export function liaisonItems(ref: SessionAgentRef): LiaisonItem[] {
   const items: LiaisonItem[] = [];
   const reason = ref.agent.attention;
-  if (reason === "permission" || reason === "question" || reason === "error") {
-    items.push({ kind: "asks", title: reason, since: ref.agent.attentionSince ?? ref.agent.ts });
+  if (isAsksReason(reason)) {
+    items.push({ kind: "asks", title: reason!, since: ref.agent.attentionSince ?? ref.agent.ts });
   }
   items.push(...(ref.session.metadata?.liaisonItems ?? []));
   return items

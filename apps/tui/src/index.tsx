@@ -41,6 +41,7 @@ import {
   isLiveAgent,
   liaisonBlockRows,
   liaisonItems,
+  jumpTargets,
   liaisonWorkerCount,
   needsYou,
   statusLabel,
@@ -446,7 +447,7 @@ function App() {
 
   /** Jump to the conversation that has needed the engineer longest. */
   function jumpToOldestNeed() {
-    const oldest = needs()[0];
+    const oldest = jumpTargets(sessions)[0];
     if (oldest) focusAgentPane(oldest.session.name, oldest.agent);
   }
 

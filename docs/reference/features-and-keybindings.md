@@ -80,7 +80,7 @@ The focused session detail panel can show:
 | `Tab` | Cycle to next session |
 | `Shift+Tab` | Cycle to previous session |
 | `1`-`9` | Switch to session by visible index |
-| `a` | Jump to the oldest conversation in the "needs you" block: switch to its session and focus its pane; does nothing when the block is empty |
+| `a` | Jump to the conversation that has waited longest, among the "needs you" rows and any liaison whose own conversation has an `asks` item: switch to its session and focus its pane; does nothing when none waits |
 | `Alt+Up` | Move focused session up in persisted order |
 | `Alt+Down` | Move focused session down in persisted order |
 | `n`, `c` | Create a new session |

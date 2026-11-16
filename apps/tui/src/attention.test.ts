@@ -9,6 +9,7 @@ import {
   isLiaisonWorker,
   liaisonItems,
   liaisonTitle,
+  jumpTargets,
   liaisonWorkerCount,
   needsYou,
   statusLabel,
@@ -272,3 +273,29 @@ describe("liaison workers", () => {
   });
 });
 
+
+describe("jumpTargets", () => {
+  const liaisonAt = (attention: AttentionAgent["attention"], since: number) =>
+    agent({ threadName: "liaison", threadId: "L", attention, attentionSince: since });
+
+  test("the liaison's own ask is a target when nothing else waits", () => {
+    const sessions = [session("home", [liaisonAt("permission", NOW - MIN)])];
+    expect(needsYou(sessions)).toEqual([]);
+    expect(jumpTargets(sessions).map((r) => r.agent.threadName)).toEqual(["liaison"]);
+  });
+
+  test("the liaison at its prompt or done is not a target", () => {
+    for (const reason of ["input", "finished"] as const) {
+      expect(jumpTargets([session("home", [liaisonAt(reason, NOW - MIN)])])).toEqual([]);
+    }
+  });
+
+  test("targets are ordered by how long each has waited", () => {
+    const sessions = [session("home", [
+      liaisonAt("question", NOW - 5 * MIN),
+      agent({ threadName: "older", attention: "finished", attentionSince: NOW - 9 * MIN }),
+      agent({ threadName: "newer", attention: "error", attentionSince: NOW - MIN }),
+    ])];
+    expect(jumpTargets(sessions).map((r) => r.agent.threadName)).toEqual(["older", "liaison", "newer"]);
+  });
+});
