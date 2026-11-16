@@ -9,6 +9,7 @@ describe("showReasonWord", () => {
     expect(showReasonWord(40)).toBe(true);
     expect(showReasonWord(25)).toBe(true);
     expect(showReasonWord(24)).toBe(false);
+    expect(showReasonWord(20)).toBe(false);
     expect(showReasonWord(16)).toBe(false);
   });
 });
@@ -51,8 +52,7 @@ describe("needsBlockRows", () => {
   });
   const home = (agents: AttentionAgent[]) => [{ name: "home", agents } as unknown as SessionData];
 
-  test("no rows draws no block, at a narrow width too", () => {
-    expect(showReasonWord(20)).toBe(false);
+  test("no rows draws no block", () => {
     expect(needsBlockRows(needsYou(home([at("liaison", "input")])).length, 4, 0)).toBe(0);
     expect(needsBlockRows(needsYou(home([at("liaison", "finished")])).length, 4, 0)).toBe(0);
     expect(needsBlockRows(0, 4, 0)).toBe(0);
