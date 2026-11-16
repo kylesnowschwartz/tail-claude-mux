@@ -41,18 +41,66 @@ func truncate(s string, max int) string {
 	return string(runes[:max-1]) + "…"
 }
 
+// LiaisonTTL is how long a set from POST /set-liaison-items stays visible
+// after it was received. A liaison that stops sending shows nothing stale.
+const LiaisonTTL = 10 * time.Minute
+
+// liaisonSet is one session's liaison items and finished conversation IDs,
+// with the time the server received them.
+type liaisonSet struct {
+	items      []wire.LiaisonItem
+	finished   []string
+	receivedAt int64 // epoch ms
+}
+
 // Store holds SessionMetadata per session name.
 type Store struct {
-	store map[string]*wire.SessionMetadata
-	now   func() int64 // epoch ms, injectable for tests
+	store   map[string]*wire.SessionMetadata
+	liaison map[string]liaisonSet
+	now     func() int64 // epoch ms, injectable for tests
 }
 
 // NewStore returns an empty store.
 func NewStore() *Store {
 	return &Store{
-		store: map[string]*wire.SessionMetadata{},
-		now:   func() int64 { return time.Now().UnixMilli() },
+		store:   map[string]*wire.SessionMetadata{},
+		liaison: map[string]liaisonSet{},
+		now:     func() int64 { return time.Now().UnixMilli() },
 	}
+}
+
+// SetClock replaces the store's clock (epoch ms); tests use it to move time.
+func (s *Store) SetClock(now func() int64) { s.now = now }
+
+// Now returns the store's clock reading in epoch ms.
+func (s *Store) Now() int64 { return s.now() }
+
+// SetLiaison replaces the session's liaison items and finished IDs. Empty
+// lists clear the set.
+func (s *Store) SetLiaison(session string, items []wire.LiaisonItem, finished []string) {
+	if len(items) == 0 && len(finished) == 0 {
+		delete(s.liaison, session)
+		return
+	}
+	s.liaison[session] = liaisonSet{
+		items:      append([]wire.LiaisonItem(nil), items...),
+		finished:   append([]string(nil), finished...),
+		receivedAt: s.now(),
+	}
+}
+
+// currentLiaison returns the session's set while it is younger than
+// LiaisonTTL, dropping it once it has expired.
+func (s *Store) currentLiaison(session string) (liaisonSet, bool) {
+	set, ok := s.liaison[session]
+	if !ok {
+		return liaisonSet{}, false
+	}
+	if s.now()-set.receivedAt >= LiaisonTTL.Milliseconds() {
+		delete(s.liaison, session)
+		return liaisonSet{}, false
+	}
+	return set, true
 }
 
 func (s *Store) getOrCreate(session string) *wire.SessionMetadata {
@@ -66,12 +114,25 @@ func (s *Store) getOrCreate(session string) *wire.SessionMetadata {
 
 // Get returns the session's metadata, or nil when everything is empty
 // (the wire carries metadata: null for quiet sessions).
+//
+// The liaison set is read through its expiry on every call, so the
+// server's periodic change check pushes the disappearance of an expired set.
 func (s *Store) Get(session string) *wire.SessionMetadata {
 	meta := s.store[session]
-	if meta == nil || (meta.Status == nil && meta.Progress == nil && len(meta.Logs) == 0) {
-		return nil
+	set, hasLiaison := s.currentLiaison(session)
+	if !hasLiaison {
+		if meta == nil || (meta.Status == nil && meta.Progress == nil && len(meta.Logs) == 0) {
+			return nil
+		}
+		return meta
 	}
-	return meta
+	out := wire.SessionMetadata{Logs: []wire.MetadataLogEntry{}}
+	if meta != nil {
+		out = *meta
+	}
+	out.LiaisonItems = set.items
+	out.LiaisonFinished = set.finished
+	return &out
 }
 
 // SetStatus sets or clears (nil) the session's status line.
@@ -129,6 +190,11 @@ func (s *Store) PruneSessions(valid map[string]bool) {
 	for name := range s.store {
 		if !valid[name] {
 			delete(s.store, name)
+		}
+	}
+	for name := range s.liaison {
+		if !valid[name] {
+			delete(s.liaison, name)
 		}
 	}
 }

@@ -166,6 +166,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /log", s.handleLog)
 	mux.HandleFunc("POST /notify", s.handleLog)
 	mux.HandleFunc("POST /clear-log", s.handleClearLog)
+	mux.HandleFunc("POST /set-liaison-items", s.handleSetLiaisonItems)
 	mux.HandleFunc("POST /ensure-sidebar", s.handleEnsureSidebar)
 	mux.HandleFunc("POST /pane-exited", s.handlePaneExited)
 	mux.HandleFunc("POST /pane-focus", s.handlePaneFocus)

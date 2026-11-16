@@ -150,11 +150,22 @@ type MetadataLogEntry struct {
 	TS      int64  `json:"ts"`
 }
 
-// SessionMetadata is shared.ts SessionMetadata.
+// LiaisonItem is shared.ts LiaisonItem: one thing a liaison reports as
+// waiting on the engineer, set through POST /set-liaison-items. Display only.
+type LiaisonItem struct {
+	Kind  string `json:"kind"`
+	Title string `json:"title"`
+	Since int64  `json:"since"` // epoch ms
+}
+
+// SessionMetadata is shared.ts SessionMetadata. LiaisonItems and
+// LiaisonFinished come from POST /set-liaison-items and are absent when empty.
 type SessionMetadata struct {
-	Status   *MetadataStatus    `json:"status"`
-	Progress *MetadataProgress  `json:"progress"`
-	Logs     []MetadataLogEntry `json:"logs"`
+	Status          *MetadataStatus    `json:"status"`
+	Progress        *MetadataProgress  `json:"progress"`
+	Logs            []MetadataLogEntry `json:"logs"`
+	LiaisonItems    []LiaisonItem      `json:"liaisonItems,omitempty"`
+	LiaisonFinished []string           `json:"liaisonFinished,omitempty"`
 }
 
 // SessionData is shared.ts SessionData: one mux session row.
