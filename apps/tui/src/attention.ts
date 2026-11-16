@@ -64,14 +64,28 @@ function allAgents(sessions: readonly SessionData[]): SessionAgentRef[] {
 
 export const LIAISON_PREFIX = "liaison";
 
-/** A liaison is named exactly `liaison` or `liaison/<rest>`. */
-export function isLiaisonName(name: string | undefined): boolean {
-  return name === LIAISON_PREFIX || (!!name && name.startsWith(`${LIAISON_PREFIX}/`));
+/** Separator between a conversation's name and the git branch Claude Code appends to it. */
+const BRANCH_SEPARATOR = " \u00b7 ";
+
+/** The name without its ` · <branch>` suffix. */
+function nameBeforeBranch(name: string): string {
+  const at = name.indexOf(BRANCH_SEPARATOR);
+  return at < 0 ? name : name.slice(0, at);
 }
 
-/** Header title: "LIAISON", plus the rest of the name when there is more. */
+/**
+ * A liaison is named `liaison` or `liaison/<rest>`, optionally followed by a
+ * ` · <branch>` suffix.
+ */
+export function isLiaisonName(name: string | undefined): boolean {
+  if (!name) return false;
+  const base = nameBeforeBranch(name);
+  return base === LIAISON_PREFIX || base.startsWith(`${LIAISON_PREFIX}/`);
+}
+
+/** Header title: "LIAISON", plus the rest of the name, without its branch suffix, when there is more. */
 export function liaisonTitle(name: string): string {
-  const rest = name.slice(LIAISON_PREFIX.length + 1);
+  const rest = nameBeforeBranch(name).slice(LIAISON_PREFIX.length + 1);
   return rest ? `LIAISON ${rest}` : "LIAISON";
 }
 

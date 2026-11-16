@@ -65,6 +65,11 @@ describe("liaisonTitle", () => {
     expect(liaisonTitle("liaison")).toBe("LIAISON");
     expect(liaisonTitle("liaison/work")).toBe("LIAISON work");
   });
+
+  test("drops the branch suffix", () => {
+    expect(liaisonTitle("liaison \u00b7 main")).toBe("LIAISON");
+    expect(liaisonTitle("liaison/personal \u00b7 feat/x")).toBe("LIAISON personal");
+  });
 });
 
 describe("fleetCounts", () => {
@@ -144,6 +149,11 @@ describe("isLiaisonName", () => {
     expect(isLiaisonName("liaison/work")).toBe(true);
     expect(isLiaisonName("liaisons-notes")).toBe(false);
     expect(isLiaisonName("liaison-old")).toBe(false);
+    expect(isLiaisonName("liaison \u00b7 main")).toBe(true);
+    expect(isLiaisonName("liaison/personal \u00b7 feat/x")).toBe(true);
+    expect(isLiaisonName("liaisonx \u00b7 main")).toBe(false);
+    expect(isLiaisonName("my liaison \u00b7 main")).toBe(false);
+    expect(isLiaisonName("liaison-project/s11")).toBe(false);
     expect(isLiaisonName(undefined)).toBe(false);
   });
 });
