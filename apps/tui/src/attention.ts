@@ -109,10 +109,15 @@ export function liaisonWorkerCount(sessions: readonly SessionData[], liaison: At
   return allAgents(sessions).filter(({ agent }) => startedBy(agent, liaison)).length;
 }
 
-/** Every live conversation with an attention reason, oldest reason first. */
+/**
+ * Every live conversation with an attention reason, oldest reason first.
+ * An open liaison's own conversation is left out: at its prompt (`input`) or
+ * done (`finished`) it is at rest, and its `permission`, `question` and
+ * `error` reasons show as the `asks` item in its own liaison block.
+ */
 export function needsYou(sessions: readonly SessionData[]): SessionAgentRef[] {
   return allAgents(sessions)
-    .filter(({ agent }) => !!agent.attention && isLiveAgent(agent))
+    .filter(({ agent }) => !!agent.attention && isLiveAgent(agent) && !isLiaisonName(agent.threadName))
     .sort((a, b) => (a.agent.attentionSince ?? 0) - (b.agent.attentionSince ?? 0));
 }
 

@@ -49,7 +49,7 @@ import {
   type StatusLabel,
 } from "./attention";
 import { BlockRule, LiaisonBlock, LiaisonWorkerMarks, statusColor } from "./liaison-block";
-import { conversationName, padAge, padReason, scrollWindow, showReasonWord } from "./needs-block";
+import { conversationName, needsBlockRows as needsRowsFor, NEEDS_HEADER_ROWS, padAge, padReason, scrollWindow, showReasonWord } from "./needs-block";
 import { getScenario, listScenarios } from "./mocks/scenarios";
 
 // Detect which mux we're running inside
@@ -78,7 +78,6 @@ const CARD_CHROME_ROWS = 3; // Session frame: rounded border top/bottom plus the
 const BRANCH_ROWS = 1; // SessionCard adds exactly one row when session.branch is present.
 const HIDDEN_AGENTS_ROWS = 1; // SessionCard adds exactly one "+N more" row when agents are trimmed.
 const OVERFLOW_INDICATOR_ROWS = 1; // "▲ N more" / "▼ N more" line when the session stack scrolls.
-const NEEDS_HEADER_ROWS = 2; // "NEEDS YOU (n)" heading above the needs rows plus the closing rule below them.
 const NEEDS_MIN_ROWS = 3; // The needs block always gets at least this many rows of the pane.
 
 /** Blocking reasons (an open question to the engineer) read as more urgent. */
@@ -264,12 +263,7 @@ function App() {
     return Math.max(NEEDS_MIN_ROWS, Math.floor(free / 2));
   });
   const needsWindow = createMemo(() => scrollWindow(needs().length, needsMaxRows(), needsOffset()));
-  const needsBlockRows = createMemo(() => {
-    if (needs().length === 0) return 0;
-    const win = needsWindow();
-    return NEEDS_HEADER_ROWS + (win.end - win.start)
-      + (win.above > 0 ? OVERFLOW_INDICATOR_ROWS : 0) + (win.below > 0 ? OVERFLOW_INDICATOR_ROWS : 0);
-  });
+  const needsBlockRows = createMemo(() => needsRowsFor(needs().length, needsMaxRows(), needsOffset()));
   type NeedsOverflow = { overflow: -1 | 1; count: number };
   const needsItems = createMemo<(SessionAgentRef | NeedsOverflow)[]>(() => {
     const win = needsWindow();

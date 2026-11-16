@@ -81,8 +81,29 @@ describe("needsYou", () => {
       ]),
     ];
     const rows = needsYou(sessions);
-    expect(rows.map((r) => r.agent.threadName)).toEqual(["old", "liaison", "new"]);
+    expect(rows.map((r) => r.agent.threadName)).toEqual(["old", "new"]);
     expect(rows[0]!.session.name).toBe("b");
+  });
+
+  test("leaves out the liaison's own conversation for every reason", () => {
+    for (const reason of ["input", "finished", "permission", "question", "error"] as const) {
+      const sessions = [session("home", [
+        agent({ threadName: "liaison/work \u00b7 main", threadId: "L", attention: reason, attentionSince: NOW - 9 * MIN }),
+      ])];
+      expect({ reason, rows: needsYou(sessions).length }).toEqual({ reason, rows: 0 });
+    }
+  });
+
+  test("the liaison at its prompt leaves the count and jump order to the others", () => {
+    const sessions = [session("home", [
+      agent({ threadName: "liaison", threadId: "L", attention: "input", attentionSince: NOW - 30 * MIN }),
+      agent({ threadName: "fix-tax", attention: "question", attentionSince: NOW - 5 * MIN }),
+      agent({ threadName: "docs", attention: "finished", attentionSince: NOW - 10 * MIN }),
+    ])];
+    const rows = needsYou(sessions);
+    expect(rows.length).toBe(2);
+    expect(rows[0]!.agent.threadName).toBe("docs");
+    expect(rows.map((r) => r.agent.threadName)).toEqual(["docs", "fix-tax"]);
   });
 });
 

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { conversationName, padAge, padReason, scrollWindow, showReasonWord } from "./needs-block";
+import type { SessionData } from "@tcm/runtime";
+import type { AttentionAgent } from "./attention";
+import { needsYou } from "./attention";
+import { conversationName, needsBlockRows, padAge, padReason, scrollWindow, showReasonWord } from "./needs-block";
 
 describe("showReasonWord", () => {
   test("drops the reason word on narrow sidebars", () => {
@@ -38,5 +41,30 @@ describe("scrollWindow", () => {
 
   test("keeps one row when space is tiny", () => {
     expect(scrollWindow(4, 1, 2)).toEqual({ start: 2, end: 3, above: 2, below: 1 });
+  });
+});
+
+describe("needsBlockRows", () => {
+  const at = (threadName: string, attention: AttentionAgent["attention"]): AttentionAgent => ({
+    agent: "claude-code", session: "home", status: "idle", liveness: "alive", ts: 0,
+    threadName, threadId: threadName, attention, attentionSince: 0,
+  });
+  const home = (agents: AttentionAgent[]) => [{ name: "home", agents } as unknown as SessionData];
+
+  test("no rows draws no block, at a narrow width too", () => {
+    expect(showReasonWord(20)).toBe(false);
+    expect(needsBlockRows(needsYou(home([at("liaison", "input")])).length, 4, 0)).toBe(0);
+    expect(needsBlockRows(needsYou(home([at("liaison", "finished")])).length, 4, 0)).toBe(0);
+    expect(needsBlockRows(0, 4, 0)).toBe(0);
+  });
+
+  test("the liaison's row takes no height beside a worker's", () => {
+    const rows = needsYou(home([at("liaison", "input"), at("fix-tax", "question")]));
+    expect(needsBlockRows(rows.length, 4, 0)).toBe(3);
+  });
+
+  test("rows past the window add the indicator rows", () => {
+    expect(needsBlockRows(10, 4, 0)).toBe(2 + 2 + 1);
+    expect(needsBlockRows(10, 4, 3)).toBe(2 + 2 + 2);
   });
 });

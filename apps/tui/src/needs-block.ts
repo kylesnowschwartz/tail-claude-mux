@@ -47,3 +47,16 @@ export function scrollWindow(total: number, maxRows: number, offset: number): { 
   const end = start + content;
   return { start, end, above: start, below: total - end };
 }
+
+/** Rows of the heading above the needs rows plus the closing rule below them. */
+export const NEEDS_HEADER_ROWS = 2;
+/** Rows one "▲ N more" / "▼ N more" indicator takes. */
+export const OVERFLOW_INDICATOR_ROWS = 1;
+
+/** Rows the "needs you" block takes; 0 when it has no rows, so it is not drawn. */
+export function needsBlockRows(total: number, maxRows: number, offset: number): number {
+  if (total === 0) return 0;
+  const win = scrollWindow(total, maxRows, offset);
+  return NEEDS_HEADER_ROWS + (win.end - win.start)
+    + (win.above > 0 ? OVERFLOW_INDICATOR_ROWS : 0) + (win.below > 0 ? OVERFLOW_INDICATOR_ROWS : 0);
+}
