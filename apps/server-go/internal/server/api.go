@@ -147,6 +147,9 @@ const (
 	// liaisonFutureSkew is how far ahead of the server clock an item's
 	// since time may be.
 	liaisonFutureSkew = time.Minute
+	// liaisonMaxAge is how far behind the server clock an item's since
+	// time may be.
+	liaisonMaxAge = 30 * 24 * time.Hour
 )
 
 // liaisonCallerKinds are the item kinds a caller may send. The kind "asks"
@@ -220,6 +223,10 @@ func (s *Server) handleSetLiaisonItems(w http.ResponseWriter, r *http.Request) {
 		}
 		if since.After(now.Add(liaisonFutureSkew)) {
 			http.Error(w, fmt.Sprintf("items[%d]: since is in the future", i), http.StatusBadRequest)
+			return
+		}
+		if since.Before(now.Add(-liaisonMaxAge)) {
+			http.Error(w, fmt.Sprintf("items[%d]: since is more than 30 days ago", i), http.StatusBadRequest)
 			return
 		}
 		items = append(items, wire.LiaisonItem{Kind: in.Kind, Title: title, Since: since.UnixMilli()})

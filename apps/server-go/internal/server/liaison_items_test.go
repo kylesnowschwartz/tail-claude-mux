@@ -124,6 +124,7 @@ func TestSetLiaisonItemsRefusals(t *testing.T) {
 		"control-only title":   `{"session":"work","items":[` + item("blocked", `\n\t\u0007 `, "2026-11-16T08:00:00Z") + `]}`,
 		"since not RFC 3339":   `{"session":"work","items":[` + item("blocked", "x", "16/11/2026") + `]}`,
 		"since in the future":  `{"session":"work","items":[` + item("blocked", "x", "2026-11-16T09:01:01Z") + `]}`,
+		"since over 30 days":   `{"session":"work","items":[` + item("blocked", "x", "2026-10-17T08:59:59Z") + `]}`,
 		"finished upper case":  `{"session":"work","finished":["0F8FAD5B-D9CB-469F-A165-70867728950E"]}`,
 		"finished not a UUID":  `{"session":"work","finished":["thread-1"]}`,
 		"one bad item of many": `{"session":"work","items":[` + ok + `,` + item("nope", "x", "2026-11-16T08:00:00Z") + `]}`,
@@ -144,6 +145,14 @@ func TestSetLiaisonItemsRefusals(t *testing.T) {
 func TestSetLiaisonItemsAcceptsSinceWithinAMinuteAhead(t *testing.T) {
 	s, _ := newLiaisonItemsServer(t)
 	body := `{"session":"work","items":[{"kind":"blocked","title":"x","since":"2026-11-16T09:00:59Z"}]}`
+	if rec := postLiaisonItems(t, s, body); rec.Code != 204 {
+		t.Fatalf("status = %d body = %q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSetLiaisonItemsAcceptsSinceThirtyDaysAgo(t *testing.T) {
+	s, _ := newLiaisonItemsServer(t)
+	body := `{"session":"work","items":[{"kind":"blocked","title":"x","since":"2026-10-17T09:00:00Z"}]}`
 	if rec := postLiaisonItems(t, s, body); rec.Code != 204 {
 		t.Fatalf("status = %d body = %q", rec.Code, rec.Body.String())
 	}

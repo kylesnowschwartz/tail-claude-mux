@@ -105,7 +105,7 @@ Replace the items and finished conversations that the liaison block shows for a 
 | `items` | array, at most 20 | Each item has `kind`, `title`, and `since`. |
 | `items[].kind` | string | One of `blocked`, `no_report`, `answer`, `reminder`. The kind `asks` is refused: the sidebar makes it from the liaison's own conversation. |
 | `items[].title` | string | Folded to one line: line breaks and tabs become spaces, other control characters and format characters (such as direction overrides and zero-width characters) are removed, and the title is cut to 80 characters. A title that is empty after this is refused. |
-| `items[].since` | string, RFC 3339 time | When the item started. Refused when more than one minute ahead of the server clock. |
+| `items[].since` | string, RFC 3339 time | When the item started. Refused when more than one minute ahead of the server clock or more than 30 days behind it. |
 | `finished` | array of strings, at most 20 | Conversation IDs, each a lower-case UUID, of conversations the liaison started that have finished and are still open. |
 
 A request with any bad field is refused whole with `400`; on success the server answers `204`. Empty `items` and `finished` lists clear the set. The server keeps the set in memory with the time it arrived and drops it 10 minutes later, so a liaison that stops sending shows nothing stale; send the set again to keep it.
