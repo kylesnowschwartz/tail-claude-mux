@@ -99,7 +99,9 @@ apply to Claude Code peers only; pi cannot use them.
    `remain-on-exit` set `on` until tcm shows the conversation idle twice,
    the second time just before the paste; then it is set `off`. Stable pane
    text does not count as ready. On any failure the pane stays open and the
-   result adds `pane_tail`, the last lines of the pane. `ready` is `exited`
+   result adds `pane_tail`, the last lines of the pane, when the pane's text
+   could be read. `claude` must be an executable on PATH, because `exec`
+   does not use a shell alias or function. `ready` is `exited`
    when Claude Code ended before it was ready, and `unconfirmed` when tcm
    gave no answer or a status other than idle on the check before the paste;
    nothing was pasted in either case.

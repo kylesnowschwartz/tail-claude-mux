@@ -71,10 +71,12 @@ name matches `^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$`, and `--agent pi` with
 | `remain-on-exit` | Set `on` for the pane before the start command; set `off` only after readiness is confirmed, immediately before the paste |
 | Readiness | tcm must list an idle Claude Code conversation in the pane; stable pane text does not count |
 | Check before the paste | After the buffer is loaded, tcm is asked again; when it gives no answer or the status is not idle, nothing is pasted, the buffer is deleted, and the result has `ready:"unconfirmed"` |
-| Failure after the pane exists | The pane stays open for reading and the result adds `pane_tail`, the last 20 non-empty lines of the pane |
+| Failure after the pane exists | The pane stays open for reading and the result adds `pane_tail`, the last 20 non-empty lines of the pane, when the pane's text could be read |
 | Claude Code ends before it is ready | The launcher fails at once with `ready:"exited"` |
 
 - `--agent pi` with `--close-on-exit` is a validation error.
+- `claude` must be an executable on PATH: `exec` does not use a shell alias
+  or function named `claude`.
 - A timeout error says whether tcm gave no answer or listed no idle
   conversation in the pane.
 
