@@ -170,10 +170,10 @@ export const LIAISON_ITEM_PRIORITY: Record<LiaisonItemKind, 1 | 2 | 3> = {
 export const LIAISON_ITEM_ROWS = 3;
 
 /**
- * The items one liaison block shows, in priority order and oldest first
- * within a priority: an `asks` item when the liaison's own conversation waits
+ * The items one liaison block shows: first an `asks` item when the liaison's own conversation waits
  * on a permission or a question or has failed, then the items its session reports through
- * `POST /set-liaison-items`.
+ * `POST /set-liaison-items` in priority order, oldest first within a
+ * priority. The `asks` item always leads, so the row limit never hides it.
  */
 export function liaisonItems(ref: SessionAgentRef): LiaisonItem[] {
   const items: LiaisonItem[] = [];
@@ -181,14 +181,14 @@ export function liaisonItems(ref: SessionAgentRef): LiaisonItem[] {
   if (isAsksReason(reason)) {
     items.push({ kind: "asks", title: reason!, since: ref.agent.attentionSince ?? ref.agent.ts });
   }
-  items.push(...(ref.session.metadata?.liaisonItems ?? []));
-  return items
+  const reported = (ref.session.metadata?.liaisonItems ?? [])
     .map((item, i) => ({ item, i }))
     .sort((a, b) =>
       LIAISON_ITEM_PRIORITY[a.item.kind] - LIAISON_ITEM_PRIORITY[b.item.kind]
       || a.item.since - b.item.since
       || a.i - b.i)
     .map(({ item }) => item);
+  return [...items, ...reported];
 }
 
 /**

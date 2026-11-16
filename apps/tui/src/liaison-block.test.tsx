@@ -147,6 +147,14 @@ describe("LiaisonBlock", () => {
     expect(fgOf(frame, 0, LIAISON_WORKERS_MARK).dim).toBe(true);
   });
 
+  test("the asks item leads even past three older blocked items", () => {
+    const blocked: LiaisonItem[] = [1, 2, 3].map((n) => ({ kind: "blocked", title: `b${n}`, since: NOW - (60 + n) * MIN }));
+    const r = { session: home(blocked), agent: { ...liaison, attention: "permission" as const, attentionSince: NOW - MIN } };
+    const items = liaisonItems(r);
+    expect(items[0]!.kind).toBe("asks");
+    expect(items.slice(0, 3).map((i) => i.title)).toEqual(["permission", "b3", "b2"]);
+  });
+
   test("no running workers shows no ↳ mark", async () => {
     const { lines } = await renderBlocks({ width: 40, workers: 0 });
     expect(lines).toHaveLength(2);

@@ -170,14 +170,14 @@ describe("liaisonItems", () => {
     expect(items.map((i) => i.title)).toEqual(["b", "n-old", "a-new", "r"]);
   });
 
-  test("adds an asks item when the liaison waits on a permission or a question or has failed", () => {
+  test("adds an asks item first when the liaison waits on a permission or a question or has failed", () => {
     for (const reason of ["permission", "question", "error"] as const) {
       const items = liaisonItems(ref({ attention: reason, attentionSince: NOW - 3 * MIN }, [
         { kind: "blocked", title: "b", since: NOW - 9 * MIN },
       ]));
       expect(items).toEqual([
-        { kind: "blocked", title: "b", since: NOW - 9 * MIN },
         { kind: "asks", title: reason, since: NOW - 3 * MIN },
+        { kind: "blocked", title: "b", since: NOW - 9 * MIN },
       ]);
     }
   });
