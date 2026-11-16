@@ -97,7 +97,7 @@ curl -sS -X POST http://127.0.0.1:7391/notify \
 
 ### `POST /set-liaison-items`
 
-Replace the items and finished conversations that the liaison block shows for a tmux session. Send the liaison's tmux session name.
+Replace the items and finished conversations that the liaison block shows for a tmux session. Send the liaison's tmux session name. Items belong to the tmux session, not to a conversation: one tmux session holds one liaison, and every liaison block for that session shows the same set. A set sent for a session that does not exist is dropped at the next state build.
 
 | Field | Type | Rule |
 |-------|------|------|
