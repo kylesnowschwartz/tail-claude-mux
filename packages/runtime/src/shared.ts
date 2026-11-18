@@ -31,6 +31,14 @@ export interface SessionData {
   metadata?: SessionMetadata | null;
 }
 
+/** Session list layout: bordered cards, or one row per session and per agent. */
+export type DisplayMode = "cards" | "compact";
+
+/** Any value other than "compact" (including a missing one) is "cards". */
+export function resolveDisplayMode(value: unknown): DisplayMode {
+  return value === "compact" ? "compact" : "cards";
+}
+
 export interface ServerState {
   type: "state";
   sessions: SessionData[];
@@ -44,6 +52,8 @@ export interface ServerState {
    *  BUILTIN_THEMES — leaving the panel rendering mocha colours regardless of
    *  the user's actual theme. */
   theme: string | PartialTheme | undefined;
+  /** Session list layout from config.json displayMode; anything else reads as "cards". */
+  displayMode?: DisplayMode;
   sidebarWidth: number;
   ts: number;
 }
@@ -161,6 +171,7 @@ export type ClientCommand =
   | { type: "mark-seen"; name: string }
   | { type: "dismiss-agent"; session: string; agent: string; threadId?: string; paneId?: string; pid?: number }
   | { type: "set-theme"; theme: string }
+  | { type: "set-display-mode"; displayMode: DisplayMode }
   | { type: "identify"; clientTty: string }
   | { type: "quit" }
   | { type: "identify-pane"; paneId: string; sessionName: string }

@@ -196,6 +196,7 @@ type ServerState struct {
 	FocusedSession *string         `json:"focusedSession"`
 	CurrentSession *string         `json:"currentSession"`
 	Theme          json.RawMessage `json:"theme,omitempty"`
+	DisplayMode    string          `json:"displayMode"`
 	SidebarWidth   int             `json:"sidebarWidth"`
 	TS             int64           `json:"ts"`
 }
@@ -288,6 +289,7 @@ const (
 	CmdMarkSeen       = "mark-seen"
 	CmdDismissAgent   = "dismiss-agent"
 	CmdSetTheme       = "set-theme"
+	CmdSetDisplayMode = "set-display-mode"
 	CmdIdentify       = "identify"
 	CmdQuit           = "quit"
 	CmdIdentifyPane   = "identify-pane"
@@ -314,6 +316,7 @@ type ClientCommand struct {
 	PaneID      string `json:"paneId,omitempty"`
 	PID         *int   `json:"pid,omitempty"`
 	Theme       string `json:"theme,omitempty"`
+	DisplayMode string `json:"displayMode,omitempty"`
 	SessionName string `json:"sessionName,omitempty"`
 	Width       int    `json:"width,omitempty"`
 }

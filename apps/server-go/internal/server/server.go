@@ -687,6 +687,13 @@ func (s *Server) handleCommand(c *client, cmd wire.ClientCommand) {
 		s.applyThemeLocked("set-theme")
 		s.broadcastLocked()
 
+	case wire.CmdSetDisplayMode:
+		mode := state.NormalizeDisplayMode(cmd.DisplayMode)
+		if err := config.Save(s.Builder.ConfigDir, map[string]any{"displayMode": mode}); err != nil {
+			log.Printf("save display mode: %v", err)
+		}
+		s.broadcastLocked()
+
 	case wire.CmdReportWidth:
 		s.reportWidthLocked(c, cmd)
 

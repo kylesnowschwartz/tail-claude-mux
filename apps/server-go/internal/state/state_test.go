@@ -1,8 +1,12 @@
 package state
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/config"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/gitinfo"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/sessionorder"
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tmux"
@@ -122,5 +126,62 @@ func TestBuild_NoSessions(t *testing.T) {
 	st := b.Build()
 	if len(st.Sessions) != 0 || st.FocusedSession != nil || st.CurrentSession != nil {
 		t.Errorf("empty tmux: got %+v", st)
+	}
+}
+
+func TestLoadDisplayMode(t *testing.T) {
+	cases := []struct {
+		name string
+		file string // config.json contents; empty means no file
+		want string
+	}{
+		{"missing file", "", "cards"},
+		{"missing field", `{"theme":"nord"}`, "cards"},
+		{"cards", `{"displayMode":"cards"}`, "cards"},
+		{"compact", `{"displayMode":"compact"}`, "compact"},
+		{"unknown value", `{"displayMode":"grid"}`, "cards"},
+		{"wrong type", `{"displayMode":3}`, "cards"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if c.file != "" {
+				if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(c.file), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := LoadDisplayMode(dir); got != c.want {
+				t.Errorf("LoadDisplayMode = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestDisplayMode_SaveRoundTripKeepsOtherKeys(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"theme":"nord"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(dir, map[string]any{"displayMode": NormalizeDisplayMode("compact")}); err != nil {
+		t.Fatal(err)
+	}
+	if got := LoadDisplayMode(dir); got != "compact" {
+		t.Errorf("LoadDisplayMode = %q, want compact", got)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "config.json"))
+	if !strings.Contains(string(raw), `"theme": "nord"`) {
+		t.Errorf("theme key lost: %s", raw)
+	}
+}
+
+func TestBuild_CarriesDisplayMode(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"displayMode":"compact"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b := testBuilder(map[string]string{})
+	b.ConfigDir = dir
+	if got := b.Build().DisplayMode; got != "compact" {
+		t.Errorf("state displayMode = %q, want compact", got)
 	}
 }

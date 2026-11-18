@@ -147,6 +147,7 @@ func (b *Builder) Build() wire.ServerState {
 		Sessions:     sessions,
 		SidebarWidth: b.SidebarWidth,
 		Theme:        b.themeConfig(),
+		DisplayMode:  LoadDisplayMode(b.ConfigDir),
 		TS:           now.UnixMilli(),
 	}
 	if b.focusedSession != "" {
@@ -202,6 +203,32 @@ func LoadSidebarWidth(configDir string) int {
 		return defaultWidth
 	}
 	return cfg.SidebarWidth
+}
+
+// Display modes for the sidebar session list (config.json displayMode).
+const (
+	DisplayModeCards   = "cards"
+	DisplayModeCompact = "compact"
+)
+
+// NormalizeDisplayMode maps any value other than "compact" to "cards".
+func NormalizeDisplayMode(mode string) string {
+	if mode == DisplayModeCompact {
+		return DisplayModeCompact
+	}
+	return DisplayModeCards
+}
+
+// LoadDisplayMode reads displayMode from config.json: "compact" or
+// "cards", with a missing or unknown value read as "cards".
+func LoadDisplayMode(configDir string) string {
+	var cfg struct {
+		DisplayMode string `json:"displayMode"`
+	}
+	if !loadConfig(configDir, &cfg) {
+		return DisplayModeCards
+	}
+	return NormalizeDisplayMode(cfg.DisplayMode)
 }
 
 // LoadSidebarPosition reads sidebarPosition from config.json ("left" or

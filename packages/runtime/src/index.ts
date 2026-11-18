@@ -19,6 +19,7 @@ export {
   SERVER_IDLE_TIMEOUT_MS,
   STUCK_RUNNING_TIMEOUT_MS,
   C,
+  resolveDisplayMode,
 } from "./shared";
 export type {
   SessionData,
@@ -28,6 +29,7 @@ export type {
   QuitNotify,
   ServerMessage,
   ClientCommand,
+  DisplayMode,
   MetadataTone,
   MetadataVerb,
   MetadataStatus,
