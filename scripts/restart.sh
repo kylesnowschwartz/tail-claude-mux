@@ -135,8 +135,9 @@ if [[ -n "$WINDOW_ID" ]]; then
   for i in {1..40}; do
     PANE_ID=$(tmux list-panes -t "$WINDOW_ID" -F '#{pane_id} #{@tcm-sidebar} #{pane_title}' 2>/dev/null |
       awk '$2 == "1" || $3 == "tcm-sidebar" { print $1; exit }')
-    if [[ -n "$PANE_ID" ]]; then
-      tmux select-pane -t "$PANE_ID" >/dev/null 2>&1
+    # The pane can be a sidebar the server kills a moment later during its
+    # respawn; a failed select means that happened, so keep polling.
+    if [[ -n "$PANE_ID" ]] && tmux select-pane -t "$PANE_ID" >/dev/null 2>&1; then
       break
     fi
     sleep 0.05
