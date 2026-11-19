@@ -862,7 +862,7 @@ function App() {
         </Show>
       </box>
 
-      <box flexDirection="column" flexGrow={1} flexShrink={1} justifyContent="flex-end" gap={0}>
+      <box flexDirection="column" flexGrow={1} flexShrink={1} justifyContent={displayMode() === "compact" ? "center" : "flex-end"} gap={0}>
         <For each={listItems()}>
           {(item) => {
             if ("overflow" in item) {

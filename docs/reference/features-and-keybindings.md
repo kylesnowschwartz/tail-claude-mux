@@ -23,6 +23,7 @@ The list has two layouts. `v` toggles between them, and the choice is saved as `
 
 - The compact list has no border and no branch row. Overlong names clip at the right edge.
 - The focused session's rule in the compact list is drawn in the focus colour.
+- The compact list is centred vertically in the space below the header and the blocks above it. Session cards sit at the bottom of the column.
 
 ## Liaison Block
 
