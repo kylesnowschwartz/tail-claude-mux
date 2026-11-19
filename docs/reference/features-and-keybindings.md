@@ -14,6 +14,16 @@ Each session row can show:
 - Current client session emphasis
 - Unseen accent for `done`, `error`, or `interrupted` states
 
+The list has two layouts. `v` toggles between them, and the choice is saved as `displayMode` in `config.json` and applies to every sidebar.
+
+| Layout | Session rows | Agent rows |
+| --- | --- | --- |
+| Cards (default) | A bordered card: name, live-agent count, branch row | One row each inside the card |
+| Compact list | One row: name, a rule to the right edge, live-agent count | One row each: window index, agent glyph, conversation name, status icon |
+
+- The compact list has no border and no branch row. Overlong names clip at the right edge.
+- The focused session's rule in the compact list is drawn in the focus colour.
+
 ## Liaison Block
 
 While a Claude Code conversation named exactly `liaison`, or starting with `liaison/`, is open, a block is pinned at the top of the sidebar, one per liaison (`liaison/work` and `liaison/personal` give two). With no liaison open, the block is absent. The block stays grey and still while all is normal, and takes colour only for an item that needs the engineer.
@@ -86,6 +96,7 @@ The focused session detail panel can show:
 | `n`, `c` | Create a new session |
 | `d`, `x` | Open kill-session confirmation for focused session |
 | `t` | Open theme picker |
+| `v` | Toggle between session cards and the compact list |
 | `r` | Refresh state |
 | `q` | Quit the server and all sidebar panes |
 | `Esc` | Close only the current sidebar client |

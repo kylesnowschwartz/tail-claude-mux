@@ -29,6 +29,7 @@ If the file does not exist, tcm falls back to defaults.
 | Field | Type | Default | Runtime status | Description |
 | --- | --- | --- | --- | --- |
 | `theme` | `string` | `catppuccin-mocha` | active | Built-in theme name persisted by the TUI |
+| `displayMode` | `"cards" \| "compact"` | `"cards"` | active | Session list layout, set by the sidebar's `v` key; any other value reads as `"cards"` |
 | `sidebarWidth` | `number` | `26` | active | Sidebar width in columns |
 | `sidebarPosition` | `"left" | "right"` | `"left"` | active | Sidebar placement |
 | `companionPane.command` | `string` | unset | active | Shell command run in a companion pane spawned below every sidebar; unset or empty disables the feature (see `docs/specs/companion-pane.md`) |
