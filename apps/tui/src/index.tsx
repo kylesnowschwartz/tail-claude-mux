@@ -9,12 +9,14 @@ import {
   type ServerMessage,
   type SessionData,
   type ClientCommand,
+  type DisplayMode,
   type Theme,
   type ThemePalette,
   SERVER_PORT,
   SERVER_HOST,
   BUILTIN_THEMES,
   resolveTheme,
+  resolveDisplayMode,
   sanitizeForDisplay,
   glowPhase,
   lerpHex,
@@ -43,6 +45,8 @@ import {
   type SessionAgentRef,
 } from "./attention";
 import { BlockRule, LiaisonBlock } from "./liaison-block";
+import { CompactSession } from "./compact-list";
+import { sessionRows, sessionWindow as sessionWindowFor, visibleAgentCounts as visibleAgentCountsFor } from "./session-list-rows";
 import { AgentListItem, liveAgentBadge, liveFirstAgents, type SessionAgent } from "./agent-row";
 import { conversationName, needsBlockRows as needsRowsFor, NEEDS_HEADER_ROWS, padAge, padReason, scrollWindow, showReasonWord } from "./needs-block";
 import { getScenario, listScenarios } from "./mocks/scenarios";
@@ -69,10 +73,6 @@ const BOLD = TextAttributes.BOLD;
 const DIM = TextAttributes.DIM;
 const THEME_NAMES = Object.keys(BUILTIN_THEMES);
 const HEADER_ROWS = 2; // App header: one title row plus paddingTop={1}; keep in sync with its box.
-const CARD_CHROME_ROWS = 3; // Session frame: rounded border top/bottom plus the name row.
-const BRANCH_ROWS = 1; // SessionCard adds exactly one row when session.branch is present.
-const HIDDEN_AGENTS_ROWS = 1; // SessionCard adds exactly one "+N more" row when agents are trimmed.
-const OVERFLOW_INDICATOR_ROWS = 1; // "▲ N more" / "▼ N more" line when the session stack scrolls.
 const NEEDS_MIN_ROWS = 3; // The needs block always gets at least this many rows of the pane.
 
 /** Blocking reasons (an open question to the engineer) read as more urgent. */
@@ -164,6 +164,7 @@ function App() {
   // --- Theme state (driven by server) ---
   const [theme, setTheme] = createSignal<Theme>(resolveTheme(undefined));
   const P = () => theme().palette;
+  const [displayMode, setDisplayMode] = createSignal<DisplayMode>("cards");
 
   const [sessions, setSessions] = createStore<SessionData[]>([]);
   const [focusedSession, setFocusedSession] = createSignal<string | null>(null);
@@ -259,59 +260,17 @@ function App() {
   const listBudgetRows = createMemo(() =>
     Math.max(0, termDims().height - HEADER_ROWS - liaisonRows() - needsBlockRows()));
 
-  // Cards show every agent row; the scrolling session window absorbs the
-  // height. "+N more" survives only as a guard when a single card on its own
-  // cannot fit the viewport alongside the scroll indicators.
-  const visibleAgentCounts = createMemo(() => {
-    const availableRows = listBudgetRows();
-    return sessions.map((session) => {
-      const total = session.agents?.length ?? 0;
-      const chrome = CARD_CHROME_ROWS + (session.branch ? BRANCH_ROWS : 0);
-      const indicatorAllowance = sessions.length > 1 ? 2 * OVERFLOW_INDICATOR_ROWS : 0;
-      const maxAgents = Math.max(1, availableRows - chrome - HIDDEN_AGENTS_ROWS - indicatorAllowance);
-      return Math.min(total, maxAgents);
-    });
-  });
+  const visibleAgentCounts = createMemo(() =>
+    visibleAgentCountsFor(displayMode(), sessions, listBudgetRows()));
 
   // Session-list viewport: when the stack is taller than the pane, render a
-  // window of cards around the focused one plus ▲/▼ overflow indicators, so
-  // every session stays reachable (the old render-everything flex-end layout
-  // silently spilled cards past the top edge).
+  // window of sessions around the focused one plus ▲/▼ overflow indicators,
+  // so every session stays reachable.
   const sessionWindow = createMemo(() => {
     const counts = visibleAgentCounts();
-    const budget = listBudgetRows();
-    const len = sessions.length;
-    const heights = sessions.map((session, i) => {
-      const total = session.agents?.length ?? 0;
-      const visible = counts[i] ?? 0;
-      return CARD_CHROME_ROWS + (session.branch ? BRANCH_ROWS : 0)
-        + visible + (visible < total ? HIDDEN_AGENTS_ROWS : 0);
-    });
-    if (heights.reduce((total, h) => total + h, 0) <= budget) {
-      return { start: 0, end: len, above: 0, below: 0 };
-    }
-
-    const indicatorRows = (start: number, end: number) =>
-      (start > 0 ? OVERFLOW_INDICATOR_ROWS : 0) + (end < len ? OVERFLOW_INDICATOR_ROWS : 0);
-    const anchor = Math.min(Math.max(0, focusedIdx()), len - 1);
-    let start = anchor;
-    let end = anchor + 1;
-    let used = heights[anchor] ?? 0;
-    let grew = true;
-    while (grew) {
-      grew = false;
-      if (end < len && used + heights[end]! + indicatorRows(start, end + 1) <= budget) {
-        used += heights[end]!;
-        end++;
-        grew = true;
-      }
-      if (start > 0 && used + heights[start - 1]! + indicatorRows(start - 1, end) <= budget) {
-        start--;
-        used += heights[start]!;
-        grew = true;
-      }
-    }
-    return { start, end, above: start, below: len - end };
+    const mode = displayMode();
+    const heights = sessions.map((session, i) => sessionRows(mode, session, counts[i] ?? 0));
+    return sessionWindowFor(heights, listBudgetRows(), focusedIdx());
   });
 
   // Overflow indicators are list items rather than siblings of the card
@@ -467,6 +426,13 @@ function App() {
     send({ type: "set-theme", theme: themeName });
   }
 
+  function toggleDisplayMode() {
+    const next: DisplayMode = displayMode() === "cards" ? "compact" : "cards";
+    // Mock mode has no server to echo the state back.
+    if (parseMockFlag()) setDisplayMode(next);
+    else send({ type: "set-display-mode", displayMode: next });
+  }
+
   function previewTheme(themeName: string) {
     setTheme(resolveTheme(themeName));
   }
@@ -577,6 +543,7 @@ function App() {
               setFocusedSession(startupFocus);
               setCurrentSession(msg.currentSession);
               setTheme(resolveTheme(msg.theme));
+              setDisplayMode(resolveDisplayMode(msg.displayMode));
             } else if (msg.type === "focus") {
               setFocusedSession(msg.focusedSession);
               setCurrentSession(msg.currentSession);
@@ -797,6 +764,9 @@ function App() {
         themeBeforePreview = theme();
         setModal("theme-picker");
         break;
+      case "v":
+        toggleDisplayMode();
+        break;
       case "u":
         send({ type: "show-all-sessions" });
         break;
@@ -907,7 +877,32 @@ function App() {
             const session = item;
             const sessionIdx = createMemo(() => sessions.indexOf(session));
             const isSelected = () => session.name === focusedSession();
+            const onSelect = () => {
+              setFocusedSession(session.name);
+              send({ type: "focus-session", name: session.name });
+              switchToSession(session.name);
+            };
+            const onAgentDismiss = (agent: SessionAgent) => send({
+              type: "dismiss-agent",
+              session: session.name,
+              agent: agent.agent,
+              threadId: agent.threadId,
+              paneId: agent.paneId,
+              pid: agent.pid,
+            });
+            const onAgentFocus = (agent: SessionAgent) => send({
+              type: "focus-agent-pane",
+              session: session.name,
+              agent: agent.agent,
+              threadId: agent.threadId,
+              threadName: agent.threadName,
+              paneId: agent.paneId,
+              clientTty: clientTty() || undefined,
+            });
             return (
+              <Show
+                when={displayMode() === "compact"}
+                fallback={
               // Keep overflow unset: OpenTUI drops the last row's click zone
               // when a bordered box also uses overflow="hidden".
               <box
@@ -924,38 +919,34 @@ function App() {
                   spinIdx={spinIdx}
                   glowT={glowT}
                   theme={theme}
-                  onSelect={() => {
-                    setFocusedSession(session.name);
-                    send({ type: "focus-session", name: session.name });
-                    switchToSession(session.name);
-                  }}
+                  onSelect={onSelect}
                   panelFocus={panelFocus}
                   focusedAgentIdx={focusedAgentIdx}
                   focusedPaneId={focusedPaneId}
                   liaisons={liaisons}
-                  onAgentDismiss={(agent) => {
-                    send({
-                      type: "dismiss-agent",
-                      session: session.name,
-                      agent: agent.agent,
-                      threadId: agent.threadId,
-                      paneId: agent.paneId,
-                      pid: agent.pid,
-                    });
-                  }}
-                  onAgentFocus={(agent) => {
-                    send({
-                      type: "focus-agent-pane",
-                      session: session.name,
-                      agent: agent.agent,
-                      threadId: agent.threadId,
-                      threadName: agent.threadName,
-                      paneId: agent.paneId,
-                      clientTty: clientTty() || undefined,
-                    });
-                  }}
+                  onAgentDismiss={onAgentDismiss}
+                  onAgentFocus={onAgentFocus}
                 />
               </box>
+                }
+              >
+                <CompactSession
+                  session={session}
+                  isSelected={isSelected()}
+                  isCurrent={session.name === currentSession()}
+                  visibleAgentCount={visibleAgentCounts()[sessionIdx()] ?? 0}
+                  spinIdx={spinIdx}
+                  glowT={glowT}
+                  palette={P}
+                  onSelect={onSelect}
+                  panelFocus={panelFocus}
+                  focusedAgentIdx={focusedAgentIdx}
+                  focusedPaneId={focusedPaneId}
+                  liaisons={liaisons}
+                  onAgentDismiss={onAgentDismiss}
+                  onAgentFocus={onAgentFocus}
+                />
+              </Show>
             );
           }}
         </For>
@@ -1050,6 +1041,7 @@ function App() {
               ["n/c", "new session"],
               ["r", "refresh"],
               ["t", "theme picker"],
+              ["v", "cards / compact list"],
               ["=", "reset width"],
               ["⌥↑↓", "reorder"],
               ["1-9", "jump to session"],
