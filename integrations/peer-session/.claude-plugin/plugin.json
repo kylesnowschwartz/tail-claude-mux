@@ -1,6 +1,6 @@
 {
   "name": "peer-session",
-  "version": "0.3.3",
-  "description": "Send work to another repository now, by starting Claude Code or the pi coding agent there, or later, as a love-letters note, and receive its report through cross-session messaging or love-letters.",
+  "version": "0.4.0",
+  "description": "Work with another coding agent session in tmux: start Claude Code or the pi coding agent in another repository with a written brief and receive its report, or message an agent session that already runs.",
   "author": {"name": "kylesnowschwartz"}
 }

@@ -1,45 +1,83 @@
 # peer-session
 
-Send a piece of work to another repository on this machine as a written
-brief. The skill delivers it in one of two ways:
+One skill for working with another coding agent session in tmux, usable from
+Claude Code and from the pi coding agent. It covers two cases:
 
-- **Now:** the launcher starts Claude Code or the pi coding agent in a new
-  window of the tmux session that serves the repository, or in a new tmux
-  session when none does, and submits the brief.
-- **Later:** `love-letters send --to <repo>` saves the brief as a note, shown
-  to the next session that starts in that repository. A note has no status.
+- **Start a peer.** The launcher starts Claude Code or pi in a new window of
+  the tmux session that serves a repository, or in a new tmux session when
+  none does, and submits a written brief. The peer reports back when it is
+  done.
+- **Message a session that already runs.** The skill sends through the
+  harness's message tool when one reaches the session, and types one checked
+  line into the agent's tmux pane when none does.
 
-When the person names a running Claude session, the skill sends the brief to
-it with `SendMessage` and starts nothing.
+The channel depends on both harnesses:
 
-A Claude Code peer reports through Claude Code's cross-session messaging, or
-with a `love-letters` note to the asking repository when the asking session
-has ended. A pi peer reports with the `love-letters` CLI, which the
-orchestrator reads with `love-letters peek`.
+| This session | Other session | Channel |
+| --- | --- | --- |
+| Claude Code | Claude Code | Claude Code's `SendMessage`, with names from `ListAgents` |
+| pi | pi | `SendMessage` and `ListPeers` from the pi-agent-fleet extension |
+| Claude Code | pi, Codex, or another agent | tmux pane delivery with `send-to-pane.sh` |
+| pi | Claude Code, Codex, or another agent | tmux pane delivery with `send-to-pane.sh` |
+
+The brief carries the address for the report: the orchestrator's session
+name for a pair in one harness, and its tmux pane id (`$TMUX_PANE`) for a
+mixed pair.
 
 A peer that the skill started is closed when it has reported, its work is
 checked, and no follow-up is pending. The skill never closes a session it did
 not start.
 
+## Layout
+
+```text
+.claude-plugin/plugin.json      Claude Code plugin manifest
+skills/peer-session/
+  SKILL.md                      routes, brief, launcher steps, closing
+  references/message-a-pane.md  locate, check, send to, and verify a pane
+  scripts/start-peer-session.sh launcher
+  scripts/send-to-pane.sh       one line into an agent pane, with checks
+  scripts/pi-session-name.sh    name and id of the calling pi session
+tests/                          shell tests for the three scripts
+```
+
+The skill folder holds everything the skill runs, and SKILL.md names each
+script by a path relative to that folder. Claude Code gives the folder to
+the model as "Base directory for this skill" when the skill loads; pi gives
+the location of SKILL.md in its skill list.
+
 ## Install
+
+Claude Code, as a plugin:
 
 ```text
 /plugin install peer-session --marketplace kylesnowschwartz/tail-claude-mux
 ```
 
-Requires tmux, Claude Code with cross-session messaging, and python3.
-The later delivery and the report fallback require the `love-letters` command.
-The tcm server is optional and improves the readiness check; curl reads its
-local state endpoint when available. Without a server response, the launcher
-waits for stable pane text.
+pi, as a skill folder: add the absolute path of `skills/peer-session` in a
+checkout of this repository to `skills` in pi's settings file
+(`~/.pi/agent/settings.json`):
 
-## Script
+```json
+{
+  "skills": ["/path/to/tail-claude-mux/integrations/peer-session/skills/peer-session"]
+}
+```
+
+Requires tmux and python3. Messaging between Claude Code sessions requires
+Claude Code with cross-session messaging. Messaging between pi sessions
+requires the pi-agent-fleet extension; `--agent pi` requires the `pi`
+command on PATH. The tcm server is optional and improves the readiness
+check; curl reads its local state endpoint when available. Without a server
+response, the launcher waits for stable pane text.
+
+## Launcher
 
 ```text
 start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--close-on-exit] [--agent claude|pi] [--window <name>] [--name <name>] [--session-id <uuid>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]
 ```
 
-Run `scripts/start-peer-session.sh` from this plugin directory. Defaults are
+Run `skills/peer-session/scripts/start-peer-session.sh`. Defaults are
 agent `claude`, window named after the agent, permission mode `auto`, timeout
 60 seconds, and port `$TCM_PORT` or 7391. The prompt file must be readable
 and non-empty. The launcher does not delete the prompt file; it must stay
@@ -68,9 +106,11 @@ the current window selected. The directory of a tmux session is tmux's
 `#{session_path}`, the directory the session was created in. When no tmux
 session has that directory, the launcher creates the one named by `--session`.
 
-`--name <name>` sets a Claude Code peer's session name with `claude -n`. The
-name matches `^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$`, and `--agent pi` with
-`--name` is a validation error. The skill names peers `<workstream>/<topic>`.
+`--name <name>` sets the peer's session name, with `claude -n` for Claude
+Code and `pi --name` for pi. The name matches
+`^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$`. The skill names peers
+`<workstream>/<topic>`. A pi session is addressed by that name in
+`SendMessage` and listed under it in `ListPeers`.
 
 `--session-id <uuid>` starts a Claude Code peer with that conversation ID, using
 `claude --session-id`. The value is a UUID in 8-4-4-4-12 lower-case hexadecimal form, and
@@ -94,11 +134,11 @@ name matches `^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$`, and `--agent pi` with
 - A timeout error says whether tcm gave no answer or listed no ready or
   working conversation in the pane.
 
-`--agent pi` runs `pi` in the pane and waits for the pi row in
-tcm state; `--permission-mode` with `--agent pi` is a validation error.
+`--agent pi` runs `pi`, or `pi --name <name>`, in the pane and waits for the
+pi row in tcm state; `--permission-mode` with `--agent pi` is a validation
+error.
 Without `--close-on-exit`, both agents start in a shell pane, so the tmux
 session outlives the agent.
-Pi requires the `pi` and `love-letters` commands on PATH.
 
 Stdout contains one JSON line; diagnostics go to stderr. Success exits zero:
 
@@ -116,7 +156,8 @@ Code, the task was in the start command and Claude Code was seen ready or
 working; for pi, the task was pasted and submitted.
 With `--close-on-exit`, failures add `pane_tail` and `ready` can be `exited`
 or `lost`.
-`peer_name` is a hint; the skill resolves the address with `ListAgents`.
+`peer_name` is a hint; the skill resolves a Claude Code peer's address with
+`ListAgents`.
 A pi launch adds `"agent":"pi"`.
 
 Failure exits nonzero with `ok:false` and `error`. Validation failures create
@@ -131,19 +172,77 @@ The launcher answers no dialog. After a dialog or timeout, let the person
 answer any dialog. A Claude Code peer holds the brief in its start command, so
 find the peer with `ListAgents` and check whether its conversation shows the
 brief before anything else is sent; send the full brief with `SendMessage`
-only when it does not. A pi peer has not received the brief; tell the person,
-who decides how to deliver it. Do not rerun the launcher for that brief or paste into the
-pane. Reports and further messages use `SendMessage`.
+only when it does not. A pi peer has not received the brief: a pi
+orchestrator sends it with `SendMessage`, and in a mixed pair the person
+decides how to deliver it. Do not rerun the launcher for that brief or paste
+into the pane.
+
+## Pane delivery
+
+```text
+send-to-pane.sh --pane <pane id> (--check | --message <text> | --message-file <file>) [--wait <seconds>]
+```
+
+`skills/peer-session/scripts/send-to-pane.sh` puts one line into the input of
+an agent that runs in another tmux pane. `--pane` takes a tmux pane id such
+as `%12`. Stdout contains one JSON line.
+
+`--check` sends nothing and reports the pane: `command`, `path`, and
+`pane_tail`, the last 15 non-empty lines.
+
+With a message, the script:
+
+1. Refuses a message that is empty, holds a newline or another control
+   character, or is longer than 4000 characters.
+2. Refuses a pane that is the caller's own (`$TMUX_PANE`), that does not
+   exist, whose program has ended, or whose program is a shell.
+3. Types the text with `tmux send-keys -l` and polls until the pane shows it,
+   for at most `--wait` seconds (default 5). When the text does not show,
+   it fails with `typed:false` and sends no Enter.
+4. Sends Enter as a separate key and polls until the pane changes. When the
+   pane shows no change, it sends Enter once more, then fails with
+   `pane_changed:false`.
+
+```json
+{"ok":true,"pane":"%12","command":"claude","path":"/work/repo","typed":true,"enter_count":1,"pane_changed":true,"pane_tail":"..."}
+```
+
+`ok` means the text showed and the pane changed after Enter. The caller
+reads `pane_tail` to confirm that the agent took or queued the message.
+
+## pi session name
+
+`skills/peer-session/scripts/pi-session-name.sh` prints the name and id of
+the pi session that runs it:
+
+```json
+{"ok":true,"name":"peer/topic","id":"0123456789ab","cwd":"/work/repo"}
+```
+
+The pi-agent-fleet extension keeps one record file for each running
+interactive pi session in `~/.pi/agent/pi-agent-fleet-peers/`
+(`PI_AGENT_FLEET_PEERS_DIR` names another folder). The script finds the
+record whose process id is the script's own process or one above it. `name`
+is the name that `ListPeers` shows to other sessions, with `#` and four
+characters of the id when another running session has the same name. `id`
+stays the same when the name changes, and `SendMessage` accepts either.
 
 ## Test
 
 From the repository root:
 
 ```bash
-bash integrations/peer-session/tests/start-peer-session.test.sh
+for t in integrations/peer-session/tests/*.test.sh; do bash "$t" || break; done
 ```
 
-Most cases use fake tmux, curl, and sleep commands. When tmux and zsh are on
-PATH, further cases run on a throwaway tmux server (`tmux -L`) with zsh, a
-stand-in `claude` that records its arguments, and a stand-in tcm; they never
-use the default tmux server or a real Claude Code.
+- `start-peer-session.test.sh`: most cases use fake tmux, curl, and sleep
+  commands. When tmux and zsh are on PATH, further cases run on a throwaway
+  tmux server (`tmux -L`) with zsh, a stand-in `claude` that records its
+  arguments, and a stand-in tcm.
+- `send-to-pane.test.sh`: runs on a throwaway tmux server, with `cat` as the
+  stand-in agent.
+- `pi-session-name.test.sh`: uses a stand-in peers folder.
+- `skill-files.test.sh`: checks that every script and reference file that
+  the skill names exists in the skill folder.
+
+No test uses the default tmux server or a real agent.

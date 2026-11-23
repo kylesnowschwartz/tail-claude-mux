@@ -15,7 +15,7 @@
     {
       "name": "peer-session",
       "source": "./integrations/peer-session",
-      "description": "Start Claude Code in another repository and receive its report through cross-session messaging."
+      "description": "Start Claude Code or the pi coding agent in another repository with a written brief and receive its report, or message an agent session that already runs in tmux."
     }
   ]
 }

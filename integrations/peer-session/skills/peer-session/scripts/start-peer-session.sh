@@ -3,6 +3,9 @@ set -euo pipefail
 
 usage='start-peer-session.sh --repo <dir> --session <tmux-session-name> --prompt-file <file> [--attach-existing] [--close-on-exit] [--agent claude|pi] [--window <name>] [--name <name>] [--session-id <uuid>] [--permission-mode <mode>] [--ready-timeout <seconds>] [--port <tcm port>]'
 repo='' session='' prompt_file='' pane='' ready='' peer_name='' window='' permission_mode='' name='' session_id='' pane_tail=''
+# A session name is typed into the shell unquoted, so it holds no character
+# that the shell reads.
+name_pattern='^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$'
 agent=claude attach=0 close_on_exit=0 tcm_seen=0 remain_off=0 session_id_set=0 ready_timeout=60 task_limit=262144 port=${TCM_PORT:-7391}
 result() {
     python3 - "$1" "$2" "$pane" "$session" "$ready" "$peer_name" "$agent" "$pane_tail" <<'PY'
@@ -75,7 +78,7 @@ case "$agent" in
             launch+=" --session-id $session_id"
         fi
         if [[ -n "$name" ]]; then
-            [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$ ]] || fail "--name must match ^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}\$."
+            [[ "$name" =~ $name_pattern ]] || fail "--name must match $name_pattern."
             launch+=" -n $name"
         fi
         # exec replaces the shell, so the pane ends when Claude Code ends.
@@ -83,10 +86,13 @@ case "$agent" in
         tcm_agent=claude-code tcm_ready=idle,running,working,waiting,done ;;
     pi)
         [[ -z "$permission_mode" ]] || fail "--permission-mode applies only to --agent claude."
-        [[ -z "$name" ]] || fail "--name applies only to --agent claude; pi has no session name option."
         (( ! session_id_set )) || fail "--session-id applies only to --agent claude."
         (( ! close_on_exit )) || fail "--close-on-exit applies only to --agent claude."
-        window=${window:-pi} launch=pi tcm_agent=pi tcm_ready=idle ;;
+        window=${window:-pi} launch=pi tcm_agent=pi tcm_ready=idle
+        if [[ -n "$name" ]]; then
+            [[ "$name" =~ $name_pattern ]] || fail "--name must match $name_pattern."
+            launch+=" --name $name"
+        fi ;;
     *) fail "--agent must be claude or pi." ;;
 esac
 command -v tmux >/dev/null 2>&1 || fail "tmux is required on PATH."

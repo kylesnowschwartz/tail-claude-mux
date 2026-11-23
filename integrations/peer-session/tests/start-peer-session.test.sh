@@ -44,7 +44,7 @@ FAKE
 chmod +x "$tmp/bin/"*
 orig_path=$PATH
 export PATH="$tmp/bin:$PATH"
-script="$root/scripts/start-peer-session.sh"
+script="$root/skills/peer-session/scripts/start-peer-session.sh"
 printf 'Task line one\nTask line two\n' > "$tmp/prompt"
 run() {
     : > "$CALL_LOG"
@@ -71,14 +71,14 @@ events = (p / "calls").read_text().splitlines()
 calls = [json.loads(s) for s in events if s != "curl"]
 names = [c[0] for c in calls]
 pi = case.startswith("pi-")
-if case in ("existing", "attach-taken", "missing", "empty", "quote-path", "quote-dir", "blank", "large", "pi-mode", "bad-agent", "bad-name", "pi-name", "bad-id", "pi-id"):
+if case in ("existing", "attach-taken", "missing", "empty", "quote-path", "quote-dir", "blank", "large", "pi-mode", "bad-agent", "bad-name", "pi-bad-name", "bad-id", "pi-id"):
     require(code != 0 and v["ok"] is False, "validation must fail")
     require("new-session" not in names, "validation created session")
     if case in ("existing", "attach-taken"):
         require(v == {"ok": False, "error": "tmux session 'peer' already exists."}, "existing session error")
     if case == "pi-mode":
         require("--permission-mode" in v["error"], "pi mode error")
-    if case in ("bad-name", "pi-name"):
+    if case in ("bad-name", "pi-bad-name"):
         require("--name" in v["error"], "name error")
         require(not calls, "name validation made tmux calls: " + str(names))
     if case in ("bad-id", "pi-id"):
@@ -113,6 +113,8 @@ else:
         require(v["session"] == "peer", "session field")
         launch = calls[2]
     expected = "pi" if pi else read + "claude --permission-mode auto"
+    if case == "pi-name":
+        expected += " --name peer/x"
     if case == "name":
         expected += " -n peer/s4-agent-test"
     if case == "session-id":
@@ -127,10 +129,10 @@ else:
     for c in calls[2:]:
         if c[0] != "load-buffer":
             require("-t" in c and c[c.index("-t")+1] == "%128", "pane target: " + str(c))
-    if case in ("idle", "working", "relative", "pi-quote", "name", "session-id", "session-id-name", "fallback", "delayed", "unnamed", "pi-idle", "attach-match", "attach-fallback", "attach-none"):
+    if case in ("idle", "skill-dir", "working", "relative", "pi-quote", "name", "session-id", "session-id-name", "fallback", "delayed", "unnamed", "pi-idle", "pi-name", "attach-match", "attach-fallback", "attach-none"):
         require(code == 0 and v["ok"] and v["prompt_sent"], "success")
         require(v["ready"] == ("pane-stable" if case in ("fallback", "attach-fallback") else case if case == "working" else "idle"), "ready")
-        require(v["peer_name"] == ("other-project" if case in ("idle", "working", "relative", "pi-quote", "name", "session-id", "session-id-name", "delayed", "pi-idle", "attach-match", "attach-none") else ""), "peer")
+        require(v["peer_name"] == ("other-project" if case in ("idle", "skill-dir", "working", "relative", "pi-quote", "name", "session-id", "session-id-name", "delayed", "pi-idle", "pi-name", "attach-match", "attach-none") else ""), "peer")
         if case == "delayed":
             require(events.count("curl") == 3, "name poll count")
         if case == "unnamed":
@@ -160,6 +162,9 @@ PY
 printf 'Claude input\n' > "$FAKE_PANE"
 printf '%s\n' '{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","status":"idle","threadName":"other-project"}]}]}' > "$FAKE_STATE"
 run "$tmp/prompt"; check idle
+# The skill names the launcher by a path inside its own directory, and no
+# CLAUDE_PLUGIN_ROOT is set.
+(cd "$root/skills/peer-session" && unset CLAUDE_PLUGIN_ROOT && script=scripts/start-peer-session.sh && run "$tmp/prompt"; check skill-dir)
 printf '%s\n' '{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","status":"working","threadName":"other-project"}]}]}' > "$FAKE_STATE"
 run "$tmp/prompt"; check working
 printf '%s\n' '{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","status":"idle","threadName":"other-project"}]}]}' > "$FAKE_STATE"
@@ -201,6 +206,7 @@ printf '%s\n' '{"sessions":[{"agents":[{"agent":"pi","paneId":"%128","status":"i
 run "$tmp/prompt" --agent pi; check pi-idle
 cp "$tmp/prompt" "$tmp/it's.txt"
 run "$tmp/it's.txt" --agent pi; check pi-quote
+run "$tmp/prompt" --agent pi --name peer/x; check pi-name
 printf '%s\n' '{"sessions":[{"agents":[{"agent":"claude-code","paneId":"%128","status":"idle","threadName":"other-project"}]}]}' > "$FAKE_STATE"
 run "$tmp/prompt" --agent pi; check pi-timeout
 run "$tmp/prompt" --agent pi --permission-mode auto; check pi-mode
@@ -209,7 +215,7 @@ printf 'Claude input\n' > "$FAKE_PANE"
 run "$tmp/prompt" --name peer/s4-agent-test; check name
 run "$tmp/prompt" --name 'bad name; rm'; check bad-name
 run "$tmp/prompt" --name '-leading'; check bad-name
-run "$tmp/prompt" --agent pi --name peer/x; check pi-name
+run "$tmp/prompt" --agent pi --name 'bad name; rm'; check pi-bad-name
 run "$tmp/prompt" --session-id 123e4567-e89b-42d3-a456-426614174000; check session-id
 run "$tmp/prompt" --session-id 123e4567-e89b-42d3-a456-426614174000 --name peer/x; check session-id-name
 for bad_id in not-a-uuid 123E4567-E89B-42D3-A456-426614174000 123e4567-e89b-42d3-a456-42661417400A 123e4567-e89b-42d3-a456-426614174000x 123e4567 '' ' 123e4567-e89b-42d3-a456-426614174000' '{123e4567-e89b-42d3-a456-426614174000}'; do
@@ -363,6 +369,7 @@ golden_cases() {
     printf 'pi input\n' > "$FAKE_PANE"
     printf '%s\n' "${idle_state/claude-code/pi}" > "$FAKE_STATE"
     one pi-idle --agent pi
+    one pi-name --agent pi --name peer/x
     printf 'Claude input\n' > "$FAKE_PANE"
     printf '%s\n' "$idle_state" > "$FAKE_STATE"
     printf '%s/elsewhere\tother\n%s\twork\n' "$tmp" "$tmp" > "$FAKE_SESSIONS"
