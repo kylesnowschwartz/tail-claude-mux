@@ -31,20 +31,12 @@ import {
 } from "./vocab";
 import { tier } from "./tiers";
 import {
-  findLiaisons,
   formatAge,
-  isLiaisonFinished,
-  isLiaisonWorker,
   isLiveAgent,
-  liaisonBlockRows,
-  liaisonItems,
-  jumpTargets,
-  liaisonWorkerCount,
   needsYou,
   type AttentionReason,
   type SessionAgentRef,
 } from "./attention";
-import { LiaisonBlock } from "./liaison-block";
 import { BlockRule } from "./sidebar-style";
 import { CompactSession } from "./compact-list";
 import { sessionRows, sessionWindow as sessionWindowFor, visibleAgentCounts as visibleAgentCountsFor } from "./session-list-rows";
@@ -218,27 +210,22 @@ function App() {
     return sessions.findIndex(s => s.name === name);
   });
 
-  // Wall clock for the liaison and needs ages; ticks only while either block shows.
+  // Wall clock for the needs ages; ticks only while the block shows.
   const [nowMs, setNowMs] = createSignal(Date.now());
 
-  const liaisons = createMemo(() => findLiaisons(sessions));
   const needs = createMemo(() => needsYou(sessions));
 
   createEffect(() => {
-    if (liaisons().length === 0 && needs().length === 0) return;
+    if (needs().length === 0) return;
     setNowMs(Date.now());
     const interval = setInterval(() => setNowMs(Date.now()), 1000);
     onCleanup(() => clearInterval(interval));
   });
 
-  const liaisonRows = createMemo(() =>
-    liaisons().reduce((rows, ref) => rows + liaisonBlockRows(liaisonItems(ref).length), 0));
-
-  // The needs block takes up to half of what the header and liaison blocks
-  // leave; past that it scrolls with its own ▲/▼ indicators.
+  // The needs block takes up to half of what the header leaves; past that it scrolls with its own ▲/▼ indicators.
   const [needsOffset, setNeedsOffset] = createSignal(0);
   const needsMaxRows = createMemo(() => {
-    const free = termDims().height - HEADER_ROWS - liaisonRows() - NEEDS_HEADER_ROWS;
+    const free = termDims().height - HEADER_ROWS - NEEDS_HEADER_ROWS;
     return Math.max(NEEDS_MIN_ROWS, Math.floor(free / 2));
   });
   const needsWindow = createMemo(() => scrollWindow(needs().length, needsMaxRows(), needsOffset()));
@@ -259,7 +246,7 @@ function App() {
   }
 
   const listBudgetRows = createMemo(() =>
-    Math.max(0, termDims().height - HEADER_ROWS - liaisonRows() - needsBlockRows()));
+    Math.max(0, termDims().height - HEADER_ROWS - needsBlockRows()));
 
   const visibleAgentCounts = createMemo(() =>
     visibleAgentCountsFor(displayMode(), sessions, listBudgetRows()));
@@ -383,7 +370,7 @@ function App() {
 
   /** Jump to the conversation that has needed the engineer longest. */
   function jumpToOldestNeed() {
-    const oldest = jumpTargets(sessions)[0];
+    const oldest = needsYou(sessions)[0];
     if (oldest) focusAgentPane(oldest.session.name, oldest.agent);
   }
 
@@ -833,21 +820,6 @@ function App() {
         </Show>
       </box>
 
-      {/* Liaison blocks: one per open liaison, pinned above everything else. */}
-      <box flexDirection="column" flexShrink={0}>
-        <For each={liaisons()}>
-          {(ref) => (
-            <LiaisonBlock
-              liaison={ref}
-              palette={P}
-              nowMs={nowMs}
-              items={() => liaisonItems(ref)}
-              workers={() => liaisonWorkerCount(sessions, ref.agent, ref.session.metadata?.liaisonFinished ?? [])}
-            />
-          )}
-        </For>
-      </box>
-
       {/* "Needs you": every conversation with an attention reason, oldest first. */}
       <box flexDirection="column" flexShrink={0}>
         <Show when={needs().length > 0}>
@@ -924,7 +896,6 @@ function App() {
                   panelFocus={panelFocus}
                   focusedAgentIdx={focusedAgentIdx}
                   focusedPaneId={focusedPaneId}
-                  liaisons={liaisons}
                   onAgentDismiss={onAgentDismiss}
                   onAgentFocus={onAgentFocus}
                 />
@@ -943,7 +914,6 @@ function App() {
                   panelFocus={panelFocus}
                   focusedAgentIdx={focusedAgentIdx}
                   focusedPaneId={focusedPaneId}
-                  liaisons={liaisons}
                   onAgentDismiss={onAgentDismiss}
                   onAgentFocus={onAgentFocus}
                 />
@@ -1280,8 +1250,6 @@ interface SessionCardProps {
   panelFocus: Accessor<"sessions" | "agents">;
   focusedAgentIdx: Accessor<number>;
   focusedPaneId: Accessor<string | null>;
-  /** Open liaisons; a row that one of them started shows the worker mark. */
-  liaisons: Accessor<SessionAgentRef[]>;
   onAgentDismiss: (agent: SessionData["agents"][number]) => void;
   onAgentFocus: (agent: SessionData["agents"][number]) => void;
 }
@@ -1362,8 +1330,6 @@ function SessionCard(props: SessionCardProps) {
               isSessionSelected={props.isSelected}
               isKeyboardFocused={props.isSelected && props.panelFocus() === "agents" && i() === props.focusedAgentIdx()}
               isPaneFocused={agent.paneId != null && agent.paneId === props.focusedPaneId()}
-              isLiaisonWorker={isLiaisonWorker(agent, props.liaisons())}
-              isLiaisonFinished={isLiaisonFinished(agent, props.liaisons())}
               onDismiss={() => props.onAgentDismiss(agent)}
               onFocusPane={() => props.onAgentFocus(agent)}
             />

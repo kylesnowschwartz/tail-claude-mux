@@ -8,7 +8,6 @@ import { For, Show, type Accessor } from "solid-js";
 import { TextAttributes } from "@opentui/core";
 import { lerpHex, type SessionData, type ThemePalette } from "@tcm/runtime";
 import { tier } from "./tiers";
-import { isLiaisonFinished, isLiaisonWorker, type SessionAgentRef } from "./attention";
 import { AgentListItem, liveAgentBadge, liveFirstAgents, type SessionAgent } from "./agent-row";
 
 const BOLD = TextAttributes.BOLD;
@@ -66,8 +65,6 @@ export interface CompactSessionProps {
   panelFocus: Accessor<"sessions" | "agents">;
   focusedAgentIdx: Accessor<number>;
   focusedPaneId: Accessor<string | null>;
-  /** Open liaisons; a row that one of them started shows the worker mark. */
-  liaisons: Accessor<SessionAgentRef[]>;
   onAgentDismiss: (agent: SessionAgent) => void;
   onAgentFocus: (agent: SessionAgent) => void;
 }
@@ -99,8 +96,6 @@ export function CompactSession(props: CompactSessionProps) {
               isSessionSelected={props.isSelected}
               isKeyboardFocused={props.isSelected && props.panelFocus() === "agents" && i() === props.focusedAgentIdx()}
               isPaneFocused={agent.paneId != null && agent.paneId === props.focusedPaneId()}
-              isLiaisonWorker={isLiaisonWorker(agent, props.liaisons())}
-              isLiaisonFinished={isLiaisonFinished(agent, props.liaisons())}
               onDismiss={() => props.onAgentDismiss(agent)}
               onFocusPane={() => props.onAgentFocus(agent)}
             />

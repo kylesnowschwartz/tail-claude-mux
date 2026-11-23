@@ -49,14 +49,6 @@ export const BRAND_CLAWD = ID_CLAUDE_CODE;   // header product mark
 export const BRANCH_GLYPH = "\u{F062C}";     // nf-md-source-branch
 
 
-// ── Liaison block ──
-export const LIAISON_GLYPH = "\u{F1308}";   // nf-md-account-tie-voice
-export const LIAISON_WORKER_GLYPH = "\u{F060D}"; // nf-md-subdirectory_arrow_right: a row an open liaison started
-export const LIAISON_FINISHED_GLYPH = SEV_READY;  // nf-md-check-circle-outline: a worker row the liaison reports finished and still open
-export const LIAISON_WORKERS_MARK = "↳";         // before the count of live conversations the liaison started
-/** Item glyph per priority: 1 the user's action now, 2 a report or answer due, 3 a reminder. */
-export const LIAISON_ITEM_GLYPHS = { 1: "■", 2: "▲", 3: "●" } as const;
-
 // ── "Needs you" block ──
 export const NEEDS_GLYPH = "\u{F1295}";     // nf-md-tray-alert
 export const REASON_GLYPHS = {

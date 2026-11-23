@@ -53,14 +53,13 @@ describe("needsBlockRows", () => {
   const home = (agents: AttentionAgent[]) => [{ name: "home", agents } as unknown as SessionData];
 
   test("no rows draws no block", () => {
-    expect(needsBlockRows(needsYou(home([at("liaison", "input")])).length, 4, 0)).toBe(0);
-    expect(needsBlockRows(needsYou(home([at("liaison", "finished")])).length, 4, 0)).toBe(0);
+    expect(needsBlockRows(needsYou(home([])).length, 4, 0)).toBe(0);
     expect(needsBlockRows(0, 4, 0)).toBe(0);
   });
 
-  test("the liaison's row takes no height beside a worker's", () => {
-    const rows = needsYou(home([at("liaison", "input"), at("fix-tax", "question")]));
-    expect(needsBlockRows(rows.length, 4, 0)).toBe(3);
+  test("each conversation with a reason takes one row", () => {
+    const rows = needsYou(home([at("docs", "input"), at("fix-tax", "question")]));
+    expect(needsBlockRows(rows.length, 4, 0)).toBe(4);
   });
 
   test("rows past the window add the indicator rows", () => {

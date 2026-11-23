@@ -10,7 +10,6 @@ import { lerpHex, type SessionData, type Theme } from "@tcm/runtime";
 import { AGENT_GLYPHS, SEV_ERROR, SEV_READY, SEV_STOPPED, SEV_WAITING, SEV_WORKING_SPINNER } from "./vocab";
 import { tier, type TierStyle } from "./tiers";
 import { isLiveAgent, statusLabel, type StatusLabel } from "./attention";
-import { LiaisonWorkerMarks } from "./liaison-block";
 import { statusColor } from "./sidebar-style";
 
 const SPINNERS = SEV_WORKING_SPINNER;
@@ -54,10 +53,6 @@ export interface AgentListItemProps {
   isSessionSelected: boolean;
   isKeyboardFocused: boolean;
   isPaneFocused: boolean;
-  /** An open liaison started this conversation; the row shows the worker mark before its name. */
-  isLiaisonWorker: boolean;
-  /** The liaison that started this conversation reports it finished and still open; the row shows a grey mark after the worker mark. */
-  isLiaisonFinished?: boolean;
   onDismiss: () => void;
   onFocusPane: () => void;
 }
@@ -161,11 +156,8 @@ export function AgentListItem(props: AgentListItemProps) {
             </Show>
             {/* Session name from the agent-ouija registry when known;
                 the 4-char uuid suffix is the fallback identity. */}
-            <Show when={props.isLiaisonWorker}>
-              <LiaisonWorkerMarks palette={P} finished={!!props.isLiaisonFinished} finishedStyle={focusTinted(tier("muted", P()))} />
-            </Show>
             <Show when={props.agent.threadName || props.agent.threadId}>
-              <span style={focusTinted(supportingStyle())}>{props.isLiaisonWorker ? " " : "  "}{props.agent.threadName || shortThreadId(props.agent.threadId!)}</span>
+              <span style={focusTinted(supportingStyle())}>{"  "}{props.agent.threadName || shortThreadId(props.agent.threadId!)}</span>
             </Show>
           </text>
           <text flexShrink={0} style={{ fg: color() }}>

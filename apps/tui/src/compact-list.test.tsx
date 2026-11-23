@@ -44,7 +44,6 @@ async function renderList(opts: ListOpts): Promise<{ lines: string[]; frame: Cap
           panelFocus={() => "sessions"}
           focusedAgentIdx={() => 0}
           focusedPaneId={() => null}
-          liaisons={() => []}
           onAgentDismiss={() => {}}
           onAgentFocus={() => {}}
         />
@@ -73,7 +72,7 @@ function fgAt(frame: CapturedFrame, line: number, ch: string): RGBA | undefined 
 
 const glyph = AGENT_GLYPHS["claude-code"]!;
 const TWO = [
-  session("tail-claude-mux", [agent("fix-liaison-jump"), agent("sidebar-mode")]),
+  session("tail-claude-mux", [agent("fix-needs-jump"), agent("sidebar-mode")]),
   session("dotfiles", [agent("tmux-nav")]),
 ];
 
@@ -83,7 +82,7 @@ describe("compact session list", () => {
     expect(lines.length).toBe(5);
     expect(lines[0]).toMatch(/^tail-claude-mux ─+ 2$/);
     expect(lines[3]).toMatch(/^dotfiles ─+ 1$/);
-    expect(lines[1]).toContain(`${glyph}  fix-liaison-jump`);
+    expect(lines[1]).toContain(`${glyph}  fix-needs-jump`);
     expect(lines[1]!.endsWith(SEV_READY)).toBe(true);
     // Count and icon share the right-edge column (paddingRight 1).
     for (const i of [0, 1, 2, 3, 4]) expect([...lines[i]!].length).toBe(32);
