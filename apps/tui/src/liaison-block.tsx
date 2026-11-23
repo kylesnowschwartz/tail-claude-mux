@@ -1,7 +1,6 @@
 /**
  * The sidebar's liaison block: the rows pinned at the top for one open
- * liaison, plus the status colours and the closing rule it shares with the
- * rest of the sidebar.
+ * liaison.
  *
  * The block is dark at rest: one dim title row. Colour appears only for an
  * item that needs the engineer, in the colour of its priority.
@@ -11,6 +10,7 @@ import { For, Show, type Accessor } from "solid-js";
 import type { LiaisonItem, ThemePalette } from "@tcm/runtime";
 import { LIAISON_FINISHED_GLYPH, LIAISON_GLYPH, LIAISON_ITEM_GLYPHS, LIAISON_WORKER_GLYPH, LIAISON_WORKERS_MARK } from "./vocab";
 import { tier, type TierStyle } from "./tiers";
+import { BlockRule } from "./sidebar-style";
 import {
   formatAge,
   LIAISON_ITEM_PRIORITY,
@@ -19,14 +19,6 @@ import {
   type SessionAgentRef,
   type StatusLabel,
 } from "./attention";
-
-export function statusColor(label: StatusLabel, p: ThemePalette): string {
-  if (label === "working") return p.blue;
-  if (label === "waiting") return p.yellow;
-  if (label === "ready") return p.green;
-  if (label === "error") return p.red;
-  return p.surface2;
-}
 
 /** Colour per item priority: the theme's error, warning, and info colours. */
 function priorityColor(priority: 1 | 2 | 3, p: ThemePalette): string {
@@ -98,14 +90,5 @@ export function LiaisonWorkerMarks(props: { palette: Accessor<ThemePalette>; fin
         <span style={props.finishedStyle}>{" "}{LIAISON_FINISHED_GLYPH}</span>
       </Show>
     </>
-  );
-}
-
-/** Closing rule that sets a top block apart from what follows. */
-export function BlockRule(props: { palette: Accessor<ThemePalette> }) {
-  return (
-    <box height={1} flexShrink={0} paddingLeft={1} paddingRight={1}>
-      <text wrapMode="none" style={{ fg: props.palette().surface2 }}>{"─".repeat(200)}</text>
-    </box>
   );
 }

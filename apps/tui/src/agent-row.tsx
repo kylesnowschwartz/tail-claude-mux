@@ -10,7 +10,8 @@ import { lerpHex, type SessionData, type Theme } from "@tcm/runtime";
 import { AGENT_GLYPHS, SEV_ERROR, SEV_READY, SEV_STOPPED, SEV_WAITING, SEV_WORKING_SPINNER } from "./vocab";
 import { tier, type TierStyle } from "./tiers";
 import { isLiveAgent, statusLabel, type StatusLabel } from "./attention";
-import { LiaisonWorkerMarks, statusColor } from "./liaison-block";
+import { LiaisonWorkerMarks } from "./liaison-block";
+import { statusColor } from "./sidebar-style";
 
 const SPINNERS = SEV_WORKING_SPINNER;
 const BOLD = TextAttributes.BOLD;

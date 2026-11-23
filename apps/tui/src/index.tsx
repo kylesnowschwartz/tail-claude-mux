@@ -44,7 +44,8 @@ import {
   type AttentionReason,
   type SessionAgentRef,
 } from "./attention";
-import { BlockRule, LiaisonBlock } from "./liaison-block";
+import { LiaisonBlock } from "./liaison-block";
+import { BlockRule } from "./sidebar-style";
 import { CompactSession } from "./compact-list";
 import { sessionRows, sessionWindow as sessionWindowFor, visibleAgentCounts as visibleAgentCountsFor } from "./session-list-rows";
 import { AgentListItem, liveAgentBadge, liveFirstAgents, type SessionAgent } from "./agent-row";
