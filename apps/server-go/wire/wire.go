@@ -110,15 +110,6 @@ type AgentEvent struct {
 	StatusSince    int64  `json:"statusSince,omitempty"`
 	Attention      string `json:"attention,omitempty"`
 	AttentionSince int64  `json:"attentionSince,omitempty"`
-	// The liaison link, read from three options on the conversation's
-	// pane: the work ID of the hand-out that started the conversation, and
-	// the conversation ID of the liaison that started it. They are an
-	// unverified claim for display. The tracker serves both only for a
-	// live conversation whose own thread ID equals LiaisonWorkerThreadID,
-	// the conversation ID the pane names as the worker.
-	LiaisonWorkID         string `json:"liaisonWorkId,omitempty"`
-	LiaisonParentThreadID string `json:"liaisonParentThreadId,omitempty"`
-	LiaisonWorkerThreadID string `json:"-"`
 }
 
 // MetadataStatus is shared.ts MetadataStatus (programmatic API).
@@ -150,22 +141,11 @@ type MetadataLogEntry struct {
 	TS      int64  `json:"ts"`
 }
 
-// LiaisonItem is shared.ts LiaisonItem: one thing a liaison reports as
-// waiting on the engineer, set through POST /set-liaison-items. Display only.
-type LiaisonItem struct {
-	Kind  string `json:"kind"`
-	Title string `json:"title"`
-	Since int64  `json:"since"` // epoch ms
-}
-
-// SessionMetadata is shared.ts SessionMetadata. LiaisonItems and
-// LiaisonFinished come from POST /set-liaison-items and are absent when empty.
+// SessionMetadata is shared.ts SessionMetadata.
 type SessionMetadata struct {
-	Status          *MetadataStatus    `json:"status"`
-	Progress        *MetadataProgress  `json:"progress"`
-	Logs            []MetadataLogEntry `json:"logs"`
-	LiaisonItems    []LiaisonItem      `json:"liaisonItems,omitempty"`
-	LiaisonFinished []string           `json:"liaisonFinished,omitempty"`
+	Status   *MetadataStatus    `json:"status"`
+	Progress *MetadataProgress  `json:"progress"`
+	Logs     []MetadataLogEntry `json:"logs"`
 }
 
 // SessionData is shared.ts SessionData: one mux session row.

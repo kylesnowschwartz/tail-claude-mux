@@ -239,10 +239,6 @@ func (s *Scanner) Scan(panes []tmux.Pane) map[string][]tracker.PanePresence {
 				PaneID:    p.ID,
 				PID:       agentPid,
 				PaneTitle: p.Title,
-
-				LiaisonWorkID:         p.LiaisonWorkID,
-				LiaisonParentThreadID: p.LiaisonParentThreadID,
-				LiaisonWorkerThreadID: p.LiaisonWorkerThreadID,
 			}
 			if p.WindowIndex >= 0 {
 				wi := p.WindowIndex

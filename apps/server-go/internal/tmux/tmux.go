@@ -269,13 +269,6 @@ type Pane struct {
 	WindowHeight int    // window_height rows, -1 when unparseable
 	Ignored      bool   // @tcm-ignore option on the pane's session
 	Title        string
-	// The liaison link: three pane options that claim a liaison started
-	// the conversation in this pane. Each holds the option's value when it
-	// has the valid form, and "" otherwise. Any program can set the
-	// options, so the values are a claim for display only.
-	LiaisonWorkID         string // @liaison-work: "w" and 1 to 6 digits
-	LiaisonParentThreadID string // @liaison-parent: the liaison's conversation ID
-	LiaisonWorkerThreadID string // @liaison-worker: the started conversation's ID
 }
 
 // Managed reports whether the pane is tcm-managed (sidebar or companion)
@@ -296,20 +289,15 @@ func ManagedPanes(panes []Pane) []Pane {
 }
 
 // paneHeadFields is the count of list-panes fields that precede the
-// liaison option values. None of them can hold the separator or a line
-// break.
-const paneHeadFields = 20
+// title. None of them can hold the separator or a line break.
+const paneHeadFields = 17
 
 // ListAllPanes lists every pane on the server. The ignore field uses the
 // same #{?,1,0} conditional as listSessions so both parsers agree on 1/0
 // whatever value the option was set to.
 //
-// The three liaison options and the title close the row, because their
-// values can hold any byte. tmux prints a tab or a line break in an option
-// value as is, so each option's byte length (#{n:...}) goes ahead of the
-// values and the parser takes each value by length. Title is the last
-// field: it runs to the end of the line. The n: modifier needs tmux 3.2 or
-// later.
+// Title is the last field: it runs to the end of the line, so a title
+// that holds the separator keeps it.
 func (t *Tmux) ListAllPanes() []Pane {
 	out, err := t.Run("list-panes", "-a", "-F",
 		"#{session_name}"+sep+"#{pane_id}"+sep+"#{pane_pid}"+sep+
@@ -318,11 +306,7 @@ func (t *Tmux) ListAllPanes() []Pane {
 			"#{window_index}"+sep+"#{pane_index}"+sep+"#{window_id}"+sep+
 			"#{pane_left}"+sep+"#{pane_right}"+sep+"#{pane_width}"+sep+
 			"#{window_width}"+sep+"#{pane_height}"+sep+"#{window_height}"+sep+
-			"#{?"+IgnoreOption+",1,0}"+sep+
-			"#{n:"+LiaisonWorkOption+"}"+sep+"#{n:"+LiaisonParentOption+"}"+sep+
-			"#{n:"+LiaisonWorkerOption+"}"+sep+
-			"#{"+LiaisonWorkOption+"}"+sep+"#{"+LiaisonParentOption+"}"+sep+
-			"#{"+LiaisonWorkerOption+"}"+sep+"#{pane_title}")
+			"#{?"+IgnoreOption+",1,0}"+sep+"#{pane_title}")
 	if err != nil {
 		log.Printf("tmux: list-panes failed: %v", err)
 		return nil
@@ -337,9 +321,7 @@ func (t *Tmux) ListAllPanes() []Pane {
 	return panes
 }
 
-// parsePanes reads list-panes output row by row. A row is one line, except
-// that a liaison option value holding a line break carries the row onto the
-// following lines; the byte lengths in the head say where each value ends.
+// parsePanes reads list-panes output row by row, one line per row.
 func parsePanes(out string) (panes []Pane, dropped int, firstDropped string) {
 	rest := out
 	for rest != "" {
@@ -374,40 +356,28 @@ func parsePane(line, rest string) (p Pane, next string, ok bool) {
 	if err != nil {
 		return Pane{}, "", false
 	}
-	// The option values start where the head ends, and can run past the
-	// end of the line.
+	// The title starts where the head ends and runs to the end of the line.
 	body := rest[len(line)-len(f[paneHeadFields]):]
-	var values [3]string
-	for i := range values {
-		n, err := strconv.Atoi(f[17+i])
-		if err != nil || n < 0 || n >= len(body) || body[n] != sep[0] {
-			return Pane{}, "", false
-		}
-		values[i], body = body[:n], body[n+1:]
-	}
 	title, next, _ := strings.Cut(body, "\n")
 	return Pane{
-		Session:               f[0],
-		ID:                    f[1],
-		PID:                   pid,
-		Dir:                   f[3],
-		WindowActive:          f[4] == "1",
-		Sidebar:               f[5] == "1" || title == SidebarPaneTitle,
-		Companion:             f[6] == "1" || title == CompanionPaneTitle,
-		WindowIndex:           atoiOr(f[7], -1),
-		PaneIndex:             atoiOr(f[8], -1),
-		WindowID:              f[9],
-		Left:                  atoiOr(f[10], -1),
-		Right:                 atoiOr(f[11], -1),
-		Width:                 atoiOr(f[12], -1),
-		WindowWidth:           atoiOr(f[13], -1),
-		Height:                atoiOr(f[14], -1),
-		WindowHeight:          atoiOr(f[15], -1),
-		Ignored:               f[16] == "1",
-		Title:                 title,
-		LiaisonWorkID:         validOr(values[0], liaisonWorkIDForm),
-		LiaisonParentThreadID: validOr(values[1], conversationIDForm),
-		LiaisonWorkerThreadID: validOr(values[2], conversationIDForm),
+		Session:      f[0],
+		ID:           f[1],
+		PID:          pid,
+		Dir:          f[3],
+		WindowActive: f[4] == "1",
+		Sidebar:      f[5] == "1" || title == SidebarPaneTitle,
+		Companion:    f[6] == "1" || title == CompanionPaneTitle,
+		WindowIndex:  atoiOr(f[7], -1),
+		PaneIndex:    atoiOr(f[8], -1),
+		WindowID:     f[9],
+		Left:         atoiOr(f[10], -1),
+		Right:        atoiOr(f[11], -1),
+		Width:        atoiOr(f[12], -1),
+		WindowWidth:  atoiOr(f[13], -1),
+		Height:       atoiOr(f[14], -1),
+		WindowHeight: atoiOr(f[15], -1),
+		Ignored:      f[16] == "1",
+		Title:        title,
 	}, next, true
 }
 

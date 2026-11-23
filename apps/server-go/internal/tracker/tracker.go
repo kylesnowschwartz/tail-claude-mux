@@ -71,38 +71,6 @@ type PanePresence struct {
 	PaneTitle   string
 	ThreadID    string
 	ThreadName  string
-	// The pane's liaison link options, each "" when unset or not valid.
-	LiaisonWorkID         string
-	LiaisonParentThreadID string
-	LiaisonWorkerThreadID string
-}
-
-// stampLiaisonLink copies the pane's liaison link onto its row and reports
-// whether the link the row serves changed.
-func stampLiaisonLink(ev *wire.AgentEvent, pa PanePresence) bool {
-	before := servedLiaisonLink(*ev)
-	ev.LiaisonWorkID = pa.LiaisonWorkID
-	ev.LiaisonParentThreadID = pa.LiaisonParentThreadID
-	ev.LiaisonWorkerThreadID = pa.LiaisonWorkerThreadID
-	return servedLiaisonLink(*ev) != before
-}
-
-// servedLiaisonLink returns the row with the liaison link it may serve: the
-// link stays only on a live conversation that the pane names as the worker.
-// A shell left in the pane, an exited conversation, and another conversation
-// in the same pane get none.
-func servedLiaisonLink(ev wire.AgentEvent) [2]string {
-	if ev.ThreadID == "" || ev.ThreadID != ev.LiaisonWorkerThreadID || ev.Liveness == wire.LivenessExited {
-		return [2]string{}
-	}
-	return [2]string{ev.LiaisonWorkID, ev.LiaisonParentThreadID}
-}
-
-// serveLiaisonLink clears the liaison link on a copy of a row that may not
-// serve it.
-func serveLiaisonLink(ev *wire.AgentEvent) {
-	link := servedLiaisonLink(*ev)
-	ev.LiaisonWorkID, ev.LiaisonParentThreadID = link[0], link[1]
 }
 
 // ProbeVerdict is a watcher's authoritative liveness answer.
@@ -357,13 +325,6 @@ func (t *Tracker) ApplyEvent(event wire.AgentEvent, seed bool) {
 		if event.PaneTitle == "" {
 			event.PaneTitle = prev.PaneTitle
 		}
-		if event.LiaisonWorkerThreadID == "" {
-			// Only a pane scan reads the liaison link; an event from a
-			// watcher keeps what the last scan read.
-			event.LiaisonWorkID = prev.LiaisonWorkID
-			event.LiaisonParentThreadID = prev.LiaisonParentThreadID
-			event.LiaisonWorkerThreadID = prev.LiaisonWorkerThreadID
-		}
 		if event.Subagent == "" {
 			event.Subagent = prev.Subagent
 		}
@@ -478,11 +439,6 @@ func adoptPane(dst *wire.AgentEvent, src *wire.AgentEvent) {
 	if dst.PaneTitle == "" {
 		dst.PaneTitle = src.PaneTitle
 	}
-	if dst.LiaisonWorkerThreadID == "" {
-		dst.LiaisonWorkID = src.LiaisonWorkID
-		dst.LiaisonParentThreadID = src.LiaisonParentThreadID
-		dst.LiaisonWorkerThreadID = src.LiaisonWorkerThreadID
-	}
 }
 
 // GetState returns the highest-priority instance (ties: newest ts, then
@@ -510,7 +466,6 @@ func (t *Tracker) GetState(session string) *wire.AgentEvent {
 		return nil
 	}
 	out := *best
-	serveLiaisonLink(&out)
 	return &out
 }
 
@@ -547,7 +502,6 @@ func (t *Tracker) GetEvent(session, agent, threadID, paneID string) *wire.AgentE
 		return nil
 	}
 	out := *hit
-	serveLiaisonLink(&out)
 	return &out
 }
 
@@ -578,7 +532,6 @@ func (t *Tracker) GetAgents(session string) []wire.AgentEvent {
 		if t.unseen[unseenKey(session, key)] {
 			e.Unseen = true
 		}
-		serveLiaisonLink(&e)
 		out = append(out, e)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -890,9 +843,6 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 			bestEv.WindowIndex = pa.WindowIndex
 			bestEv.PaneIndex = pa.PaneIndex
 			bestEv.PaneTitle = pa.PaneTitle // never drives a broadcast
-			if stampLiaisonLink(bestEv, pa) {
-				wasDifferent = true
-			}
 			if pa.ThreadName != "" {
 				// Registry name is the user-facing one (renamable live);
 				// it outranks the transcript-derived fallback.
@@ -949,7 +899,6 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 				PID:         pa.PID,
 				PaneTitle:   pa.PaneTitle,
 			}
-			stampLiaisonLink(si[sk], pa)
 			changed = true
 		} else {
 			wasDifferent := existing.PaneID != pa.PaneID ||
@@ -964,9 +913,6 @@ func (t *Tracker) ApplyPanePresence(session string, paneAgents []PanePresence) b
 			existing.PaneIndex = pa.PaneIndex
 			existing.PID = pa.PID
 			existing.PaneTitle = pa.PaneTitle
-			if stampLiaisonLink(existing, pa) {
-				wasDifferent = true
-			}
 			if threadName != "" {
 				existing.ThreadName = threadName
 			}
