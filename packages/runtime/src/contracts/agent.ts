@@ -69,15 +69,6 @@ export interface AgentEvent {
    *  it in the terminal-prune window. Set by watchers when the underlying
    *  agent session has definitively ended (e.g. SessionEnd hook). */
   ended?: boolean;
-  /** Work ID of the liaison hand-out that started this conversation: `w` and
-   *  1 to 6 digits. Read from the `@liaison-work` option on the conversation's
-   *  tmux pane. Present only when the pane's `@liaison-worker` option equals
-   *  this conversation's `threadId`. An unverified claim, for display only. */
-  liaisonWorkId?: string;
-  /** `threadId` of the liaison that started this conversation. Read from the
-   *  `@liaison-parent` pane option under the same condition as
-   *  `liaisonWorkId`. An unverified claim, for display only. */
-  liaisonParentThreadId?: string;
 }
 
 export const TERMINAL_STATUSES = new Set<AgentStatus>(["done", "error", "interrupted"]);

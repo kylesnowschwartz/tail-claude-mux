@@ -133,28 +133,10 @@ export interface MetadataLogEntry {
   ts: number;
 }
 
-/**
- * Kinds of liaison item. Callers of `POST /set-liaison-items` send every kind
- * but "asks", which the sidebar derives from the liaison's own conversation.
- */
-export type LiaisonItemKind = "asks" | "blocked" | "no_report" | "answer" | "reminder";
-
-/** One thing a liaison reports as waiting on the engineer. Display only. */
-export interface LiaisonItem {
-  kind: LiaisonItemKind;
-  title: string;
-  /** Epoch ms when the item started. */
-  since: number;
-}
-
 export interface SessionMetadata {
   status: MetadataStatus | null;
   progress: MetadataProgress | null;
   logs: MetadataLogEntry[];
-  /** Items from `POST /set-liaison-items`; absent when empty or older than ten minutes. */
-  liaisonItems?: LiaisonItem[];
-  /** Conversation IDs the liaison reports as finished and still open; absent when empty. */
-  liaisonFinished?: string[];
 }
 
 export type ClientCommand =
