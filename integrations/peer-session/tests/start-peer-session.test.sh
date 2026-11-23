@@ -114,11 +114,11 @@ else:
         launch = calls[2]
     expected = "pi" if pi else read + "claude --permission-mode auto"
     if case == "name":
-        expected += " -n liaison/s4-agent-test"
+        expected += " -n peer/s4-agent-test"
     if case == "session-id":
         expected += " --session-id 123e4567-e89b-42d3-a456-426614174000"
     if case == "session-id-name":
-        expected += " --session-id 123e4567-e89b-42d3-a456-426614174000 -n liaison/x"
+        expected += " --session-id 123e4567-e89b-42d3-a456-426614174000 -n peer/x"
     if not pi:
         expected += task
     require(launch == ["send-keys", "-t", "%128", expected, "Enter"],
@@ -206,12 +206,12 @@ run "$tmp/prompt" --agent pi; check pi-timeout
 run "$tmp/prompt" --agent pi --permission-mode auto; check pi-mode
 run "$tmp/prompt" --agent codex; check bad-agent
 printf 'Claude input\n' > "$FAKE_PANE"
-run "$tmp/prompt" --name liaison/s4-agent-test; check name
+run "$tmp/prompt" --name peer/s4-agent-test; check name
 run "$tmp/prompt" --name 'bad name; rm'; check bad-name
 run "$tmp/prompt" --name '-leading'; check bad-name
-run "$tmp/prompt" --agent pi --name liaison/x; check pi-name
+run "$tmp/prompt" --agent pi --name peer/x; check pi-name
 run "$tmp/prompt" --session-id 123e4567-e89b-42d3-a456-426614174000; check session-id
-run "$tmp/prompt" --session-id 123e4567-e89b-42d3-a456-426614174000 --name liaison/x; check session-id-name
+run "$tmp/prompt" --session-id 123e4567-e89b-42d3-a456-426614174000 --name peer/x; check session-id-name
 for bad_id in not-a-uuid 123E4567-E89B-42D3-A456-426614174000 123e4567-e89b-42d3-a456-42661417400A 123e4567-e89b-42d3-a456-426614174000x 123e4567 '' ' 123e4567-e89b-42d3-a456-426614174000' '{123e4567-e89b-42d3-a456-426614174000}'; do
     run "$tmp/prompt" --session-id "$bad_id"; check bad-id
 done
@@ -367,7 +367,7 @@ golden_cases() {
     printf '%s\n' "$idle_state" > "$FAKE_STATE"
     printf '%s/elsewhere\tother\n%s\twork\n' "$tmp" "$tmp" > "$FAKE_SESSIONS"
     one attach-match --attach-existing
-    one name-id --name liaison/x --session-id 123e4567-e89b-42d3-a456-426614174000
+    one name-id --name peer/x --session-id 123e4567-e89b-42d3-a456-426614174000
 }
 golden="$root/tests/no-option-calls.golden"
 if [[ -n "${RECORD_GOLDEN_FROM:-}" ]]; then

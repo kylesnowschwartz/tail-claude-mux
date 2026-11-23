@@ -1,6 +1,6 @@
 {
   "name": "peer-session",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Send work to another repository now, by starting Claude Code or the pi coding agent there, or later, as a love-letters note, and receive its report through cross-session messaging or love-letters.",
   "author": {"name": "kylesnowschwartz"}
 }

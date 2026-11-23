@@ -25,26 +25,9 @@ The list has two layouts. `v` toggles between them, and the choice is saved as `
 - The focused session's rule in the compact list is drawn in the focus colour.
 - The compact list is centred vertically in the space below the header and the blocks above it. Session cards sit at the bottom of the column.
 
-## Liaison Block
-
-While a Claude Code conversation named exactly `liaison`, or starting with `liaison/`, is open, a block is pinned at the top of the sidebar, one per liaison (`liaison/work` and `liaison/personal` give two). With no liaison open, the block is absent. The block stays grey and still while all is normal, and takes colour only for an item that needs the engineer.
-
-- Title row: the liaison glyph and `LIAISON` plus the rest of the name, both dim. While conversations that this liaison started are open and not reported finished in its `liaisonFinished` list, `↳N` at the right gives their count; at zero it shows nothing. A finished worker keeps its finished mark on its own row. With items present, the title takes the colour of the highest priority among them.
-- Item rows: one row per item, at most three: a glyph in a fixed column, the item's title cut to the width, and its age at the right, such as `12m`. When more items exist, the last row ends with `+K`, the count of items not shown. Items run by priority, then oldest first.
-
-| Priority | Glyph | Colour | Kinds |
-|----------|-------|--------|-------|
-| 1 | `■` | red | `asks`, `blocked` |
-| 2 | `▲` | yellow | `no_report`, `answer` |
-| 3 | `●` | blue | `reminder` |
-
-The `asks` item comes from the liaison's own conversation: while it waits on a permission or a question, or its turn has failed, the block shows one `asks` item titled `permission`, `question`, or `error`, aged from when that reason started. It is always the first item, so the three-row limit never hides it. Every other item comes from `POST /set-liaison-items`; see [programmatic-api.md](./programmatic-api.md).
-
-A conversation that an open liaison started shows a blue arrow mark before its name in its session card. The row stays in its place in the card. The mark and the count come from the `liaisonParentThreadId` field in `GET /state`, an unverified claim for display; see [programmatic-api.md](./programmatic-api.md). When the liaison reports that conversation as finished and still open, a grey check mark follows the arrow.
-
 ## Needs You Block
 
-Under the liaison block, and also with no liaison open, a block headed `NEEDS YOU (n)` lists every live conversation with an attention reason, oldest first; a conversation that has ended or whose process is gone is left out, as it is from the liaison block. An open liaison's own conversation is left out too: at its prompt or done it is at rest, and its `permission`, `question` and `error` reasons show as the `asks` item in its liaison block. With no rows the block is not drawn. Each row shows: reason glyph, conversation name, reason, and age. Reasons are `permission`, `question`, `input`, `error`, and `finished`; `permission` and `question` show the name in bold. Sidebars narrower than 25 columns leave out the reason word. No timer removes a row. When the rows need more than half of the free height, the block shows `▲ N more` / `▼ N more` rows; click one to scroll the block. Click a row to jump to that conversation.
+A block headed `NEEDS YOU (n)` lists every live conversation with an attention reason, oldest first; a conversation that has ended or whose process is gone is left out. With no rows the block is not drawn. Each row shows: reason glyph, conversation name, reason, and age. Reasons are `permission`, `question`, `input`, `error`, and `finished`; `permission` and `question` show the name in bold. Sidebars narrower than 25 columns leave out the reason word. No timer removes a row. When the rows need more than half of the free height, the block shows `▲ N more` / `▼ N more` rows; click one to scroll the block. Click a row to jump to that conversation.
 
 ## Detail Panel
 
@@ -91,7 +74,7 @@ The focused session detail panel can show:
 | `Tab` | Cycle to next session |
 | `Shift+Tab` | Cycle to previous session |
 | `1`-`9` | Switch to session by visible index |
-| `a` | Jump to the conversation that has waited longest, among the "needs you" rows and any liaison whose own conversation has an `asks` item: switch to its session and focus its pane; does nothing when none waits |
+| `a` | Jump to the conversation that has waited longest among the "needs you" rows: switch to its session and focus its pane; does nothing when none waits |
 | `Alt+Up` | Move focused session up in persisted order |
 | `Alt+Down` | Move focused session down in persisted order |
 | `n`, `c` | Create a new session |

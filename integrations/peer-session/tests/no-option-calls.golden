@@ -64,6 +64,6 @@ curl
 == name-id 0
 ["has-session", "-t", "=peer"]
 ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "peer", "-n", "claude", "-x", "200", "-y", "50", "-c", "TMP"]
-["send-keys", "-t", "%128", "peer_task=\"$(cat -- 'TMP/prompt')\" && [ -n \"$peer_task\" ] && claude --permission-mode auto --session-id 123e4567-e89b-42d3-a456-426614174000 -n liaison/x -- \"$peer_task\"", "Enter"]
+["send-keys", "-t", "%128", "peer_task=\"$(cat -- 'TMP/prompt')\" && [ -n \"$peer_task\" ] && claude --permission-mode auto --session-id 123e4567-e89b-42d3-a456-426614174000 -n peer/x -- \"$peer_task\"", "Enter"]
 ["capture-pane", "-p", "-t", "%128"]
 curl

@@ -95,39 +95,6 @@ curl -sS -X POST http://127.0.0.1:7391/notify \
   -d '{"session":"api","message":"Deploy complete","tone":"success","source":"cd"}'
 ```
 
-### `POST /set-liaison-items`
-
-Replace the items and finished conversations that the liaison block shows for a tmux session. Send the liaison's tmux session name. Items belong to the tmux session, not to a conversation: one tmux session holds one liaison, and every liaison block for that session shows the same set. A set sent for a session that does not exist is dropped at the next state build.
-
-| Field | Type | Rule |
-|-------|------|------|
-| `session` | string | Required, not empty. |
-| `items` | array, at most 20 | Each item has `kind`, `title`, and `since`. |
-| `items[].kind` | string | One of `blocked`, `no_report`, `answer`, `reminder`. The kind `asks` is refused: the sidebar makes it from the liaison's own conversation. |
-| `items[].title` | string | Folded to one line: line breaks and tabs become spaces, other control characters and format characters (such as direction overrides and zero-width characters) are removed, and the title is cut to 80 characters. A title that is empty after this is refused. |
-| `items[].since` | string, RFC 3339 time | When the item started. Refused when more than one minute ahead of the server clock or more than 30 days behind it. |
-| `finished` | array of strings, at most 20 | Conversation IDs, each a lower-case UUID, of conversations the liaison started that have finished and are still open. The sidebar marks each such row finished and leaves it out of the liaison block's `↳N` count. |
-
-A request with any bad field is refused whole with `400`; on success the server answers `204`. Empty `items` and `finished` lists clear the set. The server keeps the set in memory with the time it arrived and drops it 10 minutes later, so a liaison that stops sending shows nothing stale; send the set again to keep it.
-
-```sh
-curl -sS -X POST http://127.0.0.1:7391/set-liaison-items \
-  -H 'content-type: application/json' \
-  -d '{"session":"home","items":[{"kind":"blocked","title":"deploy waits on a production key","since":"2026-11-16T08:50:00Z"}],"finished":["0f8fad5b-d9cb-469f-a165-70867728950e"]}'
-```
-
-`GET /state` and the websocket push carry the set in the session's `metadata`, as `liaisonItems` (with `since` in epoch milliseconds) and `liaisonFinished`. Each field is absent when empty or expired:
-
-```json
-"metadata": {
-  "status": null, "progress": null, "logs": [],
-  "liaisonItems": [{ "kind": "blocked", "title": "deploy waits on a production key", "since": 1794819000000 }],
-  "liaisonFinished": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
-}
-```
-
-**These values are display only.** Any program on this machine can set them, and tcm does not check them. No program may route work, grant anything, or change a record by them.
-
 ### `GET /state`: attention fields
 
 Each conversation in `sessions[].agents[]` (and `sessions[].agentState`) carries these optional fields; `attention` and `attentionSince` appear only when it needs the engineer:
@@ -151,45 +118,7 @@ curl -sS http://127.0.0.1:7391/state \
   | jq '[.sessions[].agents[] | select(.attention) | {threadName, attention, attentionSince}] | sort_by(.attentionSince)'
 ```
 
-The sidebar's "needs you" block lists the same conversations, oldest first, except an open liaison's own conversation. The liaison block shows an `asks` item while the liaison's own conversation has the reason `permission`, `question`, or `error`.
-
-### `GET /state`: liaison link fields
-
-A liaison is a long-lived conversation that starts other conversations and gives each one a written task. The liaison's hand-out command sets three options on the tmux pane of a conversation it starts:
-
-| Pane option | Value |
-|-------------|-------|
-| `@liaison-work` | The work ID of the hand-out: `w` and 1 to 6 digits, such as `w12`. |
-| `@liaison-parent` | The conversation ID of the liaison. |
-| `@liaison-worker` | The conversation ID of the started conversation. |
-
-tcm reads the three options and writes none. Each conversation in `sessions[].agents[]` (and `sessions[].agentState`) carries these optional fields:
-
-| Field | Type | Meaning |
-|-------|------|---------|
-| `liaisonWorkId` | string | The value of `@liaison-work`. |
-| `liaisonParentThreadId` | string | The value of `@liaison-parent`. It has the form of a `threadId`. |
-
-```json
-{ "threadId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "liaisonWorkId": "w12", "liaisonParentThreadId": "11111111-2222-4333-8444-555555555555" }
-```
-
-A field is absent unless all of these are true:
-
-- Its option has the valid form. A work ID is `w` and 1 to 6 digits. A conversation ID is a UUID: 8-4-4-4-12 lower-case hexadecimal digits. A value of any other form, or one that holds a tab or a line break, counts as unset.
-- The pane's `@liaison-worker` has the valid form and equals the conversation's own `threadId`.
-- The conversation's process is alive.
-
-A shell that stays in the pane after the conversation ends, and another conversation that starts in the same pane, get neither field.
-
-**The fields are an unverified claim, for display only.** Any program on this machine can set the three pane options, and tcm does not check them against the liaison's record of its work. No program may use the fields or the options to route work, to grant anything, or to change a record. The liaison's own work record is the only source for which work is open.
-
-The sidebar shows a mark before the name of each conversation whose `liaisonParentThreadId` equals the `threadId` of an open liaison, and that liaison's block shows the count of such conversations.
-
-```sh
-curl -sS http://127.0.0.1:7391/state \
-  | jq '[.sessions[].agents[] | select(.liaisonParentThreadId) | {threadName, liaisonWorkId, liaisonParentThreadId}]'
-```
+The sidebar's "needs you" block lists the same conversations, oldest first.
 
 ## How It Renders
 
@@ -219,8 +148,7 @@ curl -sS http://127.0.0.1:7391/state \
 
 ## Retention
 
-- Status, progress, and liaison items are in-memory only — cleared on server restart.
-- Liaison items and finished IDs are dropped 10 minutes after they arrive.
+- Status and progress are in-memory only — cleared on server restart.
 - Logs are capped at 50 entries per session (oldest are dropped).
 - Metadata for deleted sessions is auto-pruned.
 - Messages are truncated: status at 100 chars, logs at 500 chars.
