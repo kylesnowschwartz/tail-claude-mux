@@ -603,6 +603,119 @@ func TestScanStateForPidClassifiesCompletedRollout(t *testing.T) {
 	}
 }
 
+func writeRolloutFile(t *testing.T, path, entries string, modTime time.Time) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(entries), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, modTime, modTime); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeIndexLines(t *testing.T, path string, lines ...string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestThreadIDFromPathReadsFirstUUID(t *testing.T) {
+	for path, want := range map[string]string{
+		"/s/rollout-2026-11-25T10-14-00-01a20f5b-c218-7093-bcbf-279dd64eb09c_01a20f68-8ef1-7ca2-8ac2-a77858a5a110.jsonl": "01a20f5b-c218-7093-bcbf-279dd64eb09c",
+		"/s/rollout-2026-07-10T00-00-00-12345678-1234-1234-1234-123456789abc.jsonl":                                      "12345678-1234-1234-1234-123456789abc",
+		"/s/notes.jsonl": "",
+	} {
+		if got := threadIDFromPath(path); got != want {
+			t.Errorf("threadIDFromPath(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
+
+func TestScanStateForPidFallsBackToPaneTitle(t *testing.T) {
+	dir := resolvedTempDir(t)
+	sessions := filepath.Join(dir, "sessions")
+	threadID := "01a20f5b-c218-7093-bcbf-279dd64eb09c"
+	now := time.Now()
+	older := filepath.Join(sessions, "2026", "11", "24", "rollout-2026-11-24T09-00-00-"+threadID+".jsonl")
+	newer := filepath.Join(sessions, "2026", "11", "25", "rollout-2026-11-25T10-14-00-"+threadID+"_01a20f68-8ef1-7ca2-8ac2-a77858a5a110.jsonl")
+	writeRolloutFile(t, older, `{"type":"event_msg","payload":{"type":"task_complete"}}`+"\n", now.Add(-time.Hour))
+	writeRolloutFile(t, newer, `{"type":"response_item","payload":{"type":"reasoning"}}`+"\n", now)
+	index := filepath.Join(dir, "session_index.jsonl")
+	writeIndexLines(t, index, `{"id":"`+threadID+`","thread_name":"Specify attack loop","updated_at":"2026-11-24T21:11:31Z"}`)
+
+	a := New(sessions, index)
+	a.openFilesForPID = func(int) []string { return nil }
+
+	got := a.ScanStateForPid(4242, "Specify attack loop | ai-engineering-domain")
+	want := tracker.ScanState{ThreadID: threadID, ThreadName: "Specify attack loop", Verdict: tracker.ProbeWorking}
+	if got != want {
+		t.Fatalf("ScanStateForPid = %+v, want %+v", got, want)
+	}
+	if path := a.rolloutPathForThread(threadID); path != newer {
+		t.Fatalf("rolloutPathForThread = %q, want newest %q", path, newer)
+	}
+}
+
+func TestScanStateForPidOwnedRolloutWinsOverTitle(t *testing.T) {
+	dir := resolvedTempDir(t)
+	threadID := "12345678-1234-1234-1234-123456789abc"
+	path := writeRollout(t, filepath.Join(dir, "sessions"), threadID, `"cli"`, "")
+	index := filepath.Join(dir, "session_index.jsonl")
+	writeIndexLines(t, index,
+		`{"id":"`+threadID+`","thread_name":"Owned task","updated_at":"2026-11-24T00:00:00Z"}`,
+		`{"id":"aaaaaaaa-1234-1234-1234-123456789abc","thread_name":"Title task","updated_at":"2026-11-25T00:00:00Z"}`)
+
+	a := New(filepath.Join(dir, "sessions"), index)
+	a.openFilesForPID = func(int) []string { return []string{path} }
+
+	got := a.ScanStateForPid(4242, "Title task | project")
+	if got.ThreadID != threadID || got.ThreadName != "Owned task" {
+		t.Fatalf("ScanStateForPid = %+v, want owned thread %q", got, threadID)
+	}
+}
+
+func TestPaneTitleMatchPicksNewestAndLongestName(t *testing.T) {
+	dir := resolvedTempDir(t)
+	index := filepath.Join(dir, "session_index.jsonl")
+	writeIndexLines(t, index,
+		`{"id":"11111111-1234-1234-1234-123456789abc","thread_name":"Fix bug","updated_at":"2026-11-25T09:00:00Z"}`,
+		`{"id":"22222222-1234-1234-1234-123456789abc","thread_name":"Fix bug","updated_at":"2026-11-25T10:00:00Z"}`,
+		`{"id":"33333333-1234-1234-1234-123456789abc","thread_name":"Fix bug","updated_at":"2026-11-25T08:00:00Z"}`,
+		`{"id":"44444444-1234-1234-1234-123456789abc","thread_name":"Fix","updated_at":"2026-11-25T11:00:00Z"}`,
+		`{"id":"55555555-1234-1234-1234-123456789abc","thread_name":"Fix bug | in","updated_at":"2026-11-20T00:00:00Z"}`)
+	a := New(filepath.Join(dir, "sessions"), index)
+	a.openFilesForPID = func(int) []string { return nil }
+
+	got := a.ScanStateForPid(4242, "Fix bug | repo")
+	want := tracker.ScanState{ThreadID: "22222222-1234-1234-1234-123456789abc", ThreadName: "Fix bug"}
+	if got != want {
+		t.Fatalf("ScanStateForPid = %+v, want %+v", got, want)
+	}
+
+	got = a.ScanStateForPid(4242, "Fix bug | in | repo")
+	if got.ThreadID != "55555555-1234-1234-1234-123456789abc" {
+		t.Fatalf("longest name: ScanStateForPid = %+v", got)
+	}
+}
+
+func TestPaneTitleWithoutMatchReturnsEmpty(t *testing.T) {
+	dir := resolvedTempDir(t)
+	index := filepath.Join(dir, "session_index.jsonl")
+	writeIndexLines(t, index, `{"id":"11111111-1234-1234-1234-123456789abc","thread_name":"Fix bug","updated_at":"2026-11-25T09:00:00Z"}`)
+	a := New(filepath.Join(dir, "sessions"), index)
+	a.openFilesForPID = func(int) []string { return nil }
+
+	for _, title := range []string{"", "Fix bugs | repo", "Fix", "zsh"} {
+		if got := a.ScanStateForPid(4242, title); got != (tracker.ScanState{}) {
+			t.Errorf("ScanStateForPid(%q) = %+v, want empty", title, got)
+		}
+	}
+}
+
 func TestProbeLiveStatusFromRollout(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

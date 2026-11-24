@@ -344,13 +344,63 @@ func (a *Adapter) SessionInfoForPid(pid int) (threadID, name string) {
 // ScanStateForPid resolves identity and status from one rollout lookup so the
 // three-second pane scan launches lsof only once per Codex process. The
 // rollout records no permission-prompt answer, so Prompt stays empty.
-func (a *Adapter) ScanStateForPid(pid int, _ string) tracker.ScanState {
+//
+// A Codex TUI attached to the shared app-server holds no rollout open; its
+// pane title names its thread, so the title resolves through the session index
+// and the thread's newest rollout supplies the verdict.
+func (a *Adapter) ScanStateForPid(pid int, paneTitle string) tracker.ScanState {
 	path := a.rolloutPathForPID(pid, "")
 	threadID, name := a.sessionInfoForRollout(path)
 	if threadID == "" {
-		return tracker.ScanState{}
+		threadID, name = a.threadForPaneTitle(paneTitle)
+		if threadID == "" {
+			return tracker.ScanState{}
+		}
+		path = a.rolloutPathForThread(threadID)
 	}
-	return tracker.ScanState{ThreadID: threadID, ThreadName: name, Verdict: scanRolloutPath(path)}
+	state := tracker.ScanState{ThreadID: threadID, ThreadName: name}
+	if path != "" {
+		state.Verdict = scanRolloutPath(path)
+	}
+	return state
+}
+
+// threadForPaneTitle matches a pane title against session-index thread names.
+// Codex titles its terminal "<thread name> | <project name>", so a title
+// matches a name it equals or that it starts with followed by " | ". The
+// longest matching name wins; among ids sharing it, the newest updated_at wins.
+func (a *Adapter) threadForPaneTitle(title string) (threadID, name string) {
+	if title == "" {
+		return "", ""
+	}
+	records, err := discover.ThreadRecords(a.SessionIndexPath)
+	if err != nil {
+		return "", ""
+	}
+	var best discover.ThreadRecord
+	bestLen := 0
+	for id, record := range records {
+		matched := 0
+		for _, candidate := range []string{record.Name, textutil.SanitizeSessionName(record.Name)} {
+			if len(candidate) > matched && titleNamesThread(title, candidate) {
+				matched = len(candidate)
+			}
+		}
+		if matched == 0 {
+			continue
+		}
+		if matched > bestLen || matched == bestLen && record.UpdatedAt.After(best.UpdatedAt) {
+			threadID, best, bestLen = id, record, matched
+		}
+	}
+	if bestLen == 0 {
+		return "", ""
+	}
+	return threadID, textutil.SanitizeSessionName(best.Name)
+}
+
+func titleNamesThread(title, name string) bool {
+	return name != "" && (title == name || strings.HasPrefix(title, name+" | "))
 }
 
 func (a *Adapter) sessionInfoForRollout(path string) (threadID, name string) {
@@ -448,6 +498,8 @@ func (a *Adapter) rolloutPathForPID(pid int, threadID string) string {
 	return fallback
 }
 
+// rolloutPathForThread returns the thread's most recently modified rollout;
+// DiscoverRollouts sorts newest first.
 func (a *Adapter) rolloutPathForThread(threadID string) string {
 	rollouts, _ := discover.DiscoverRollouts(a.SessionsDir)
 	for _, candidate := range rollouts {
