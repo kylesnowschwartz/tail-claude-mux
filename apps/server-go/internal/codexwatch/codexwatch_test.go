@@ -17,6 +17,10 @@ import (
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/wire"
 )
 
+// harness stands in for the server: mu is the server state lock. The server
+// calls HandleHook and the seed with mu held, and the async name lookup
+// re-enters through Context.Locked, which takes mu. Tests read adapter state,
+// collected events, and trackers fed by Emit only with mu held.
 type harness struct {
 	adapter *Adapter
 	events  []wire.AgentEvent
@@ -41,13 +45,36 @@ func newHarness(t *testing.T) *harness {
 			return ""
 		},
 		Emit: func(ev wire.AgentEvent) {
-			h.mu.Lock()
-			defer h.mu.Unlock()
 			h.events = append(h.events, ev)
 		},
-		Locked: func(fn func()) { fn() },
+		Locked: h.locked,
 	}
 	return h
+}
+
+// locked runs fn with the server state lock held.
+func (h *harness) locked(fn func()) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	fn()
+}
+
+// hook delivers a hook the way the server does, under the state lock.
+func (h *harness) hook(payload wire.HookPayload) {
+	h.locked(func() { h.adapter.HandleHook(payload) })
+}
+
+// thread returns a copy of the adapter's state for threadID, read under the
+// state lock, or nil when the adapter tracks no such thread.
+func (h *harness) thread(threadID string) *threadState {
+	var out *threadState
+	h.locked(func() {
+		if state := h.adapter.threads[threadID]; state != nil {
+			cp := *state
+			out = &cp
+		}
+	})
+	return out
 }
 
 func (h *harness) snapshot() []wire.AgentEvent {
@@ -60,7 +87,7 @@ func waitForNameLookup(t *testing.T, h *harness, threadID string) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if state := h.adapter.threads[threadID]; state != nil && !state.nameLookupInFlight {
+		if state := h.thread(threadID); state != nil && !state.nameLookupInFlight {
 			return
 		}
 		time.Sleep(time.Millisecond)
@@ -112,7 +139,7 @@ func TestHookStatusMapAndStrictAgentFilter(t *testing.T) {
 	for event, want := range wants {
 		t.Run(event, func(t *testing.T) {
 			h := newHarness(t)
-			h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: event, SessionID: "thread", Cwd: "/project"})
+			h.hook(wire.HookPayload{Agent: "codex", Event: event, SessionID: "thread", Cwd: "/project"})
 			got := h.snapshot()
 			if len(got) != 1 || got[0].Status != want || got[0].Agent != "codex" {
 				t.Fatalf("events = %#v, want status %s", got, want)
@@ -121,7 +148,7 @@ func TestHookStatusMapAndStrictAgentFilter(t *testing.T) {
 	}
 	for _, agent := range []string{"", "claude-code", "other"} {
 		h := newHarness(t)
-		h.adapter.HandleHook(wire.HookPayload{Agent: agent, Event: "Stop", SessionID: "thread", Cwd: "/project"})
+		h.hook(wire.HookPayload{Agent: agent, Event: "Stop", SessionID: "thread", Cwd: "/project"})
 		if len(h.snapshot()) != 0 {
 			t.Fatalf("agent %q was accepted", agent)
 		}
@@ -137,16 +164,16 @@ func TestDedupAndToolDescriptionLifecycle(t *testing.T) {
 	base := wire.HookPayload{Agent: "codex", SessionID: "thread", Cwd: "/project"}
 
 	base.Event = "UserPromptSubmit"
-	h.adapter.HandleHook(base)
-	h.adapter.HandleHook(base)
+	h.hook(base)
+	h.hook(base)
 	base.Event, base.ToolName, base.ToolInput = "PreToolUse", "Bash", input
-	h.adapter.HandleHook(base)
-	h.adapter.HandleHook(base)
+	h.hook(base)
+	h.hook(base)
 	base.Event = "PostToolUse"
-	h.adapter.HandleHook(base)
-	retainedAfterPost := h.adapter.threads["thread"].lastToolDescription
+	h.hook(base)
+	retainedAfterPost := h.thread("thread").lastToolDescription
 	base.Event, base.ToolName, base.ToolInput = "Stop", "", nil
-	h.adapter.HandleHook(base)
+	h.hook(base)
 
 	got := h.snapshot()
 	if len(got) != 4 {
@@ -158,7 +185,7 @@ func TestDedupAndToolDescriptionLifecycle(t *testing.T) {
 	if got[1].ToolDescription != "Running go test ./..." || got[1].ToolVerb != "run" {
 		t.Fatalf("tool metadata = %#v", got[1])
 	}
-	if state := h.adapter.threads["thread"]; state.lastToolDescription != "" {
+	if state := h.thread("thread"); state.lastToolDescription != "" {
 		t.Fatal("Stop did not clear retained tool description")
 	}
 	if got[3].ToolDescription != "" || got[3].ToolVerb != "" {
@@ -191,8 +218,8 @@ func TestPidResolutionBranchesAndAuthoritativeRouting(t *testing.T) {
 				path := writeRollout(t, h.adapter.SessionsDir, threadID, `"cli"`, "")
 				h.adapter.openFilesForPID = func(int) []string { return []string{path} }
 			}
-			h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: threadID, Cwd: "/project", PID: tc.reported, ProcessSnapshot: tc.snapshot})
-			state := h.adapter.threads[threadID]
+			h.hook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: threadID, Cwd: "/project", PID: tc.reported, ProcessSnapshot: tc.snapshot})
+			state := h.thread(threadID)
 			if state == nil || state.pid != tc.wantPID {
 				t.Fatalf("pid = %v, want %d", state, tc.wantPID)
 			}
@@ -236,16 +263,20 @@ func TestHookPidRequiresRolloutOwnership(t *testing.T) {
 		h.adapter.ctx.Emit = func(ev wire.AgentEvent) { tr.ApplyEvent(ev, false) }
 
 		payload.SessionID = foreignThreadID
-		h.adapter.HandleHook(payload)
+		h.hook(payload)
 
-		if state := h.adapter.threads[foreignThreadID]; state == nil || state.pid != 0 || state.routingPID != parentPID {
+		if state := h.thread(foreignThreadID); state == nil || state.pid != 0 || state.routingPID != parentPID {
 			t.Fatalf("foreign thread state = %#v, want identity pid 0 and routing pid %d", state, parentPID)
 		}
-		got := tr.GetEvent("pid-session", "codex", parentThreadID, "")
+		var got, foreign *wire.AgentEvent
+		h.locked(func() {
+			got = tr.GetEvent("pid-session", "codex", parentThreadID, "")
+			foreign = tr.GetEvent("pid-session", "codex", foreignThreadID, "")
+		})
 		if got == nil || got.ThreadID != parentThreadID || got.PaneID != "%7" || got.PID != parentPID {
 			t.Fatalf("parent state = %#v, want original parent row and pane binding", got)
 		}
-		if got := tr.GetEvent("pid-session", "codex", foreignThreadID, ""); got != nil {
+		if got := foreign; got != nil {
 			t.Fatalf("foreign tracker row = %#v, want no row", got)
 		}
 	})
@@ -258,9 +289,11 @@ func TestHookPidRequiresRolloutOwnership(t *testing.T) {
 		h.adapter.ctx.Emit = func(ev wire.AgentEvent) { tr.ApplyEvent(ev, false) }
 
 		payload.SessionID = foreignThreadID
-		h.adapter.HandleHook(payload)
+		h.hook(payload)
 
-		if got := tr.GetAgents("pid-session"); len(got) != 0 {
+		var got []wire.AgentEvent
+		h.locked(func() { got = tr.GetAgents("pid-session") })
+		if len(got) != 0 {
 			t.Fatalf("agents = %#v, want no row before parent scan", got)
 		}
 	})
@@ -277,7 +310,7 @@ func TestHookPidRequiresRolloutOwnership(t *testing.T) {
 		payload.SessionID = foreignThreadID
 		for _, event := range []string{"UserPromptSubmit", "PreToolUse", "PermissionRequest", "Stop", "PostToolUse", "UserPromptSubmit", "PreToolUse"} {
 			payload.Event = event
-			h.adapter.HandleHook(payload)
+			h.hook(payload)
 		}
 
 		if lookups != 2 {
@@ -294,7 +327,7 @@ func TestHookPidRequiresRolloutOwnership(t *testing.T) {
 		h.adapter.openFilesForPID = func(int) []string { return []string{parentRollout} }
 
 		payload.SessionID = parentThreadID
-		h.adapter.HandleHook(payload)
+		h.hook(payload)
 
 		got := h.snapshot()
 		if len(got) != 1 || got[0].PID != parentPID || got[0].Session != "pid-session" {
@@ -317,7 +350,7 @@ func TestResumedThreadReroutesToNewCodexProcess(t *testing.T) {
 	panes := map[int]string{200: "old-session"}
 	h.adapter.ctx.ResolveSessionByPid = func(pid int) string { return panes[pid] }
 
-	h.adapter.HandleHook(wire.HookPayload{
+	h.hook(wire.HookPayload{
 		Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project",
 		PID: 300, ProcessSnapshot: "300 200 /bin/sh hook\n200 100 /usr/local/bin/codex",
 	})
@@ -326,7 +359,7 @@ func TestResumedThreadReroutesToNewCodexProcess(t *testing.T) {
 	ownerPID = 700
 	delete(panes, 200)
 	panes[700] = "new-session"
-	h.adapter.HandleHook(wire.HookPayload{
+	h.hook(wire.HookPayload{
 		Agent: "codex", Event: "PermissionRequest", SessionID: threadID, Cwd: "/project",
 		PID: 800, ProcessSnapshot: "800 700 /bin/sh hook\n700 100 /usr/local/bin/codex resume",
 	})
@@ -349,7 +382,7 @@ func TestHandleHookLogsUnroutableThreadOnce(t *testing.T) {
 
 	payload := wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: "unroutable-thread", Cwd: "/missing"}
 	for range 4 {
-		h.adapter.HandleHook(payload)
+		h.hook(payload)
 	}
 
 	if got := strings.Count(logs.String(), "dropped, no pid and cwd"); got != 1 {
@@ -363,7 +396,7 @@ func TestHandleHookLogsUnroutableThreadOnce(t *testing.T) {
 func TestPromptFallbackName(t *testing.T) {
 	h := newHarness(t)
 	prompt := "  first line\x1b[31m\nsecond line  " + strings.Repeat("x", 100)
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: "thread", Cwd: "/project", Prompt: prompt})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: "thread", Cwd: "/project", Prompt: prompt})
 	got := h.snapshot()
 	if len(got) != 1 || got[0].ThreadName != "first line" {
 		t.Fatalf("thread name = %q", got[0].ThreadName)
@@ -375,10 +408,10 @@ func TestStopRetriesSessionIndexNameResolution(t *testing.T) {
 	index := filepath.Join(dir, "session_index.jsonl")
 	h := newHarness(t)
 	h.adapter.SessionIndexPath = index
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: "thread", Cwd: "/project", Prompt: "Prompt fallback"})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: "thread", Cwd: "/project", Prompt: "Prompt fallback"})
 	waitForNameLookup(t, h, "thread")
 	writeIndexName(t, index, "thread", "Indexed name")
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: "thread", Cwd: "/project"})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: "thread", Cwd: "/project"})
 	waitForNameLookup(t, h, "thread")
 
 	got := h.snapshot()
@@ -388,7 +421,7 @@ func TestStopRetriesSessionIndexNameResolution(t *testing.T) {
 	if got[0].ThreadName != "Prompt fallback" || got[1].ThreadName != "Prompt fallback" || got[2].ThreadName != "Indexed name" {
 		t.Fatalf("thread name progression = %q, %q, %q", got[0].ThreadName, got[1].ThreadName, got[2].ThreadName)
 	}
-	if state := h.adapter.threads["thread"]; !state.nameFromIndex {
+	if state := h.thread("thread"); !state.nameFromIndex {
 		t.Fatal("resolved name was not marked as index-sourced")
 	}
 }
@@ -407,18 +440,18 @@ func TestStopNameRetryDoesNotEmitForMissingOrUnchangedName(t *testing.T) {
 			index := filepath.Join(dir, "session_index.jsonl")
 			h := newHarness(t)
 			h.adapter.SessionIndexPath = index
-			h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: "thread", Cwd: "/project", Prompt: "Prompt fallback"})
+			h.hook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: "thread", Cwd: "/project", Prompt: "Prompt fallback"})
 			waitForNameLookup(t, h, "thread")
 			if tc.indexName != "" {
 				writeIndexName(t, index, "thread", tc.indexName)
 			}
-			h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: "thread", Cwd: "/project"})
+			h.hook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: "thread", Cwd: "/project"})
 			waitForNameLookup(t, h, "thread")
 
 			if got := h.snapshot(); len(got) != 2 {
 				t.Fatalf("got %d events, want prompt + Stop only: %#v", len(got), got)
 			}
-			if state := h.adapter.threads["thread"]; state.nameFromIndex != tc.wantSource {
+			if state := h.thread("thread"); state.nameFromIndex != tc.wantSource {
 				t.Fatalf("nameFromIndex = %v, want %v", state.nameFromIndex, tc.wantSource)
 			}
 		})
@@ -431,11 +464,11 @@ func TestSessionIndexNameAtCreationOutranksPrompt(t *testing.T) {
 	writeIndexName(t, index, "thread", "Indexed name")
 	h := newHarness(t)
 	h.adapter.SessionIndexPath = index
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "SessionStart", SessionID: "thread", Cwd: "/project"})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "SessionStart", SessionID: "thread", Cwd: "/project"})
 	waitForNameLookup(t, h, "thread")
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: "thread", Cwd: "/project", Prompt: "Prompt must not win"})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: "thread", Cwd: "/project", Prompt: "Prompt must not win"})
 
-	state := h.adapter.threads["thread"]
+	state := h.thread("thread")
 	if state.threadName != "Indexed name" || !state.nameFromIndex {
 		t.Fatalf("thread state = name %q, fromIndex %v", state.threadName, state.nameFromIndex)
 	}
@@ -451,11 +484,11 @@ func TestStopRefreshesRenamedSessionIndexName(t *testing.T) {
 	writeIndexName(t, index, "thread", "First name")
 	h := newHarness(t)
 	h.adapter.SessionIndexPath = index
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "SessionStart", SessionID: "thread", Cwd: "/project"})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "SessionStart", SessionID: "thread", Cwd: "/project"})
 	waitForNameLookup(t, h, "thread")
 
 	beforeUnchangedStop := len(h.snapshot())
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: "thread", Cwd: "/project"})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: "thread", Cwd: "/project"})
 	waitForNameLookup(t, h, "thread")
 	if got := len(h.snapshot()); got != beforeUnchangedStop {
 		t.Fatalf("unchanged index name emitted %d extra events", got-beforeUnchangedStop)
@@ -463,7 +496,7 @@ func TestStopRefreshesRenamedSessionIndexName(t *testing.T) {
 
 	writeIndexName(t, index, "thread", "Renamed")
 	beforeRenameStop := len(h.snapshot())
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: "thread", Cwd: "/project"})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: "thread", Cwd: "/project"})
 	waitForNameLookup(t, h, "thread")
 	got := h.snapshot()
 	if len(got) != beforeRenameStop+1 {
@@ -504,7 +537,7 @@ func TestSeedNestedRecentRollout(t *testing.T) {
 	if len(got) != 1 || got[0].Status != wire.StatusRunning || got[0].ThreadID != threadID || got[0].ThreadName != "Seed name" || got[0].TS != 999_000 {
 		t.Fatalf("seed = %#v", got)
 	}
-	if state := h.adapter.threads[threadID]; state == nil || !state.nameFromIndex {
+	if state := h.thread(threadID); state == nil || !state.nameFromIndex {
 		t.Fatalf("seeded name was not marked index-sourced: %#v", state)
 	}
 }
@@ -786,13 +819,13 @@ func TestStopUsesDurableTurnStatusAndNewPromptRestarts(t *testing.T) {
 			threadID := "12345678-1234-1234-1234-123456789abc"
 			writeRollout(t, h.adapter.SessionsDir, threadID, `"cli"`, tc.entries)
 
-			h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: threadID, Cwd: "/project"})
+			h.hook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: threadID, Cwd: "/project"})
 			got := h.snapshot()
 			if len(got) != 1 || got[0].Status != tc.want {
 				t.Fatalf("Stop events = %#v, want status %q", got, tc.want)
 			}
 
-			h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project", Prompt: "continue"})
+			h.hook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project", Prompt: "continue"})
 			got = h.snapshot()
 			if got[len(got)-1].Status != wire.StatusRunning {
 				t.Fatalf("new prompt status = %q, want running", got[len(got)-1].Status)
@@ -811,20 +844,23 @@ func TestCompletedStopPreservesAlivePaneState(t *testing.T) {
 		Agent: "codex", Session: "work", ThreadID: threadID, Status: wire.StatusRunning,
 		PaneID: "%7", PID: 200, Liveness: wire.LivenessAlive,
 	}, false)
+	h := &harness{adapter: adapter}
 	adapter.ctx = &Context{
 		ResolveSession: func(string) string { return "work" },
 		Emit:           func(ev wire.AgentEvent) { tr.ApplyEvent(ev, false) },
-		Locked:         func(fn func()) { fn() },
+		Locked:         h.locked,
 	}
 
-	adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: threadID, Cwd: "/project"})
-	got := tr.GetState("work")
+	h.hook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: threadID, Cwd: "/project"})
+	var got *wire.AgentEvent
+	h.locked(func() { got = tr.GetState("work") })
 	if got == nil || got.Status != wire.StatusDone || got.Liveness != wire.LivenessAlive || got.PaneID != "%7" {
 		t.Fatalf("tracked state = %#v, want alive done state on pane %%7", got)
 	}
 
-	adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project"})
-	if got := tr.GetState("work"); got == nil || got.Status != wire.StatusRunning || got.Liveness != wire.LivenessAlive {
+	h.hook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project"})
+	h.locked(func() { got = tr.GetState("work") })
+	if got == nil || got.Status != wire.StatusRunning || got.Liveness != wire.LivenessAlive {
 		t.Fatalf("tracked state after new turn = %#v, want alive running", got)
 	}
 }
@@ -838,8 +874,8 @@ func TestAutoReviewedApprovalDoesNotBecomeWaitingAndCompletedTurnBecomesDone(t *
 
 	h := newHarness(t)
 	h.adapter.SessionsDir = dir
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project"})
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "PermissionRequest", SessionID: threadID, Cwd: "/project"})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project"})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "PermissionRequest", SessionID: threadID, Cwd: "/project"})
 	for _, ev := range h.snapshot() {
 		if ev.Status == wire.StatusWaiting {
 			t.Fatalf("auto-reviewed approval emitted waiting: %#v", h.snapshot())
@@ -856,7 +892,7 @@ func TestAutoReviewedApprovalDoesNotBecomeWaitingAndCompletedTurnBecomesDone(t *
 		t.Fatalf("append final assistant message: write=%v close=%v", writeErr, closeErr)
 	}
 
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: threadID, Cwd: "/project"})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "Stop", SessionID: threadID, Cwd: "/project"})
 	got := h.snapshot()
 	if got[len(got)-1].Status != wire.StatusDone {
 		t.Fatalf("completed turn status = %q, want done; events=%#v", got[len(got)-1].Status, got)
@@ -872,8 +908,8 @@ func TestManualApprovalStillBecomesWaitingPromptly(t *testing.T) {
 
 	h := newHarness(t)
 	h.adapter.SessionsDir = dir
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project"})
-	h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "PermissionRequest", SessionID: threadID, Cwd: "/project"})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project"})
+	h.hook(wire.HookPayload{Agent: "codex", Event: "PermissionRequest", SessionID: threadID, Cwd: "/project"})
 	got := h.snapshot()
 	if got[len(got)-1].Status != wire.StatusWaiting {
 		t.Fatalf("manual approval status = %q, want waiting", got[len(got)-1].Status)
@@ -908,12 +944,9 @@ func TestClaudeWorkerHooks(t *testing.T) {
 	for _, parent := range []bool{true, false} {
 		t.Run(fmt.Sprint(parent), func(t *testing.T) {
 			h := newHarness(t)
-			var stateMu sync.Mutex
 			completed := make(chan struct{}, 1)
 			h.adapter.ctx.Locked = func(fn func()) {
-				stateMu.Lock()
-				fn()
-				stateMu.Unlock()
+				h.locked(fn)
 				completed <- struct{}{}
 			}
 			const threadID = "12345678-1234-1234-1234-123456789abc"
@@ -933,10 +966,11 @@ func TestClaudeWorkerHooks(t *testing.T) {
 					payload.ToolName = ""
 					payload.ToolInput = nil
 				}
-				stateMu.Lock()
-				h.adapter.HandleHook(payload)
-				pending := h.adapter.threads[threadID].nameLookupInFlight
-				stateMu.Unlock()
+				var pending bool
+				h.locked(func() {
+					h.adapter.HandleHook(payload)
+					pending = h.adapter.threads[threadID].nameLookupInFlight
+				})
 				if pending {
 					<-completed
 				}
@@ -977,9 +1011,9 @@ func TestACPRolloutSuppressed(t *testing.T) {
 					if err := os.Chtimes(path, mtime, mtime); err != nil {
 						t.Fatal(err)
 					}
-					h.adapter.seedFromJSONL()
+					h.locked(h.adapter.seedFromJSONL)
 				} else {
-					h.adapter.HandleHook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: id, Cwd: "/project"})
+					h.hook(wire.HookPayload{Agent: "codex", Event: "UserPromptSubmit", SessionID: id, Cwd: "/project"})
 				}
 				want := 1
 				if acp {
@@ -988,7 +1022,7 @@ func TestACPRolloutSuppressed(t *testing.T) {
 				if got := len(h.snapshot()); got != want {
 					t.Fatalf("events = %d, want %d", got, want)
 				}
-				if seed && acp && h.adapter.threads[id] != nil {
+				if seed && acp && h.thread(id) != nil {
 					t.Fatal("ACP seed created thread")
 				}
 			})

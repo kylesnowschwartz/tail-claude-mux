@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/kylesnowschwartz/tail-claude-mux/apps/server-go/internal/tracker"
@@ -47,8 +46,13 @@ func TestDaemonHookRoutesToPaneLinkedToThread(t *testing.T) {
 	payload := daemonHookPayload(threadID, "PreToolUse")
 	payload.ToolName = "Bash"
 	payload.ToolInput = map[string]json.RawMessage{"command": json.RawMessage(`"go test ./..."`)}
-	h.adapter.HandleHook(payload)
+	h.hook(payload)
 
+	var rows []wire.AgentEvent
+	h.locked(func() {
+		emitted = append([]wire.AgentEvent(nil), emitted...)
+		rows = tr.GetAgents("pane-session")
+	})
 	if len(emitted) != 1 {
 		t.Fatalf("events = %#v, want one", emitted)
 	}
@@ -56,7 +60,6 @@ func TestDaemonHookRoutesToPaneLinkedToThread(t *testing.T) {
 	if ev.Session != "pane-session" || ev.ThreadID != threadID || ev.PID != panePID || ev.Status != wire.StatusRunning || ev.ToolDescription != "Running go test ./..." {
 		t.Fatalf("event = %#v, want pane-session thread pid %d running with tool description", ev, panePID)
 	}
-	rows := tr.GetAgents("pane-session")
 	if len(rows) != 1 || rows[0].PaneID != "%9" || rows[0].ToolDescription != "Running go test ./..." || rows[0].Status != wire.StatusRunning {
 		t.Fatalf("rows = %#v, want the pane row updated in place", rows)
 	}
@@ -76,17 +79,8 @@ func TestDaemonHookWithoutLinkedPaneDropsThenRecovers(t *testing.T) {
 		return ThreadPane{Session: "pane-session", PID: 4100}, linked && id == threadID
 	}
 
-	// The server runs hooks and name-lookup callbacks under one lock.
-	var serverLock sync.Mutex
-	h.adapter.ctx.Locked = func(fn func()) {
-		serverLock.Lock()
-		defer serverLock.Unlock()
-		fn()
-	}
 	handle := func(event string) {
-		serverLock.Lock()
-		defer serverLock.Unlock()
-		h.adapter.HandleHook(daemonHookPayload(threadID, event))
+		h.hook(daemonHookPayload(threadID, event))
 	}
 
 	for _, event := range []string{"SessionStart", "UserPromptSubmit", "Stop", "PreToolUse"} {
@@ -99,9 +93,7 @@ func TestDaemonHookWithoutLinkedPaneDropsThenRecovers(t *testing.T) {
 		t.Fatalf("drop log count = %d, want 1; logs:\n%s", got, logs.String())
 	}
 
-	serverLock.Lock()
-	linked = true
-	serverLock.Unlock()
+	h.locked(func() { linked = true })
 	handle("UserPromptSubmit")
 	got := h.snapshot()
 	if len(got) != 1 || got[0].Session != "pane-session" || got[0].PID != 4100 || got[0].Status != wire.StatusRunning {
@@ -120,7 +112,7 @@ func TestPaneOwnedSenderIgnoresThreadLink(t *testing.T) {
 		return ThreadPane{Session: "other-session", PID: 4100}, true
 	}
 
-	h.adapter.HandleHook(wire.HookPayload{
+	h.hook(wire.HookPayload{
 		Agent: "codex", Event: "UserPromptSubmit", SessionID: threadID, Cwd: "/project",
 		PID: 300, ProcessSnapshot: "300 200 /bin/sh hook\n200 100 /usr/local/bin/codex",
 	})
