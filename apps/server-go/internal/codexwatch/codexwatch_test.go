@@ -702,6 +702,26 @@ func TestPaneTitleMatchPicksNewestAndLongestName(t *testing.T) {
 	}
 }
 
+func TestPaneTitleWithRunStateMarkNamesThread(t *testing.T) {
+	dir := resolvedTempDir(t)
+	index := filepath.Join(dir, "session_index.jsonl")
+	threadID := "11111111-1234-1234-1234-123456789abc"
+	writeIndexLines(t, index, `{"id":"`+threadID+`","thread_name":"Fix bug","updated_at":"2026-11-25T09:00:00Z"}`)
+	a := New(filepath.Join(dir, "sessions"), index)
+	a.openFilesForPID = func(int) []string { return nil }
+
+	for _, title := range []string{"⠼ Fix bug | repo", "⠼ Fix bug", "Fix bug | repo"} {
+		if got := a.ScanStateForPid(4242, title); got.ThreadID != threadID || got.ThreadName != "Fix bug" {
+			t.Errorf("ScanStateForPid(%q) = %+v, want thread %q", title, got, threadID)
+		}
+	}
+	for _, title := range []string{"⠼⠼ Fix bug | repo", "x Fix bug | repo", "⠼Fix bug | repo"} {
+		if got := a.ScanStateForPid(4242, title); got != (tracker.ScanState{}) {
+			t.Errorf("ScanStateForPid(%q) = %+v, want empty", title, got)
+		}
+	}
+}
+
 func TestPaneTitleWithoutMatchReturnsEmpty(t *testing.T) {
 	dir := resolvedTempDir(t)
 	index := filepath.Join(dir, "session_index.jsonl")

@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/kylesnowschwartz/agent-ouija/codex/discover"
 	"github.com/kylesnowschwartz/agent-ouija/codex/rollout"
@@ -453,7 +455,29 @@ func (a *Adapter) threadForPaneTitle(title string) (threadID, name string) {
 }
 
 func titleNamesThread(title, name string) bool {
-	return name != "" && (title == name || strings.HasPrefix(title, name+" | "))
+	if name == "" {
+		return false
+	}
+	for _, t := range []string{title, withoutRunStateMark(title)} {
+		if t == name || strings.HasPrefix(t, name+" | ") {
+			return true
+		}
+	}
+	return false
+}
+
+// withoutRunStateMark drops the one-symbol run-state mark Codex puts before
+// the thread name while a turn runs, as in "⠼ Fix bug | repo".
+func withoutRunStateMark(title string) string {
+	mark, size := utf8.DecodeRuneInString(title)
+	if size == 0 || unicode.IsLetter(mark) || unicode.IsDigit(mark) || unicode.IsSpace(mark) {
+		return title
+	}
+	rest, ok := strings.CutPrefix(title[size:], " ")
+	if !ok {
+		return title
+	}
+	return rest
 }
 
 func (a *Adapter) sessionInfoForRollout(path string) (threadID, name string) {
