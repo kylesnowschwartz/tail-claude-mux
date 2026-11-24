@@ -505,6 +505,24 @@ func (t *Tracker) GetEvent(session, agent, threadID, paneID string) *wire.AgentE
 	return &out
 }
 
+// PaneRowForThread returns a copy of the agent's row for the thread that is
+// bound to a pane, across all sessions, or nil when no pane row names the
+// thread.
+func (t *Tracker) PaneRowForThread(agent, threadID string) *wire.AgentEvent {
+	if threadID == "" {
+		return nil
+	}
+	for _, si := range t.instances {
+		for _, ev := range si {
+			if ev.Agent == agent && ev.ThreadID == threadID && ev.PaneID != "" {
+				out := *ev
+				return &out
+			}
+		}
+	}
+	return nil
+}
+
 // ThreadIDsInPane returns the thread IDs of the agent's instances bound to
 // the pane, across all sessions.
 func (t *Tracker) ThreadIDsInPane(agent, paneID string) []string {

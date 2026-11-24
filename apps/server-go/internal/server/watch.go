@@ -189,6 +189,7 @@ func (s *Server) StartWatchers() {
 		s.CodexWatcher.Start(&codexwatch.Context{
 			ResolveSession:      s.resolveSessionLocked,
 			ResolveSessionByPid: s.resolveSessionByPidLocked,
+			PaneForThread:       s.codexPaneForThreadLocked,
 			Emit:                s.emitLocked,
 			Locked:              locked,
 		})
@@ -617,6 +618,20 @@ func (s *Server) resolveSessionByPidLocked(pid int) string {
 		}
 	}
 	return session
+}
+
+// codexPaneForThreadLocked is the Codex watcher context's PaneForThread: the
+// tmux session and pane process of the Codex pane row the pane scan linked to
+// the thread. Runs with s.mu held.
+func (s *Server) codexPaneForThreadLocked(threadID string) (codexwatch.ThreadPane, bool) {
+	if s.Tracker == nil {
+		return codexwatch.ThreadPane{}, false
+	}
+	row := s.Tracker.PaneRowForThread("codex", threadID)
+	if row == nil {
+		return codexwatch.ThreadPane{}, false
+	}
+	return codexwatch.ThreadPane{Session: row.Session, PID: row.PID}, true
 }
 
 // focusAgentPane ports the select-window/select-pane navigation plus the

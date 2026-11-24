@@ -37,8 +37,18 @@ var codexCmdRE = regexp.MustCompile(`(?i)(?:^|/)codex($|[\s/])`)
 type Context struct {
 	ResolveSession      func(projectDir string) string
 	ResolveSessionByPid func(pid int) string
-	Emit                func(ev wire.AgentEvent)
-	Locked              func(fn func())
+	// PaneForThread reports the Codex pane the pane scan linked to a thread
+	// id. It routes hooks whose sender process is in no tmux pane, such as
+	// the shared Codex app-server that runs hooks for every attached TUI.
+	PaneForThread func(threadID string) (ThreadPane, bool)
+	Emit          func(ev wire.AgentEvent)
+	Locked        func(fn func())
+}
+
+// ThreadPane is the tmux session and pane process of a scanned Codex pane.
+type ThreadPane struct {
+	Session string
+	PID     int
 }
 
 const acpOriginator = "@agentclientprotocol/codex-acp"
@@ -147,16 +157,24 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 			state.pid = state.routingPID
 		}
 	}
-	if state.routingPID != 0 && state.pid == 0 {
-		if !state.dropLogged {
-			log.Printf("codex-hook %s: dropped, pid %d does not own thread", shortThread(threadID), state.routingPID)
-			state.dropLogged = true
-		}
+	// A sender that holds no rollout for the thread routes only through the
+	// pane the scan linked to the thread. The pane lookup runs on every hook,
+	// so a thread dropped before its pane is linked routes once it is.
+	senderOwnsThread := state.routingPID == 0 || state.pid != 0
+	if !senderOwnsThread {
 		if payload.Event == "Stop" {
 			state.recheckOwnership = true
-			a.resolveThreadNameAsync(threadID, state)
 		}
-		return
+		if _, ok := a.paneForThread(threadID); !ok {
+			if !state.dropLogged {
+				log.Printf("codex-hook %s: dropped, pid %d does not own thread", shortThread(threadID), state.routingPID)
+				state.dropLogged = true
+			}
+			if payload.Event == "Stop" {
+				a.resolveThreadNameAsync(threadID, state)
+			}
+			return
+		}
 	}
 	if state.parentPID == 0 {
 		if !state.rolloutChecked {
@@ -179,7 +197,15 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 	}
 	newStatus := verdictWire(rollout.Reconcile(claim, evidence))
 
-	session := a.resolveStateSession(state, payload.Cwd)
+	session, emitPID := "", state.pid
+	if senderOwnsThread {
+		session = a.resolveStateSession(state, payload.Cwd)
+	}
+	if session == "" {
+		if pane, ok := a.paneForThread(threadID); ok {
+			session, emitPID = pane.Session, pane.PID
+		}
+	}
 	if session == "" {
 		if !state.dropLogged {
 			if state.pid != 0 {
@@ -220,7 +246,7 @@ func (a *Adapter) HandleHook(payload wire.HookPayload) {
 		return
 	}
 	state.status = newStatus
-	a.emit(threadID, state, session, kind)
+	a.emit(threadID, state, session, emitPID, kind)
 	if payload.Event == "Stop" {
 		a.resolveThreadNameAsync(threadID, state)
 	}
@@ -245,7 +271,10 @@ const (
 	emitInvoked
 )
 
-func (a *Adapter) emit(threadID string, state *threadState, session string, kind emitKind) {
+// emit publishes the thread's state to the tmux session. pid is the codex
+// process the row belongs to: the rollout-owning sender, or the pane process
+// of the pane the thread is linked to.
+func (a *Adapter) emit(threadID string, state *threadState, session string, pid int, kind emitKind) {
 	if state.parentPID != 0 {
 		return
 	}
@@ -260,8 +289,32 @@ func (a *Adapter) emit(threadID string, state *threadState, session string, kind
 		ToolDescription: state.lastToolDescription,
 		ToolVerb:        state.lastToolVerb,
 		ToolInvoked:     kind == emitInvoked,
-		PID:             state.pid,
+		PID:             pid,
 	})
+}
+
+// paneForThread asks the server for the pane the scan linked to the thread.
+func (a *Adapter) paneForThread(threadID string) (ThreadPane, bool) {
+	if a.ctx.PaneForThread == nil {
+		return ThreadPane{}, false
+	}
+	pane, ok := a.ctx.PaneForThread(threadID)
+	if !ok || pane.Session == "" {
+		return ThreadPane{}, false
+	}
+	return pane, true
+}
+
+// routeThread returns the session and row pid for an event about the thread,
+// preferring the sender's session and falling back to the linked pane.
+func (a *Adapter) routeThread(threadID string, state *threadState) (string, int) {
+	if session := a.resolveStateSession(state, state.projectDir); session != "" {
+		return session, state.pid
+	}
+	if pane, ok := a.paneForThread(threadID); ok {
+		return pane.Session, pane.PID
+	}
+	return "", 0
 }
 
 func (a *Adapter) resolveStateSession(state *threadState, fallbackCwd string) string {
@@ -317,8 +370,8 @@ func (a *Adapter) resolveThreadNameAsync(threadID string, state *threadState) {
 				return
 			}
 			state.threadName = name
-			if session := a.resolveStateSession(state, state.projectDir); session != "" {
-				a.emit(threadID, state, session, emitUpdate)
+			if session, pid := a.routeThread(threadID, state); session != "" {
+				a.emit(threadID, state, session, pid, emitUpdate)
 			}
 		})
 	}()
